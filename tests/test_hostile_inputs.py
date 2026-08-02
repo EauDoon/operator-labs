@@ -119,7 +119,8 @@ class HostileInputTests(unittest.TestCase):
             "limits": {"max_input_bytes": 5_000_000, "max_nesting": 1_000},
         }
         deep_value = '{"stringValue":"benign"}'
-        for _ in range(330):
+        # Stay below CPython 3.11's JSON parser ceiling while exceeding the default nesting limit.
+        for _ in range(250):
             deep_value = '{"arrayValue":{"values":[' + deep_value + ']}}'
         payload = {
             "resourceSpans": [
