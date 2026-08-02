@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tracecanary"
+version = "0.1.0"
+description = "Deterministic privacy-regression checks for synthetic OTLP trace canaries."
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "Apache-2.0"}
+authors = [{name = "Oonyl"}]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Security",
+]
+
+[project.urls]
+Source = "https://github.com/oonyl/tracecanary"
+Issues = "https://github.com/oonyl/tracecanary/issues"
+Security = "https://github.com/oonyl/tracecanary/security/policy"
+Documentation = "https://github.com/oonyl/tracecanary#readme"
+
+[project.scripts]
+tracecanary = "tracecanary.cli:main"
+
+[project.gui-scripts]
+tracecanary-gui = "tracecanary.gui:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

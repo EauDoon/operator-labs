@@ -1,0 +1,19 @@
+{
+  "contract_version": "tracecanary/v1",
+  "semantic_conventions_version": "opentelemetry/semconv/1.43.0",
+  "canaries": [
+    {"label": "synthetic-prompt", "category": "prompt", "value": "TCANARY_PROMPT_71f0e04f"},
+    {"label": "synthetic-tool-arguments", "category": "tool_arguments", "value": "TCANARY_TOOL_ARGUMENTS_b26dc3a1"},
+    {"label": "synthetic-tool-result", "category": "tool_result", "value": "TCANARY_TOOL_RESULT_5aa72e93"},
+    {"label": "synthetic-user-identifier", "category": "user_identifier", "value": "TCANARY_USER_IDENTIFIER_4a8d8ce7"}
+  ],
+  "forbidden_attribute_keys": ["gen_ai.prompt", "gen_ai.tool.call.arguments", "gen_ai.tool.call.result"],
+  "forbidden_attribute_key_prefixes": ["enduser."],
+  "forbidden_path_prefixes": ["/resourceSpans/*/scopeSpans/*/spans/*/attributes/*/value/bytesValue"],
+  "required_retained_fields": [
+    {"scope": "resource", "key": "service.name"},
+    {"scope": "span", "key": "gen_ai.operation.name"},
+    {"scope": "event", "key": "telemetry.event.class"}
+  ],
+  "limits": {"max_input_bytes": 5000000, "max_nesting": 100}
+}
