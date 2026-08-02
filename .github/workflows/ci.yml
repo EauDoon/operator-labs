@@ -19,6 +19,7 @@ jobs:
       - run: python -m unittest discover -s tests -v
       - run: python -m compileall -q src
       - run: python -c "from pathlib import Path; import shutil; source=Path('.').resolve(); target=Path(r'${{ runner.temp }}') / 'tracecanary-source'; shutil.copytree(source, target, ignore=shutil.ignore_patterns('.git', 'build', '*.egg-info', '__pycache__', '*.pyc'))"
+      - run: python -m pip install --disable-pip-version-check --no-deps "setuptools==83.0.0"
       - run: python -m pip wheel --no-deps --no-build-isolation --wheel-dir "${{ runner.temp }}/tracecanary-wheelhouse" "${{ runner.temp }}/tracecanary-source"
       - run: python -m pip install --no-deps --force-reinstall "${{ runner.temp }}/tracecanary-wheelhouse/tracecanary-0.1.0-py3-none-any.whl"
       - run: tracecanary check --contract "${{ runner.temp }}/tracecanary-source/fixtures/v1/contract.json" --input "${{ runner.temp }}/tracecanary-source/fixtures/v1/safe-export.json" --format json
