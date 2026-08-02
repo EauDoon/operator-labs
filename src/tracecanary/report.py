@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import xml.etree.ElementTree as ET
 from typing import Any
 
 from tracecanary.canonical import canonical_json
@@ -100,3 +101,43 @@ def ensure_values_absent(report: dict[str, Any], values: tuple[str, ...]) -> Non
     output = render_json(report) + render_human(report)
     if any(value in output for value in values):
         raise UnsafeReportError
+
+
+def render_sarif(batch: dict[str, Any]) -> str:
+    """Render a deterministic SARIF 2.1.0 batch report without host paths."""
+    results: list[dict[str, Any]] = []
+    for item in batch.get("items", []):
+        location = item.get("path") or item.get("id", "item")
+        report = item.get("report", {})
+        for violation in report.get("violations", []):
+            result: dict[str, Any] = {
+                "level": "error" if item.get("status") in {"regression", "unresolved"} else "warning",
+                "message": {"text": str(violation.get("message", "TraceCanary finding"))},
+                "ruleId": str(violation.get("code", "TC000")),
+                "locations": [{"physicalLocation": {"artifactLocation": {"uri": str(location)}}}],
+            }
+            results.append(result)
+    payload = {
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [{"tool": {"driver": {"name": "TraceCanary", "informationUri": "https://github.com/oonyl/tracecanary"}}, "results": results}],
+    }
+    return canonical_json(payload)
+
+
+def render_junit(batch: dict[str, Any]) -> str:
+    """Render a deterministic JUnit XML batch report without timestamps."""
+    items = list(batch.get("items", []))
+    failures = sum(item.get("status") == "regression" for item in items)
+    errors = sum(item.get("status") == "unresolved" for item in items)
+    suite = ET.Element("testsuite", name="TraceCanary", tests=str(len(items)), failures=str(failures), errors=str(errors))
+    for item in items:
+        case = ET.SubElement(suite, "testcase", name=str(item.get("id", "item")))
+        status = item.get("status")
+        if status == "regression":
+            failure = ET.SubElement(case, "failure", type="regression")
+            failure.text = "TraceCanary regression"
+        elif status == "unresolved":
+            error = ET.SubElement(case, "error", type="unresolved")
+            error.text = "TraceCanary input unresolved"
+    return ET.tostring(suite, encoding="unicode", short_empty_elements=True) + "\n"

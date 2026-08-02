@@ -13,7 +13,16 @@ from tracecanary.comparison import diff_traces
 from tracecanary.contract import Contract, ContractError, load_contract
 from tracecanary.fixture import write_bundle
 from tracecanary.otlp import OtlpError, validate_trace
-from tracecanary.report import UnsafeReportError, build_report, ensure_values_absent, render_human, render_json
+from tracecanary.report import (
+    UnsafeReportError,
+    Violation,
+    build_report,
+    ensure_values_absent,
+    render_human,
+    render_json,
+    render_junit,
+    render_sarif,
+)
 
 
 EXIT_PASS = 0
@@ -36,6 +45,12 @@ def build_parser() -> argparse.ArgumentParser:
     diff.add_argument("--baseline", required=True, type=Path)
     diff.add_argument("--candidate", required=True, type=Path)
     diff.add_argument("--format", choices=("human", "json"), default="human")
+    batch = commands.add_parser("batch", help="check a bounded directory of OTLP trace exports")
+    batch.add_argument("--contract", required=True, type=Path)
+    batch.add_argument("--input-dir", required=True, type=Path)
+    batch.add_argument("--recursive", action="store_true")
+    batch.add_argument("--include-paths", action="store_true", help="include input-relative paths in reports")
+    batch.add_argument("--format", choices=("human", "json", "sarif", "junit"), default="json")
     fixture = commands.add_parser("fixture", help="write synthetic fixtures")
     fixture_commands = fixture.add_subparsers(dest="fixture_command", required=True)
     create = fixture_commands.add_parser("create", help="write the synthetic fixture bundle")
@@ -58,10 +73,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             return EXIT_PASS
         if args.command == "check":
             report = check_trace(contract, _load_trace(args.input, contract), mode="check")
-        else:
+        elif args.command == "diff":
             report = diff_traces(contract, _load_trace(args.baseline, contract), _load_trace(args.candidate, contract))
+            _print(report, args.format)
+            return _status_exit(report["status"])
+        else:
+            batch_report = _run_batch(contract, args.input_dir, args.recursive, args.include_paths)
+            _print_batch(batch_report, args.format)
+            return _status_exit(batch_report["status"])
         _print(report, args.format)
-        return EXIT_PASS if report["status"] == "pass" else EXIT_REGRESSION if report["status"] == "regression" else EXIT_UNRESOLVED
+        return _status_exit(report["status"])
     except UnsafeReportError:
         return EXIT_UNRESOLVED
     except (ContractError, InputError, OtlpError, ValueError) as exc:
@@ -75,5 +96,59 @@ def _load_trace(path: Path, contract: Contract) -> dict:
     return payload
 
 
+def _run_batch(contract: Contract, input_dir: Path, recursive: bool, include_paths: bool) -> dict:
+    if not input_dir.is_dir():
+        raise InputError("--input-dir must be a directory")
+    root = input_dir.resolve()
+    iterator = root.rglob("*.json") if recursive else root.glob("*.json")
+    paths = sorted(
+        (item for item in iterator if item.is_file() and not item.is_symlink() and item.resolve().is_relative_to(root)),
+        key=lambda item: (
+            item.relative_to(root).as_posix().casefold(),
+            item.relative_to(root).as_posix(),
+        ),
+    )
+    if len(paths) > 256:
+        raise InputError("batch input exceeds the 256-file limit")
+    items: list[dict] = []
+    for index, path in enumerate(paths, start=1):
+        item_id = f"item-{index:04d}"
+        relative = path.relative_to(root).as_posix()
+        try:
+            report = check_trace(contract, _load_trace(path, contract), mode="batch")
+        except (InputError, OtlpError, ValueError):
+            report = build_report(
+                contract.contract_version,
+                "unresolved",
+                [Violation("TC006", "", "input could not be validated")],
+                mode="batch",
+            )
+        item = {"id": item_id, "status": report["status"], "report": report}
+        if include_paths:
+            item["path"] = relative
+        items.append(item)
+    statuses = {item["status"] for item in items}
+    status = "unresolved" if "unresolved" in statuses else "regression" if "regression" in statuses else "pass"
+    return {"batch_version": "tracecanary.batch/v1", "contract_version": contract.contract_version, "status": status, "items": items}
+
+
 def _print(report: dict, output_format: str) -> None:
     print(render_json(report) if output_format == "json" else render_human(report), end="")
+
+
+def _print_batch(report: dict, output_format: str) -> None:
+    if output_format == "json":
+        output = render_json(report)
+    elif output_format == "sarif":
+        output = render_sarif(report)
+    elif output_format == "junit":
+        output = render_junit(report)
+    else:
+        lines = [f"TraceCanary batch: {report['status'].upper()} ({len(report['items'])} file(s))"]
+        lines.extend(f"- {item['id']}: {item['status']}" for item in report["items"])
+        output = "\n".join(lines) + "\n"
+    print(output, end="")
+
+
+def _status_exit(status: str) -> int:
+    return EXIT_PASS if status == "pass" else EXIT_REGRESSION if status == "regression" else EXIT_UNRESOLVED

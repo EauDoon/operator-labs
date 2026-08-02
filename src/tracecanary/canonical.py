@@ -20,6 +20,11 @@ def _no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
+def _reject_constant(value: str) -> None:
+    """Reject the non-standard NaN and Infinity spellings accepted by json.loads."""
+    raise InputError(f"JSON constant {value} is not permitted")
+
+
 def load_json(path: Path, *, max_bytes: int, max_depth: int) -> Any:
     """Load UTF-8 JSON while rejecting duplicate keys, large files and deep trees."""
     try:
@@ -33,7 +38,11 @@ def load_json(path: Path, *, max_bytes: int, max_depth: int) -> Any:
     except OSError as exc:
         raise InputError("input file cannot be read") from exc
     try:
-        data = json.loads(raw.decode("utf-8"), object_pairs_hook=_no_duplicates)
+        data = json.loads(
+            raw.decode("utf-8"),
+            object_pairs_hook=_no_duplicates,
+            parse_constant=_reject_constant,
+        )
     except UnicodeDecodeError as exc:
         raise InputError("input must be UTF-8 JSON") from exc
     except RecursionError as exc:

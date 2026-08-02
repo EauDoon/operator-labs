@@ -60,6 +60,15 @@ class GuiControllerTests(unittest.TestCase):
             self.assertEqual(result.exit_code, EXIT_UNRESOLVED)
             self.assertEqual(result.human + result.json, "")
 
+    def test_hostile_numeric_otlp_is_unresolved_without_gui_exception(self) -> None:
+        payload_text = '{"resourceSpans":[{"resource":{"attributes":[{"key":"service.name","value":{"doubleValue":' + "9" * 5001 + '} } ]},"scopeSpans":[]} ]}'
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "hostile.json"
+            path.write_text(payload_text, encoding="utf-8")
+            report = TraceCanaryController().check(FIXTURES / "contract.json", path)
+        self.assertEqual(report.status, "unresolved")
+        self.assertEqual(report.exit_code, EXIT_UNRESOLVED)
+
     def test_hostile_contract_error_is_unresolved_without_echoing_value(self) -> None:
         marker = "TCANARY_GUI_HOSTILE_9e12"
         contract = {

@@ -8,7 +8,7 @@ TraceCanary uses only the Python standard library at runtime. It has no network 
 
 ## Scope
 
-Supported in v0.1.0:
+Supported in v0.1.1:
 
 - OTLP/HTTP JSON traces with `resourceSpans`.
 - Exact synthetic-canary detection anywhere in a supported payload.
@@ -16,8 +16,9 @@ Supported in v0.1.0:
 - Required fields at resource, span, and event scope.
 - Baseline-to-candidate retained-field count comparison.
 - Stable JSON and human-readable reports.
+- Bounded directory checks with deterministic JSON, SARIF, and JUnit output.
 
-Not supported in v0.1.0:
+Not supported in v0.1.1:
 
 - Protobuf, logs, metrics, collector execution, or redaction.
 - Generic secret or PII discovery.
@@ -92,6 +93,7 @@ After installation, use:
 tracecanary validate contract.json
 tracecanary check --contract contract.json --input export.json
 tracecanary diff --contract contract.json --baseline safe.json --candidate changed.json
+tracecanary batch --contract contract.json --input-dir exports --format sarif
 tracecanary fixture create --output example/
 tracecanary-gui
 ```

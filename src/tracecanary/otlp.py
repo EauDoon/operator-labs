@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 import re
+import sys
 from typing import Any, Iterator
 
 
@@ -20,6 +21,38 @@ class Attribute:
 
 
 _INT64 = re.compile(r"(?:0|[1-9][0-9]*|-[1-9][0-9]*)$")
+_INT64_MIN = -(2**63)
+_INT64_MAX = 2**63 - 1
+_UINT32_MAX = 2**32 - 1
+
+
+def _validate_int64_string(value: Any, message: str) -> None:
+    if not isinstance(value, str) or not _INT64.fullmatch(value):
+        raise OtlpError(message)
+    if len(value.lstrip("-")) > 19:
+        raise OtlpError(message)
+    parsed = int(value)
+    if parsed < _INT64_MIN or parsed > _INT64_MAX:
+        raise OtlpError(message)
+
+
+def _validate_uint(value: Any, message: str, maximum: int = _UINT32_MAX) -> None:
+    if type(value) is not int or value < 0 or value > maximum:
+        raise OtlpError(message)
+
+
+def _validate_optional_string(item: dict[str, Any], key: str, message: str) -> None:
+    if key in item and not isinstance(item[key], str):
+        raise OtlpError(message)
+
+
+def _validate_scope(scope: Any) -> None:
+    if not isinstance(scope, dict) or set(scope) - {"name", "version", "attributes"}:
+        raise OtlpError("scope has unsupported fields")
+    _validate_optional_string(scope, "name", "scope.name must be a string")
+    _validate_optional_string(scope, "version", "scope.version must be a string")
+    if "attributes" in scope:
+        _validate_attributes(scope["attributes"], ("scope", "attributes"))
 
 
 def validate_trace(payload: Any) -> None:
@@ -37,12 +70,18 @@ def validate_trace(payload: Any) -> None:
         if not isinstance(resource, dict) or set(resource) - {"attributes", "droppedAttributesCount"}:
             raise OtlpError("resource has unsupported fields")
         _validate_attributes(resource.get("attributes", []), ("resourceSpans", str(resource_index), "resource", "attributes"))
+        if "droppedAttributesCount" in resource:
+            _validate_uint(resource["droppedAttributesCount"], "resource.droppedAttributesCount must be a uint32")
+        _validate_optional_string(resource_span, "schemaUrl", "resourceSpans.schemaUrl must be a string")
         scopes = resource_span["scopeSpans"]
         if not isinstance(scopes, list):
             raise OtlpError("scopeSpans must be a list")
         for scope_index, scope_span in enumerate(scopes):
             if not isinstance(scope_span, dict) or set(scope_span) - {"scope", "spans", "schemaUrl"}:
                 raise OtlpError("scopeSpans entries have unsupported fields")
+            if "scope" in scope_span:
+                _validate_scope(scope_span["scope"])
+            _validate_optional_string(scope_span, "schemaUrl", "scopeSpans.schemaUrl must be a string")
             spans = scope_span.get("spans")
             if not isinstance(spans, list):
                 raise OtlpError("scopeSpans entries require a spans list")
@@ -56,6 +95,14 @@ def _validate_span(span: Any, path: tuple[str, ...]) -> None:
         raise OtlpError("span has unsupported fields")
     if not isinstance(span.get("name"), str):
         raise OtlpError("span requires a string name")
+    for key in ("traceId", "spanId", "parentSpanId", "traceState"):
+        _validate_optional_string(span, key, f"span.{key} must be a string")
+    for key in ("startTimeUnixNano", "endTimeUnixNano"):
+        if key in span:
+            _validate_int64_string(span[key], f"span.{key} must be a signed int64 string")
+    for key in ("kind", "droppedAttributesCount", "droppedEventsCount", "droppedLinksCount", "flags"):
+        if key in span:
+            _validate_uint(span[key], f"span.{key} must be a uint32", maximum=5 if key == "kind" else _UINT32_MAX)
     _validate_attributes(span.get("attributes", []), path + ("attributes",))
     events = span.get("events", [])
     if not isinstance(events, list):
@@ -65,7 +112,30 @@ def _validate_span(span: Any, path: tuple[str, ...]) -> None:
             raise OtlpError("span event has unsupported fields")
         if not isinstance(event.get("name"), str):
             raise OtlpError("span event requires a string name")
+        if "timeUnixNano" in event:
+            _validate_int64_string(event["timeUnixNano"], "span event timeUnixNano must be a signed int64 string")
+        if "droppedAttributesCount" in event:
+            _validate_uint(event["droppedAttributesCount"], "span event droppedAttributesCount must be a uint32")
         _validate_attributes(event.get("attributes", []), path + ("events", str(event_index), "attributes"))
+    status = span.get("status")
+    if "status" in span:
+        if not isinstance(status, dict) or set(status) - {"message", "code"}:
+            raise OtlpError("span status has unsupported fields")
+        _validate_optional_string(status, "message", "span status message must be a string")
+        if "code" in status:
+            _validate_uint(status["code"], "span status code must be a uint32", maximum=2)
+    links = span.get("links")
+    if "links" in span:
+        if not isinstance(links, list):
+            raise OtlpError("span links must be a list")
+        for link in links:
+            if not isinstance(link, dict) or set(link) - {"traceId", "spanId", "traceState", "attributes", "droppedAttributesCount"}:
+                raise OtlpError("span link has unsupported fields")
+            for key in ("traceId", "spanId", "traceState"):
+                _validate_optional_string(link, key, f"span link {key} must be a string")
+            if "droppedAttributesCount" in link:
+                _validate_uint(link["droppedAttributesCount"], "span link droppedAttributesCount must be a uint32")
+            _validate_attributes(link.get("attributes", []), path + ("links", "attributes"))
 
 
 def _validate_attributes(attributes: Any, path: tuple[str, ...]) -> None:
@@ -98,10 +168,18 @@ def _validate_any_value(value: Any, path: tuple[str, ...]) -> None:
             if type(nested) is not bool:
                 raise OtlpError("boolValue must be a boolean")
         elif kind == "intValue":
-            if not isinstance(nested, str) or not _INT64.fullmatch(nested):
-                raise OtlpError("intValue must be an OTLP JSON int64 string")
+            _validate_int64_string(nested, "intValue must be an OTLP JSON int64 string")
         elif kind == "doubleValue":
-            if type(nested) not in {int, float} or not math.isfinite(nested):
+            if type(nested) is int:
+                try:
+                    finite = abs(nested) <= int(sys.float_info.max)
+                except (OverflowError, ValueError):
+                    finite = False
+            elif type(nested) is float:
+                finite = math.isfinite(nested)
+            else:
+                finite = False
+            if not finite:
                 raise OtlpError("doubleValue must be a finite JSON number")
         elif kind == "arrayValue":
             if not isinstance(nested, dict) or set(nested) != {"values"} or not isinstance(nested["values"], list):

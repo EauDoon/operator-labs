@@ -88,3 +88,22 @@ class ReportTests(unittest.TestCase):
             "violations": [{"code": "TC004", "message": "required operational field is absent", "path": ""}],
         }
         self.assertEqual(render_human(report), "TraceCanary: REGRESSION (1 finding(s))\n- TC004 required operational field is absent\n")
+
+    def test_batch_sarif_and_junit_are_deterministic_and_path_safe(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            inputs = root / "inputs"
+            inputs.mkdir()
+            safe = FIXTURES / "safe-export.json"
+            (inputs / "b.json").write_bytes(safe.read_bytes())
+            (inputs / "a.json").write_bytes(safe.read_bytes())
+            for output_format in ("sarif", "junit"):
+                rendered: list[str] = []
+                for _ in range(2):
+                    output = io.StringIO()
+                    with contextlib.redirect_stdout(output):
+                        status = main(["batch", "--contract", str(FIXTURES / "contract.json"), "--input-dir", str(inputs), "--format", output_format])
+                    self.assertEqual(status, EXIT_PASS)
+                    rendered.append(output.getvalue())
+                self.assertEqual(rendered[0], rendered[1])
+                self.assertNotIn(str(inputs), rendered[0])

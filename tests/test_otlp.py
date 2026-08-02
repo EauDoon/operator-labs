@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from tracecanary.canonical import load_json
+from tracecanary.canonical import InputError, load_json
 from tracecanary.otlp import OtlpError, iter_attributes, validate_trace
 
 
@@ -57,3 +57,19 @@ class OtlpTests(unittest.TestCase):
             ]
         }
         validate_trace(payload)
+
+    def test_int64_and_double_bounds_fail_closed(self) -> None:
+        for value in ("9223372036854775808", "-9223372036854775809"):
+            with self.subTest(value=value), self.assertRaises(OtlpError):
+                validate_trace({"resourceSpans": [{"resource": {"attributes": [{"key": "x", "value": {"intValue": value}}]}, "scopeSpans": []}]})
+        with self.assertRaises(OtlpError):
+            validate_trace({"resourceSpans": [{"resource": {"attributes": [{"key": "x", "value": {"doubleValue": 10**5000}}]}, "scopeSpans": []}]})
+
+    def test_non_json_constants_are_rejected_before_validation(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "nan.json"
+            path.write_text('{"resourceSpans":[],"unexpected":NaN}', encoding="utf-8")
+            with self.assertRaises(InputError):
+                load_json(path, max_bytes=1000, max_depth=10)
