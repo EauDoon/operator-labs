@@ -1,0 +1,9 @@
+route_id,parameter,value,expected_recipient_amount,expected_sender_cost,probability_by_deadline,probability_by_deadline_definition,tail_completion_time_hours
+fictional-linked-instant,fx_spread_bps,10,1703.01,6.42,0.98,successful completion by declared deadline,8
+fictional-linked-instant,fx_spread_bps,25,1700.45,6.42,0.98,successful completion by declared deadline,8
+fictional-linked-instant,fx_spread_bps,50,1696.19,6.42,0.98,successful completion by declared deadline,8
+fictional-linked-instant,fx_spread_bps,100,1687.66,6.42,0.98,successful completion by declared deadline,8
+fictional-tokenized-deposit,fx_spread_bps,10,1715.14,4.38,0.985,successful completion by declared deadline,0.5
+fictional-tokenized-deposit,fx_spread_bps,25,1712.56,4.38,0.985,successful completion by declared deadline,0.5
+fictional-tokenized-deposit,fx_spread_bps,50,1708.27,4.38,0.985,successful completion by declared deadline,0.5
+fictional-tokenized-deposit,fx_spread_bps,100,1699.69,4.38,0.985,successful completion by declared deadline,0.5

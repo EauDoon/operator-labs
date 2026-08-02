@@ -1,0 +1,20 @@
+{
+  "contract_version": "corridor-lab.scenario/v1",
+  "scenario_id": "fictional-amber-to-birch",
+  "description": "A fictional Amber to Birch corridor used only for deterministic model examples.",
+  "fictional": true,
+  "transaction": {
+    "send_amount": "1000.00",
+    "send_currency": "AMR",
+    "send_precision": 2,
+    "receive_currency": "BRC",
+    "receive_precision": 2,
+    "rounding": "ROUND_HALF_UP",
+    "deadline_hours": "12",
+    "volume_per_period": "100"
+  },
+  "objective": {
+    "metric": "maximize_expected_recipient_amount",
+    "guardrails": {"minimum_probability_by_deadline": "0.85", "maximum_tail_hours": "72"}
+  }
+}

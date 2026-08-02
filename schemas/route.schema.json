@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Corridor Lab fictional route v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "route_id", "label", "fictional", "fx_rate", "fixed_fee_send", "percent_fee_bps", "fx_spread_bps", "liquidity", "outcomes"],
+  "properties": {
+    "contract_version": {"const": "corridor-lab.route/v1"},
+    "route_id": {"type": "string", "minLength": 1},
+    "label": {"type": "string", "minLength": 1},
+    "fictional": {"const": true},
+    "fx_rate": {"$ref": "#/$defs/decimal"},
+    "fixed_fee_send": {"$ref": "#/$defs/decimal"},
+    "percent_fee_bps": {"$ref": "#/$defs/decimal"},
+    "fx_spread_bps": {"$ref": "#/$defs/decimal"},
+    "liquidity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["prefunding_amount_send", "annual_cost_of_capital_bps", "holding_days"],
+      "properties": {
+        "prefunding_amount_send": {"$ref": "#/$defs/decimal"},
+        "annual_cost_of_capital_bps": {"$ref": "#/$defs/decimal"},
+        "holding_days": {"$ref": "#/$defs/decimal"}
+      }
+    },
+    "outcomes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["outcome_id", "probability", "completion", "delay_hours", "recovery_amount_send", "recovery_delay_hours"],
+        "properties": {
+          "outcome_id": {"type": "string", "minLength": 1},
+          "probability": {"$ref": "#/$defs/decimal"},
+          "completion": {"enum": ["success", "failure"]},
+          "delay_hours": {"$ref": "#/$defs/decimal"},
+          "recovery_amount_send": {"$ref": "#/$defs/decimal"},
+          "recovery_delay_hours": {"$ref": "#/$defs/decimal"}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "decimal": {"type": ["string", "integer", "number"]}
+  }
+}

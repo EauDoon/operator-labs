@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "corridor-lab"
+version = "0.1.0"
+description = "Deterministic comparison of synthetic cross-border payment routes."
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "Apache-2.0"}
+authors = [{name = "Oonyl"}]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Office/Business :: Financial",
+]
+
+[project.scripts]
+corridorlab = "corridor_lab.cli:main"
+
+[project.gui-scripts]
+corridorlab-gui = "corridor_lab.gui:main"
+
+[project.urls]
+Source = "https://github.com/oonyl/corridor-lab"
+Issues = "https://github.com/oonyl/corridor-lab/issues"
+Security = "https://github.com/oonyl/corridor-lab/security/policy"
+Documentation = "https://github.com/oonyl/corridor-lab#readme"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

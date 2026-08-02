@@ -1,0 +1,16 @@
+{
+  "contract_version": "corridor-lab.route/v1",
+  "route_id": "fictional-correspondent-style",
+  "label": "Correspondent-style route template (fictional)",
+  "fictional": true,
+  "fx_rate": "1.7500",
+  "fixed_fee_send": "5.00",
+  "percent_fee_bps": "40",
+  "fx_spread_bps": "120",
+  "liquidity": {"prefunding_amount_send": "12000", "annual_cost_of_capital_bps": "650", "holding_days": "4"},
+  "outcomes": [
+    {"outcome_id": "on-time", "probability": "0.82", "completion": "success", "delay_hours": "18", "recovery_amount_send": "0", "recovery_delay_hours": "0"},
+    {"outcome_id": "late-success", "probability": "0.12", "completion": "success", "delay_hours": "60", "recovery_amount_send": "0", "recovery_delay_hours": "0"},
+    {"outcome_id": "failed-recovered", "probability": "0.06", "completion": "failure", "delay_hours": "24", "recovery_amount_send": "940", "recovery_delay_hours": "60"}
+  ]
+}

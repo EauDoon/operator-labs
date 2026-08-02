@@ -1,0 +1,16 @@
+{
+  "contract_version": "corridor-lab.route/v1",
+  "route_id": "fictional-fiat-token-bridge",
+  "label": "Fiat-backed token bridge route template (fictional)",
+  "fictional": true,
+  "fx_rate": "1.7500",
+  "fixed_fee_send": "2.50",
+  "percent_fee_bps": "25",
+  "fx_spread_bps": "55",
+  "liquidity": {"prefunding_amount_send": "4500", "annual_cost_of_capital_bps": "700", "holding_days": "0.8"},
+  "outcomes": [
+    {"outcome_id": "on-time", "probability": "0.91", "completion": "success", "delay_hours": "0.75", "recovery_amount_send": "0", "recovery_delay_hours": "0"},
+    {"outcome_id": "late-success", "probability": "0.06", "completion": "success", "delay_hours": "4", "recovery_amount_send": "0", "recovery_delay_hours": "0"},
+    {"outcome_id": "failed-recovered", "probability": "0.03", "completion": "failure", "delay_hours": "1", "recovery_amount_send": "960", "recovery_delay_hours": "24"}
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "contract_version": "corridor-lab.route/v1",
+  "route_id": "fictional-tokenized-deposit",
+  "label": "Tokenized-deposit shared-platform route template (fictional)",
+  "fictional": true,
+  "fx_rate": "1.7500",
+  "fixed_fee_send": "2.00",
+  "percent_fee_bps": "20",
+  "fx_spread_bps": "45",
+  "liquidity": {"prefunding_amount_send": "4000", "annual_cost_of_capital_bps": "600", "holding_days": "0.5"},
+  "outcomes": [
+    {"outcome_id": "on-time", "probability": "0.96", "completion": "success", "delay_hours": "0.5", "recovery_amount_send": "0", "recovery_delay_hours": "0"},
+    {"outcome_id": "late-success", "probability": "0.025", "completion": "success", "delay_hours": "2", "recovery_amount_send": "0", "recovery_delay_hours": "0"},
+    {"outcome_id": "failed-recovered", "probability": "0.015", "completion": "failure", "delay_hours": "1", "recovery_amount_send": "975", "recovery_delay_hours": "8"}
+  ]
+}

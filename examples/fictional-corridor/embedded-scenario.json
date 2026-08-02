@@ -1,0 +1,11 @@
+{
+  "contract_version": "corridor-lab.scenario/v1",
+  "scenario_id": "fictional-embedded-amber-to-birch",
+  "description": "A fully embedded fictional Amber to Birch scenario for evaluation and sensitivity examples.",
+  "fictional": true,
+  "transaction": {"send_amount": "1000.00", "send_currency": "AMR", "send_precision": 2, "receive_currency": "BRC", "receive_precision": 2, "rounding": "ROUND_HALF_UP", "deadline_hours": "12", "volume_per_period": "100"},
+  "routes": [
+    {"contract_version": "corridor-lab.route/v1", "route_id": "fictional-linked-instant", "label": "Linked instant-payment route template (fictional)", "fictional": true, "fx_rate": "1.7500", "fixed_fee_send": "3.00", "percent_fee_bps": "30", "fx_spread_bps": "75", "liquidity": {"prefunding_amount_send": "6500", "annual_cost_of_capital_bps": "650", "holding_days": "1.4"}, "outcomes": [{"outcome_id": "on-time", "probability": "0.94", "completion": "success", "delay_hours": "1.5", "recovery_amount_send": "0", "recovery_delay_hours": "0"}, {"outcome_id": "late-success", "probability": "0.04", "completion": "success", "delay_hours": "8", "recovery_amount_send": "0", "recovery_delay_hours": "0"}, {"outcome_id": "failed-recovered", "probability": "0.02", "completion": "failure", "delay_hours": "2", "recovery_amount_send": "980", "recovery_delay_hours": "12"}]},
+    {"contract_version": "corridor-lab.route/v1", "route_id": "fictional-tokenized-deposit", "label": "Tokenized-deposit shared-platform route template (fictional)", "fictional": true, "fx_rate": "1.7500", "fixed_fee_send": "2.00", "percent_fee_bps": "20", "fx_spread_bps": "45", "liquidity": {"prefunding_amount_send": "4000", "annual_cost_of_capital_bps": "600", "holding_days": "0.5"}, "outcomes": [{"outcome_id": "on-time", "probability": "0.96", "completion": "success", "delay_hours": "0.5", "recovery_amount_send": "0", "recovery_delay_hours": "0"}, {"outcome_id": "late-success", "probability": "0.025", "completion": "success", "delay_hours": "2", "recovery_amount_send": "0", "recovery_delay_hours": "0"}, {"outcome_id": "failed-recovered", "probability": "0.015", "completion": "failure", "delay_hours": "1", "recovery_amount_send": "975", "recovery_delay_hours": "8"}]}
+  ]
+}

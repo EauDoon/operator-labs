@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Corridor Lab fictional scenario v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "scenario_id", "description", "fictional", "transaction"],
+  "properties": {
+    "contract_version": {"const": "corridor-lab.scenario/v1"},
+    "scenario_id": {"type": "string", "minLength": 1},
+    "description": {"type": "string", "minLength": 1},
+    "fictional": {"const": true},
+    "transaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["send_amount", "send_currency", "send_precision", "receive_currency", "receive_precision", "rounding", "deadline_hours", "volume_per_period"],
+      "properties": {
+        "send_amount": {"$ref": "#/$defs/decimal"},
+        "send_currency": {"type": "string", "minLength": 1},
+        "send_precision": {"type": "integer", "minimum": 0, "maximum": 6},
+        "receive_currency": {"type": "string", "minLength": 1},
+        "receive_precision": {"type": "integer", "minimum": 0, "maximum": 6},
+        "rounding": {"enum": ["ROUND_HALF_UP", "ROUND_HALF_EVEN", "ROUND_DOWN", "ROUND_UP"]},
+        "deadline_hours": {"$ref": "#/$defs/decimal"},
+        "volume_per_period": {"$ref": "#/$defs/decimal"}
+      }
+    },
+    "routes": {"type": "array", "items": {"$ref": "route.schema.json"}},
+    "objective": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["metric", "guardrails"],
+      "properties": {
+        "metric": {"enum": ["maximize_expected_recipient_amount", "minimize_expected_sender_cost"]},
+        "guardrails": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "minimum_probability_by_deadline": {"$ref": "#/$defs/decimal"},
+            "maximum_tail_hours": {"$ref": "#/$defs/decimal"}
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "decimal": {"type": ["string", "integer", "number"]}
+  }
+}
