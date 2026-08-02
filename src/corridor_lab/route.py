@@ -16,8 +16,10 @@ from .canonical import (
     require_keys,
     local_decimal_context,
     require_object,
+    require_identifier,
     require_string,
 )
+from .canonical import MAX_OUTCOMES_PER_ROUTE
 from .outcomes import Outcome
 
 
@@ -75,6 +77,8 @@ def _parse_liquidity(value: Any, path: str) -> Liquidity:
 def _parse_outcomes(value: Any, path: str) -> tuple[Outcome, ...]:
     if not isinstance(value, list) or not value:
         raise InputError(f"{path} must be a non-empty array")
+    if len(value) > MAX_OUTCOMES_PER_ROUTE:
+        raise InputError(f"{path} exceeds the {MAX_OUTCOMES_PER_ROUTE}-outcome budget")
     parsed: list[Outcome] = []
     seen_ids: set[str] = set()
     for index, raw in enumerate(value):
@@ -93,7 +97,7 @@ def _parse_outcomes(value: Any, path: str) -> tuple[Outcome, ...]:
             set(),
             location,
         )
-        outcome_id = require_string(item["outcome_id"], f"{location}.outcome_id")
+        outcome_id = require_identifier(item["outcome_id"], f"{location}.outcome_id")
         if outcome_id in seen_ids:
             raise InputError(f"{path} has duplicate outcome_id: {outcome_id}")
         seen_ids.add(outcome_id)
@@ -150,7 +154,7 @@ def parse_route(value: Any, path: str = "route") -> Route:
     if not fictional:
         raise InputError(f"{path}.fictional must be true; Corridor Lab accepts synthetic routes only")
     route = Route(
-        route_id=require_string(item["route_id"], f"{path}.route_id"),
+        route_id=require_identifier(item["route_id"], f"{path}.route_id"),
         label=require_string(item["label"], f"{path}.label"),
         fictional=fictional,
         fx_rate=require_decimal(item["fx_rate"], f"{path}.fx_rate", positive=True),

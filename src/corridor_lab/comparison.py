@@ -6,7 +6,7 @@ from decimal import Decimal, DecimalException
 from itertools import combinations
 from typing import Iterable
 
-from .canonical import InputError, decimal_text, local_decimal_context
+from .canonical import InputError, MAX_ROUTE_PAIRS, decimal_text, local_decimal_context
 from .model import RouteEvaluation, evaluate_route
 from .route import Route
 from .scenario import Objective, Scenario, Transaction
@@ -147,6 +147,8 @@ def compare_routes(
     identifiers = [route.route_id for route in ordered_routes]
     if len(identifiers) != len(set(identifiers)):
         raise InputError("route identifiers must be unique")
+    if len(ordered_routes) * (len(ordered_routes) - 1) // 2 > MAX_ROUTE_PAIRS:
+        raise InputError(f"route pair comparison exceeds the {MAX_ROUTE_PAIRS}-pair budget")
     evaluations = [evaluate_route(route, transaction) for route in ordered_routes]
     report: dict[str, object] = {
         "report_version": "corridor-lab.report/v1",
@@ -165,6 +167,33 @@ def compare_routes(
         report["objective"] = _declared_objective(objective)
         report["ranking"] = _ranking(evaluations, objective)
     return report
+
+
+def pareto_frontier(evaluations: Iterable[RouteEvaluation]) -> list[dict[str, str]]:
+    """Return non-dominated routes for explicit recipient and sender-cost metrics."""
+    ordered = sorted(evaluations, key=lambda item: item.route.route_id)
+    frontier: list[RouteEvaluation] = []
+    for candidate in ordered:
+        dominated = any(
+            other.expected_recipient_amount >= candidate.expected_recipient_amount
+            and other.expected_sender_cost <= candidate.expected_sender_cost
+            and (
+                other.expected_recipient_amount > candidate.expected_recipient_amount
+                or other.expected_sender_cost < candidate.expected_sender_cost
+            )
+            for other in ordered
+            if other is not candidate
+        )
+        if not dominated:
+            frontier.append(candidate)
+    return [
+        {
+            "route_id": item.route.route_id,
+            "expected_recipient_amount": item.as_dict()["expected_recipient_amount"],
+            "expected_sender_cost": item.as_dict()["expected_sender_cost"],
+        }
+        for item in frontier
+    ]
 
 
 def evaluate_scenario(scenario: Scenario) -> dict[str, object]:

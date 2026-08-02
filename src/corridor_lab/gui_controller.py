@@ -8,12 +8,14 @@ from dataclasses import dataclass
 from decimal import Decimal, DecimalException
 from pathlib import Path
 
-from .canonical import InputError, parse_json_bytes, read_bounded_bytes, require_decimal
-from .comparison import compare_routes, evaluate_scenario
+from .canonical import InputError, atomic_write_text, parse_json_bytes, read_bounded_bytes, require_decimal
+from .comparison import compare_routes, evaluate_scenario, pareto_frontier
+from .model import evaluate_route
 from .report import render_report
 from .route import Route, load_route
 from .scenario import Scenario, parse_scenario, parse_scenario_text
 from .sensitivity import run_sensitivity
+from .stress import run_stress_grid
 
 
 BUILTIN_DEMO_SCENARIO = {
@@ -169,8 +171,7 @@ class CorridorGuiController:
         """Validate then explicitly save a draft without changing active state."""
         try:
             parse_scenario_text(text)
-            with Path(path).open("w", encoding="utf-8", newline="") as scenario_file:
-                scenario_file.write(text)
+            atomic_write_text(Path(path), text)
             self.last_error = None
             return ActionResult({}, None)
         except (InputError, OSError, ValueError, DecimalException) as exc:
@@ -231,6 +232,26 @@ class CorridorGuiController:
         except (InputError, OSError, ValueError, DecimalException) as exc:
             return self._failure(exc)
 
+    def stress_grid(self, parameter_a: str, values_a_text: str, parameter_b: str, values_b_text: str) -> ActionResult:
+        try:
+            scenario = self._require_scenario()
+            values_a = [require_decimal(chunk.strip(), "stress value") for chunk in values_a_text.split(",") if chunk.strip()]
+            values_b = [require_decimal(chunk.strip(), "stress value") for chunk in values_b_text.split(",") if chunk.strip()]
+            return self._success(run_stress_grid(scenario, parameter_a.strip(), values_a, parameter_b.strip(), values_b))
+        except (InputError, OSError, ValueError, DecimalException) as exc:
+            return self._failure(exc)
+
+    def pareto(self) -> ActionResult:
+        try:
+            scenario = self._require_scenario()
+            routes = self.selected_routes or scenario.routes
+            if not routes:
+                raise InputError("Pareto frontier requires routes embedded in the scenario or a route selection")
+            evaluations = [evaluate_route(route, scenario.transaction) for route in sorted(routes, key=lambda item: item.route_id)]
+            return self._success({"report_version": "corridor-lab.pareto/v1", "scenario_id": scenario.scenario_id, "fictional": True, "frontier": pareto_frontier(evaluations)})
+        except (InputError, OSError, ValueError, DecimalException) as exc:
+            return self._failure(exc)
+
     def render_last_report(self, output_format: str) -> str | None:
         if self.last_report is None:
             self.last_error = "run Compare, Evaluate, or Sensitivity before previewing or saving a report"
@@ -248,8 +269,7 @@ class CorridorGuiController:
         if text is None:
             return ActionResult(None, self.last_error)
         try:
-            with Path(path).open("w", encoding="utf-8", newline="") as report_file:
-                report_file.write(text)
+            atomic_write_text(Path(path), text)
             self.last_error = None
             return ActionResult(self.last_report, None)
         except OSError as exc:

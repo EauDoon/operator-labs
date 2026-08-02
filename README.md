@@ -18,6 +18,9 @@ corridorlab validate examples/fictional-corridor/scenario.json
 corridorlab compare examples/fictional-corridor/scenario.json --routes examples/fictional-corridor/routes
 corridorlab evaluate examples/fictional-corridor/embedded-scenario.json --format markdown
 corridorlab sensitivity examples/fictional-corridor/embedded-scenario.json --parameter fx_spread_bps --values 10,25,50,100
+corridorlab stress-grid examples/fictional-corridor/embedded-scenario.json --parameter-a fx_rate --values-a 1.7,1.8 --parameter-b fx_spread_bps --values-b 25,50
+corridorlab pareto examples/fictional-corridor/embedded-scenario.json --format markdown
+corridorlab batch examples/fictional-corridor/portfolio --format json
 corridorlab-gui
 corridorlab-gui --smoke-test
 ```
@@ -40,6 +43,8 @@ that has no repository file dependency. The screen then provides:
 - An editable in-memory scenario JSON window with a fictional template, strict
   **Validate and Use**, and explicit **Save Scenario As...** controls.
 - Compare, Evaluate Embedded, and one-parameter Sensitivity actions.
+- A Pareto Frontier action that shows expected recipient amount and expected sender cost as separate metrics.
+- A bounded 2D Grid action for two declared parameters, with no hidden composite score.
 - Markdown, JSON, and CSV previews plus a text-first **Explain Report** view
   that defines currencies, outcome metrics, timing, ranking, and break-even.
 - **Save Scenario As...** and **Save Report...**, the only GUI actions that
@@ -67,6 +72,7 @@ chosen.
   time to a final state.
 - Pairwise break-even transaction volume for declared sender-currency costs.
 - One-parameter sensitivity analysis.
+- Bounded scenario portfolios, explicit two-parameter stress grids, and a Pareto frontier with no composite score.
 
 The default `compare` report has no ranking. A ranking is emitted only when a
 scenario explicitly states an objective and at least one guardrail.
@@ -85,6 +91,9 @@ corridorlab validate scenario.json
 corridorlab evaluate scenario.json [--format json|csv|markdown] [--output FILE]
 corridorlab compare scenario.json --routes ROUTE_FILE_OR_DIRECTORY [--format json|csv|markdown] [--output FILE]
 corridorlab sensitivity scenario.json --parameter fx_spread_bps --values 10,25,50,100 [--format json|csv|markdown] [--output FILE]
+corridorlab stress-grid scenario.json --parameter-a fx_rate --values-a 1.7,1.8 --parameter-b fx_spread_bps --values-b 25,50 [--format json|csv|markdown] [--output FILE]
+corridorlab pareto scenario.json [--format json|markdown] [--output FILE]
+corridorlab batch SCENARIO_DIRECTORY [--recursive] [--include-paths] [--format json|markdown] [--output FILE]
 ```
 
 `evaluate` and `sensitivity` use the routes embedded in the scenario.

@@ -1,7 +1,10 @@
 import unittest
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from helpers import route, scenario
+from corridor_lab.canonical import atomic_write_text
 from corridor_lab.comparison import evaluate_scenario
 from corridor_lab.report import render_report
 from corridor_lab.scenario import parse_scenario
@@ -42,9 +45,18 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(render_report(report, "markdown"), expected)
 
     def test_csv_formula_text_is_prefixed_with_an_apostrophe(self):
-        data = route(" \t=1+1")
+        data = route("formula-route")
         data["label"] = " \r@SUM(A1:A2)"
         report = evaluate_scenario(parse_scenario(scenario(routes=[data])))
         csv_text = render_report(report, "csv")
-        self.assertIn("' \t=1+1", csv_text)
         self.assertIn("' \r@SUM(A1:A2)", csv_text)
+
+    def test_atomic_write_preserves_target_and_removes_temporary_file_on_replace_failure(self):
+        with TemporaryDirectory() as directory:
+            target = Path(directory) / "report.json"
+            target.write_text("old\n", encoding="utf-8")
+            with patch("corridor_lab.canonical.os.replace", side_effect=OSError("replace failed")):
+                with self.assertRaises(OSError):
+                    atomic_write_text(target, "new\n")
+            self.assertEqual(target.read_text(encoding="utf-8"), "old\n")
+            self.assertEqual(list(Path(directory).glob("*.tmp")), [])

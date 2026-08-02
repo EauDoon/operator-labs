@@ -75,6 +75,12 @@ def run_smoke_test() -> int:
     csv_text = controller.render_last_report("csv")
     if csv_text is None or "probability_by_deadline_definition" not in csv_text:
         return 1
+    stress_grid = controller.stress_grid("fx_rate", "1.7,1.8", "fx_spread_bps", "25,50")
+    if stress_grid.error is not None:
+        return 1
+    pareto = controller.pareto()
+    if pareto.error is not None or controller.render_last_report("markdown") is None:
+        return 1
     _write_smoke_status()
     return 0
 
@@ -95,6 +101,8 @@ def launch_gui() -> int:
             self.routes_var = tk.StringVar(value=self.controller.routes_source)
             self.parameter_var = tk.StringVar(value="fx_spread_bps")
             self.values_var = tk.StringVar(value="10,25,50,100")
+            self.parameter_b_var = tk.StringVar(value="fx_rate")
+            self.values_b_var = tk.StringVar(value="1.7,1.8")
             self.status_var = tk.StringVar(value="Load the built-in fictional demo or select your own fictional inputs.")
             self.editor_window = None
             self.editor_text = None
@@ -137,19 +145,24 @@ def launch_gui() -> int:
 
             actions = ttk_module.LabelFrame(frame, text="Actions", padding=8)
             actions.grid(row=5, column=0, columnspan=3, sticky="ew", pady=(10, 8))
-            actions.columnconfigure(7, weight=1)
+            actions.columnconfigure(11, weight=1)
             ttk_module.Button(actions, text="Compare", command=self._compare).grid(row=0, column=0, padx=(0, 5))
             ttk_module.Button(actions, text="Evaluate Embedded", command=self._evaluate).grid(row=0, column=1, padx=5)
-            ttk_module.Label(actions, text="Sensitivity").grid(row=0, column=2, padx=(15, 3))
-            ttk_module.Entry(actions, textvariable=self.parameter_var, width=18).grid(row=0, column=3, padx=3)
-            ttk_module.Entry(actions, textvariable=self.values_var, width=18).grid(row=0, column=4, padx=3)
-            ttk_module.Button(actions, text="Run", command=self._sensitivity).grid(row=0, column=5, padx=(3, 15))
-            ttk_module.Label(actions, text="Preview format").grid(row=0, column=6, padx=(0, 3))
+            ttk_module.Button(actions, text="Pareto Frontier", command=self._pareto).grid(row=0, column=2, padx=5)
+            ttk_module.Label(actions, text="Sensitivity").grid(row=0, column=3, padx=(15, 3))
+            ttk_module.Entry(actions, textvariable=self.parameter_var, width=18).grid(row=0, column=4, padx=3)
+            ttk_module.Entry(actions, textvariable=self.values_var, width=18).grid(row=0, column=5, padx=3)
+            ttk_module.Button(actions, text="Run", command=self._sensitivity).grid(row=0, column=6, padx=(3, 15))
+            ttk_module.Label(actions, text="2D Grid B").grid(row=0, column=7, padx=(0, 3))
+            ttk_module.Entry(actions, textvariable=self.parameter_b_var, width=14).grid(row=0, column=8, padx=3)
+            ttk_module.Entry(actions, textvariable=self.values_b_var, width=14).grid(row=0, column=9, padx=3)
+            ttk_module.Button(actions, text="Grid", command=self._stress_grid).grid(row=0, column=10, padx=(3, 15))
+            ttk_module.Label(actions, text="Preview format").grid(row=0, column=11, padx=(0, 3))
             format_box = ttk_module.Combobox(actions, textvariable=self.format_var, values=("markdown", "json", "csv"), state="readonly", width=10)
-            format_box.grid(row=0, column=7, sticky="w")
+            format_box.grid(row=0, column=12, sticky="w")
             format_box.bind("<<ComboboxSelected>>", lambda _event: self._refresh_preview())
-            ttk_module.Button(actions, text="Save Report...", command=self._save_report).grid(row=0, column=8, padx=(12, 0))
-            ttk_module.Button(actions, text="Explain Report", command=self._explain_report).grid(row=0, column=9, padx=(6, 0))
+            ttk_module.Button(actions, text="Save Report...", command=self._save_report).grid(row=0, column=13, padx=(12, 0))
+            ttk_module.Button(actions, text="Explain Report", command=self._explain_report).grid(row=0, column=14, padx=(6, 0))
 
             self.preview = scrolledtext_module.ScrolledText(frame, wrap="word", height=24, font=("TkFixedFont", 10))
             self.preview.grid(row=6, column=0, columnspan=3, sticky="nsew")
@@ -337,6 +350,20 @@ def launch_gui() -> int:
 
         def _evaluate(self) -> None:
             self._complete(self.controller.evaluate(), "Embedded-route evaluation complete.")
+
+        def _pareto(self) -> None:
+            self._complete(self.controller.pareto(), "Pareto frontier calculated with explicit metrics.")
+
+        def _stress_grid(self) -> None:
+            self._complete(
+                self.controller.stress_grid(
+                    self.parameter_var.get(),
+                    self.values_var.get(),
+                    self.parameter_b_var.get(),
+                    self.values_b_var.get(),
+                ),
+                "Two-parameter stress grid calculated without a composite score.",
+            )
 
         def _sensitivity(self) -> None:
             self._complete(

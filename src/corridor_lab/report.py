@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import csv
 import io
+import html
 from typing import Any
 
-from .canonical import canonical_dumps
+from .canonical import MAX_REPORT_BYTES, canonical_dumps
 
 
 def _safe_csv_cell(value: object) -> object:
@@ -31,9 +32,31 @@ def _csv_text(rows: list[dict[str, object]], fields: list[str]) -> str:
 
 
 def render_csv(report: dict[str, object]) -> str:
+    if report.get("report_version") == "corridor-lab.pareto/v1":
+        frontier = report.get("frontier")
+        if not isinstance(frontier, list):
+            raise ValueError("Pareto report has no frontier rows")
+        return _csv_text(
+            [dict(item) for item in frontier],
+            ["route_id", "expected_recipient_amount", "expected_sender_cost"],
+        )
     if "rows" in report:
         rows = report["rows"]
         assert isinstance(rows, list)
+        if report.get("report_version") == "corridor-lab.stress-grid/v1":
+            return _csv_text(
+                [dict(row) for row in rows],
+                [
+                    "route_id",
+                    "parameter_a",
+                    "value_a",
+                    "parameter_b",
+                    "value_b",
+                    "expected_recipient_amount",
+                    "expected_sender_cost",
+                    "probability_by_deadline",
+                ],
+            )
         return _csv_text(
             [dict(row) for row in rows],
             [
@@ -104,7 +127,7 @@ def render_csv(report: dict[str, object]) -> str:
 
 
 def _cell(value: object) -> str:
-    return str(value).replace("|", "\\|").replace("\n", " ")
+    return html.escape(str(value).replace("\n", " ").replace("\r", " "), quote=True).replace("|", "\\|").replace("`", "&#96;")
 
 
 def _currency(report: dict[str, object], key: str, fallback: str) -> str:
@@ -183,7 +206,31 @@ def _sensitivity_explanation() -> list[str]:
 def render_markdown(report: dict[str, object]) -> str:
     scenario_id = _cell(report.get("scenario_id", "ad-hoc"))
     lines = ["# Corridor Lab report", "", f"Synthetic scenario: `{scenario_id}`", ""]
+    if report.get("report_version") == "corridor-lab.batch/v1":
+        lines = ["# Corridor Lab batch report", "", f"Status: `{_cell(report.get('status', 'unresolved'))}`", "", "| Item | Status |", "| --- | --- |"]
+        for item in report.get("items", []):
+            lines.append(f"| {_cell(item.get('id', ''))} | {_cell(item.get('status', 'unresolved'))} |")
+        return "\n".join(lines) + "\n"
+    if report.get("report_version") == "corridor-lab.pareto/v1":
+        lines = ["# Corridor Lab Pareto frontier", "", f"Synthetic scenario: `{scenario_id}`", "", "| Route | Expected recipient | Expected sender cost |", "| --- | ---: | ---: |"]
+        for item in report.get("frontier", []):
+            lines.append(f"| {_cell(item.get('route_id', ''))} | {_cell(item.get('expected_recipient_amount', ''))} | {_cell(item.get('expected_sender_cost', ''))} |")
+        lines.extend(["", "Both explicit metrics remain visible. No composite score is calculated."])
+        return "\n".join(lines) + "\n"
     if "rows" in report:
+        if report.get("report_version") == "corridor-lab.stress-grid/v1":
+            lines.extend(
+                [
+                    "| Route | Value A | Value B | Expected recipient | Expected sender cost | Successful by deadline probability |",
+                    "| --- | ---: | ---: | ---: | ---: | ---: |",
+                ]
+            )
+            for row in report["rows"]:
+                lines.append(
+                    "| " + " | ".join(_cell(row[name]) for name in ("route_id", "value_a", "value_b", "expected_recipient_amount", "expected_sender_cost", "probability_by_deadline")) + " |"
+                )
+            lines.extend(["", "This is an explicit two-parameter stress grid. No composite score is calculated."])
+            return "\n".join(lines) + "\n"
         lines.extend(
             [
                 "| Route | Parameter | Value | Expected recipient | Expected sender cost | Successful by deadline probability | Tail hours |",
@@ -242,15 +289,24 @@ def render_markdown(report: dict[str, object]) -> str:
         lines.append("| ---: | --- | ---: |")
         for item in ranking["eligible_routes"]:
             lines.append(f"| {_cell(item['rank'])} | {_cell(item['route_id'])} | {_cell(item['objective_value'])} |")
+    frontier = report.get("pareto_frontier")
+    if isinstance(frontier, list):
+        lines.extend(["", "## Pareto frontier", "", "The frontier keeps both explicit metrics visible: expected recipient amount is maximized and expected sender cost is minimized.", "", "| Route | Expected recipient | Expected sender cost |", "| --- | ---: | ---: |"])
+        for item in frontier:
+            lines.append(f"| {_cell(item.get('route_id', ''))} | {_cell(item.get('expected_recipient_amount', ''))} | {_cell(item.get('expected_sender_cost', ''))} |")
     lines.extend(_comparison_explanation(report))
     return "\n".join(lines) + "\n"
 
 
 def render_report(report: dict[str, object], output_format: str) -> str:
     if output_format == "json":
-        return canonical_dumps(report)
-    if output_format == "csv":
-        return render_csv(report)
-    if output_format == "markdown":
-        return render_markdown(report)
-    raise ValueError(f"unsupported report format: {output_format}")
+        text = canonical_dumps(report)
+    elif output_format == "csv":
+        text = render_csv(report)
+    elif output_format == "markdown":
+        text = render_markdown(report)
+    else:
+        raise ValueError(f"unsupported report format: {output_format}")
+    if len(text.encode("utf-8")) > MAX_REPORT_BYTES:
+        raise ValueError(f"report exceeds the {MAX_REPORT_BYTES}-byte budget")
+    return text

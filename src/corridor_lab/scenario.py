@@ -14,9 +14,11 @@ from .canonical import (
     require_bool,
     require_decimal,
     require_integer,
+    require_identifier,
     require_keys,
     require_object,
     require_string,
+    MAX_ROUTES,
 )
 from .route import Route, parse_route
 
@@ -78,9 +80,9 @@ def _parse_transaction(value: Any) -> Transaction:
         raise InputError(f"{path}.rounding must be one of {', '.join(sorted(ROUNDING_NAMES))}")
     return Transaction(
         send_amount=require_decimal(item["send_amount"], f"{path}.send_amount", positive=True),
-        send_currency=require_string(item["send_currency"], f"{path}.send_currency"),
+        send_currency=require_identifier(item["send_currency"], f"{path}.send_currency", maximum=16),
         send_precision=require_integer(item["send_precision"], f"{path}.send_precision", minimum=0, maximum=6),
-        receive_currency=require_string(item["receive_currency"], f"{path}.receive_currency"),
+        receive_currency=require_identifier(item["receive_currency"], f"{path}.receive_currency", maximum=16),
         receive_precision=require_integer(item["receive_precision"], f"{path}.receive_precision", minimum=0, maximum=6),
         rounding=rounding,
         deadline_hours=require_decimal(item["deadline_hours"], f"{path}.deadline_hours", minimum=Decimal("0")),
@@ -138,12 +140,14 @@ def parse_scenario(value: Any) -> Scenario:
     routes_raw = item.get("routes", [])
     if not isinstance(routes_raw, list):
         raise InputError("scenario.routes must be an array")
+    if len(routes_raw) > MAX_ROUTES:
+        raise InputError(f"scenario.routes exceeds the {MAX_ROUTES}-route budget")
     routes = tuple(parse_route(route, f"scenario.routes[{index}]") for index, route in enumerate(routes_raw))
     identifiers = [route.route_id for route in routes]
     if len(identifiers) != len(set(identifiers)):
         raise InputError("scenario.routes has duplicate route_id values")
     return Scenario(
-        scenario_id=require_string(item["scenario_id"], "scenario.scenario_id"),
+        scenario_id=require_identifier(item["scenario_id"], "scenario.scenario_id"),
         description=require_string(item["description"], "scenario.description"),
         fictional=fictional,
         transaction=_parse_transaction(item["transaction"]),

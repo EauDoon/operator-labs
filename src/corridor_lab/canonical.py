@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
+import re
+import tempfile
 from decimal import Context, Decimal, DecimalException, ROUND_HALF_EVEN, localcontext
 from pathlib import Path
 from typing import Any
@@ -13,6 +16,13 @@ MAX_NESTING = 64
 MAX_DECIMAL_SIGNIFICANT_DIGITS = 18
 MAX_DECIMAL_SCALE = 12
 MAX_DECIMAL_ADJUSTED = 18
+MAX_ROUTES = 64
+MAX_OUTCOMES_PER_ROUTE = 64
+MAX_SENSITIVITY_VALUES = 64
+MAX_SENSITIVITY_ROWS = 512
+MAX_ROUTE_PAIRS = 1024
+MAX_BATCH_SCENARIOS = 64
+MAX_REPORT_BYTES = 5_000_000
 FIXED_DECIMAL_CONTEXT = Context(
     prec=50,
     rounding=ROUND_HALF_EVEN,
@@ -41,6 +51,10 @@ def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
+def _reject_constant(value: str) -> None:
+    raise InputError(f"JSON constant {value} is not permitted")
+
+
 def _check_nesting(value: Any, depth: int = 0) -> None:
     if depth > MAX_NESTING:
         raise InputError(f"JSON nesting exceeds {MAX_NESTING}")
@@ -62,6 +76,7 @@ def parse_json_bytes(raw: bytes) -> Any:
             object_pairs_hook=_unique_object,
             parse_float=Decimal,
             parse_int=Decimal,
+            parse_constant=_reject_constant,
         )
     except (UnicodeDecodeError, json.JSONDecodeError, RecursionError, DecimalException) as exc:
         raise InputError(f"invalid JSON: {exc}") from exc
@@ -136,6 +151,14 @@ def require_string(value: Any, path: str, *, nonempty: bool = True) -> str:
     return value
 
 
+def require_identifier(value: Any, path: str, *, maximum: int = 64) -> str:
+    """Require a stable, non-markup identifier for report contexts."""
+    text = require_string(value, path)
+    if len(text) > maximum or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/-]*", text) is None:
+        raise InputError(f"{path} must be an identifier using letters, numbers, dot, underscore, colon, slash, or hyphen")
+    return text
+
+
 def require_bool(value: Any, path: str) -> bool:
     if not isinstance(value, bool):
         raise InputError(f"{path} must be a boolean")
@@ -185,3 +208,27 @@ def require_integer(value: Any, path: str, *, minimum: int, maximum: int) -> int
     if Decimal(integer) != parsed or integer < minimum or integer > maximum:
         raise InputError(f"{path} must be an integer from {minimum} to {maximum}")
     return integer
+
+
+def atomic_write_text(path: str | Path, text: str, *, max_bytes: int = MAX_REPORT_BYTES) -> None:
+    """Write UTF-8 text using a same-directory replace after a bounded fsync."""
+    raw = text.encode("utf-8")
+    if len(raw) > max_bytes:
+        raise InputError(f"output exceeds {max_bytes} bytes")
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile("wb", prefix=f".{target.name}.", suffix=".tmp", dir=target.parent, delete=False) as handle:
+            temporary = handle.name
+            handle.write(raw)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, target)
+        temporary = None
+    finally:
+        if temporary:
+            try:
+                os.unlink(temporary)
+            except OSError:
+                pass

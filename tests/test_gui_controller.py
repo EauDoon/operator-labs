@@ -24,6 +24,8 @@ class GuiControllerTests(unittest.TestCase):
         self.assertIsNone(controller.evaluate().error)
         self.assertIsNone(controller.sensitivity("fx_spread_bps", "10,25,50").error)
         self.assertIn("probability_by_deadline_definition", controller.render_last_report("csv"))
+        self.assertIsNone(controller.pareto().error)
+        self.assertTrue(controller.render_last_report("csv").startswith("route_id,"))
 
     def test_file_scenario_and_route_folder_drive_compare(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -41,13 +43,12 @@ class GuiControllerTests(unittest.TestCase):
             self.assertEqual(result.report["routes"][0]["route_id"], "fictional-selected-route")
 
     def test_formula_safe_csv_export_and_explicit_save(self):
-        malicious = route(" \t=1+1")
+        malicious = route("formula-route")
         malicious["label"] = " \r@SUM(A1:A2)"
         controller = CorridorGuiController()
         controller.scenario = parse_scenario(scenario(routes=[malicious]))
         self.assertIsNone(controller.evaluate().error)
         csv_text = controller.render_last_report("csv")
-        self.assertIn("' \t=1+1", csv_text)
         self.assertIn("' \r@SUM(A1:A2)", csv_text)
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / "report.csv"
