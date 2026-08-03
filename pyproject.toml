@@ -9,7 +9,7 @@ description = "Deterministic comparison of synthetic cross-border payment routes
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "Apache-2.0"}
-authors = [{name = "Oonyl"}]
+authors = [{name = "EauDoon"}]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "License :: OSI Approved :: Apache Software License",
@@ -26,10 +26,10 @@ corridorlab = "corridor_lab.cli:main"
 corridorlab-gui = "corridor_lab.gui:main"
 
 [project.urls]
-Source = "https://github.com/oonyl/corridor-lab"
-Issues = "https://github.com/oonyl/corridor-lab/issues"
-Security = "https://github.com/oonyl/corridor-lab/security/policy"
-Documentation = "https://github.com/oonyl/corridor-lab#readme"
+Source = "https://github.com/EauDoon/corridor-lab"
+Issues = "https://github.com/EauDoon/corridor-lab/issues"
+Security = "https://github.com/EauDoon/corridor-lab/security/policy"
+Documentation = "https://github.com/EauDoon/corridor-lab#readme"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
