@@ -120,7 +120,7 @@ def render_sarif(batch: dict[str, Any]) -> str:
     payload = {
         "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
         "version": "2.1.0",
-        "runs": [{"tool": {"driver": {"name": "TraceCanary", "informationUri": "https://github.com/oonyl/tracecanary"}}, "results": results}],
+        "runs": [{"tool": {"driver": {"name": "TraceCanary", "informationUri": "https://github.com/EauDoon/tracecanary"}}, "results": results}],
     }
     return canonical_json(payload)
 

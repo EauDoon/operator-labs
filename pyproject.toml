@@ -9,7 +9,7 @@ description = "Deterministic privacy-regression checks for synthetic OTLP trace 
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "Apache-2.0"}
-authors = [{name = "Oonyl"}]
+authors = [{name = "EauDoon"}]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "License :: OSI Approved :: Apache Software License",
@@ -20,10 +20,10 @@ classifiers = [
 ]
 
 [project.urls]
-Source = "https://github.com/oonyl/tracecanary"
-Issues = "https://github.com/oonyl/tracecanary/issues"
-Security = "https://github.com/oonyl/tracecanary/security/policy"
-Documentation = "https://github.com/oonyl/tracecanary#readme"
+Source = "https://github.com/EauDoon/tracecanary"
+Issues = "https://github.com/EauDoon/tracecanary/issues"
+Security = "https://github.com/EauDoon/tracecanary/security/policy"
+Documentation = "https://github.com/EauDoon/tracecanary#readme"
 
 [project.scripts]
 tracecanary = "tracecanary.cli:main"
