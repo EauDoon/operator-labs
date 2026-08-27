@@ -6,6 +6,8 @@ It is a deterministic offline checker for resource attributes, span attributes, 
 
 TraceCanary uses only the Python standard library at runtime. It has no network client, credentials, telemetry, account requirement, or production-data fixture.
 
+![Flow diagram showing a pinned privacy contract applied to baseline and candidate trace exports, producing pass, regression, or unresolved reports.](https://raw.githubusercontent.com/EauDoon/tracecanary/main/.github/assets/project-overview.svg)
+
 ## Scope
 
 Supported in v0.1.1:
