@@ -114,6 +114,8 @@ def _run_batch(contract: Contract, input_dir: Path, recursive: bool, include_pat
             item.relative_to(root).as_posix(),
         ),
     )
+    if not paths:
+        raise InputError("batch input contains no JSON files")
     if len(paths) > 256:
         raise InputError("batch input exceeds the 256-file limit")
     items: list[dict] = []

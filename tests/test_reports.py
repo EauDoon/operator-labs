@@ -207,6 +207,23 @@ class ReportTests(unittest.TestCase):
             self.assertEqual(report["status"], "unresolved")
             self.assertEqual(report["items"][0]["report"]["violations"][0]["code"], "TC006")
 
+    def test_empty_batch_is_unresolved(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = io.StringIO()
+            error = io.StringIO()
+            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
+                status = main([
+                    "batch",
+                    "--contract",
+                    str(FIXTURES / "contract.json"),
+                    "--input-dir",
+                    directory,
+                ])
+
+            self.assertEqual(status, EXIT_UNRESOLVED)
+            self.assertEqual(output.getvalue(), "")
+            self.assertIn("no JSON files", error.getvalue())
+
     def test_fixture_command_writes_the_synthetic_bundle(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = io.StringIO()
