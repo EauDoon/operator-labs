@@ -8,7 +8,7 @@ from pathlib import Path
 from helpers import route, scenario
 from corridor_lab.gui import run_smoke_test
 from corridor_lab.gui_controller import CorridorGuiController
-from corridor_lab.canonical import MAX_INPUT_BYTES
+from corridor_lab.canonical import MAX_INPUT_BYTES, MAX_ROUTES
 from corridor_lab.scenario import parse_scenario
 
 
@@ -103,3 +103,12 @@ class GuiControllerTests(unittest.TestCase):
             result = CorridorGuiController().load_scenario_file(path)
         self.assertIsNone(result.report)
         self.assertIn("input exceeds", result.error)
+
+    def test_gui_route_folder_is_bounded_before_files_are_parsed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for index in range(MAX_ROUTES + 1):
+                (root / f"route-{index}.json").touch()
+            result = CorridorGuiController().load_routes_path(root)
+        self.assertIsNone(result.report)
+        self.assertIn(f"exceeds the {MAX_ROUTES}-route budget", result.error)
