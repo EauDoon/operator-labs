@@ -15,9 +15,24 @@ from tracecanary.gui_controller import EXIT_PASS, EXIT_UNRESOLVED, GuiResult, Tr
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="tracecanary-gui", description="TraceCanary desktop interface")
-    parser.add_argument("--smoke-test", action="store_true", help="exercise the controller and built-in demo without opening a window")
-    args = parser.parse_args(argv)
+    parser = argparse.ArgumentParser(
+        prog="tracecanary-gui",
+        description=(
+            "Offline desktop interface for TraceCanary privacy-regression checks. "
+            "Reports are written only through Save Report; starter files are written "
+            "only into an empty directory chosen by the user."
+        ),
+        allow_abbrev=False,
+    )
+    parser.add_argument(
+        "--smoke-test",
+        action="store_true",
+        help="exercise the controller and built-in demo without opening a window",
+    )
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit as exc:
+        return EXIT_PASS if exc.code in (0, None) else EXIT_UNRESOLVED
     if args.smoke_test:
         return smoke_test()
     return launch_window()

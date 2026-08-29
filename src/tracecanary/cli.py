@@ -36,38 +36,71 @@ EXIT_PASS = 0
 EXIT_REGRESSION = 1
 EXIT_UNRESOLVED = 2
 
+_EXIT_STATUS_HELP = (
+    "Exit status:\n"
+    "  0  contract satisfied\n"
+    "  1  privacy or retention regression detected\n"
+    "  2  invalid input, unsupported version, or unresolved comparison\n"
+    "\n"
+    "Reports never include matched canary values."
+)
+
+
+class _ArgumentParser(argparse.ArgumentParser):
+    """Reject unknown flags closed and return usage errors through main()."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("allow_abbrev", False)
+        super().__init__(*args, **kwargs)
+
+    def error(self, message: str) -> None:
+        self.print_usage(sys.stderr)
+        raise InputError(message)
+
+
+def _cli_path(value: str) -> Path:
+    """Parse a CLI path without treating an empty string as the working directory."""
+    if not value.strip():
+        raise argparse.ArgumentTypeError("path must not be empty")
+    return Path(value)
+
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="tracecanary", description="Check synthetic canaries in OTLP/HTTP JSON traces.")
-    commands = parser.add_subparsers(dest="command", required=True)
+    parser = _ArgumentParser(
+        prog="tracecanary",
+        description="Check synthetic canaries in OTLP/HTTP JSON traces.",
+        epilog=_EXIT_STATUS_HELP,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    commands = parser.add_subparsers(dest="command", required=True, parser_class=_ArgumentParser)
     validate = commands.add_parser("validate", help="validate a TraceCanary contract")
-    validate.add_argument("contract", type=Path)
-    validate.add_argument("--format", choices=("human", "json"), default="human")
+    validate.add_argument("contract", type=_cli_path, help="TraceCanary contract JSON file")
+    validate.add_argument("--format", choices=("human", "json"), default="human", help="report format (default: human)")
     check = commands.add_parser("check", help="check one OTLP trace export")
-    check.add_argument("--contract", required=True, type=Path)
-    check.add_argument("--input", required=True, type=Path)
-    check.add_argument("--format", choices=("human", "json"), default="human")
+    check.add_argument("--contract", required=True, type=_cli_path, help="TraceCanary contract JSON file")
+    check.add_argument("--input", required=True, type=_cli_path, help="OTLP/HTTP JSON trace export")
+    check.add_argument("--format", choices=("human", "json"), default="human", help="report format (default: human)")
     diff = commands.add_parser("diff", help="compare a baseline and a candidate OTLP trace export")
-    diff.add_argument("--contract", required=True, type=Path)
-    diff.add_argument("--baseline", required=True, type=Path)
-    diff.add_argument("--candidate", required=True, type=Path)
-    diff.add_argument("--format", choices=("human", "json"), default="human")
+    diff.add_argument("--contract", required=True, type=_cli_path, help="TraceCanary contract JSON file")
+    diff.add_argument("--baseline", required=True, type=_cli_path, help="baseline OTLP/HTTP JSON trace export")
+    diff.add_argument("--candidate", required=True, type=_cli_path, help="candidate OTLP/HTTP JSON trace export")
+    diff.add_argument("--format", choices=("human", "json"), default="human", help="report format (default: human)")
     batch = commands.add_parser("batch", help="check a bounded directory of OTLP trace exports")
-    batch.add_argument("--contract", required=True, type=Path)
-    batch.add_argument("--input-dir", required=True, type=Path)
-    batch.add_argument("--recursive", action="store_true")
-    batch.add_argument("--include-paths", action="store_true", help="include input-relative paths in reports")
-    batch.add_argument("--format", choices=("human", "json", "sarif", "junit"), default="json")
+    batch.add_argument("--contract", required=True, type=_cli_path, help="TraceCanary contract JSON file")
+    batch.add_argument("--input-dir", required=True, type=_cli_path, help="directory of OTLP/HTTP JSON trace exports")
+    batch.add_argument("--recursive", action="store_true", help="include *.json files in subdirectories")
+    batch.add_argument("--include-paths", action="store_true", help="include input-relative POSIX paths in reports")
+    batch.add_argument("--format", choices=("human", "json", "sarif", "junit"), default="json", help="report format (default: json)")
     fixture = commands.add_parser("fixture", help="write synthetic fixtures")
-    fixture_commands = fixture.add_subparsers(dest="fixture_command", required=True)
+    fixture_commands = fixture.add_subparsers(dest="fixture_command", required=True, parser_class=_ArgumentParser)
     create = fixture_commands.add_parser("create", help="write the synthetic fixture bundle")
-    create.add_argument("--output", required=True, type=Path)
+    create.add_argument("--output", required=True, type=_cli_path, help="empty directory for the synthetic fixture bundle")
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
     try:
+        args = build_parser().parse_args(argv)
         if args.command == "fixture":
             write_bundle(args.output)
             print(f"Synthetic fixture bundle created at {args.output}")
@@ -94,6 +127,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _status_exit(batch_report["status"])
         _print(report, args.format)
         return _status_exit(report["status"])
+    except SystemExit as exc:
+        return EXIT_PASS if exc.code in (0, None) else EXIT_UNRESOLVED
     except UnsafeReportError:
         return EXIT_UNRESOLVED
     except (ContractError, InputError, OtlpError, ValueError) as exc:
