@@ -127,7 +127,10 @@ def render_csv(report: dict[str, object]) -> str:
 
 
 def _cell(value: object) -> str:
-    return html.escape(str(value).replace("\n", " ").replace("\r", " "), quote=True).replace("|", "\\|").replace("`", "&#96;")
+    text = html.escape(str(value).replace("\n", " ").replace("\r", " "), quote=True)
+    for character in "\\[]()!":
+        text = text.replace(character, "\\" + character)
+    return text.replace("|", "\\|").replace("`", "&#96;")
 
 
 def _currency(report: dict[str, object], key: str, fallback: str) -> str:
@@ -207,9 +210,12 @@ def render_markdown(report: dict[str, object]) -> str:
     scenario_id = _cell(report.get("scenario_id", "ad-hoc"))
     lines = ["# Corridor Lab report", "", f"Synthetic scenario: `{scenario_id}`", ""]
     if report.get("report_version") == "corridor-lab.batch/v1":
-        lines = ["# Corridor Lab batch report", "", f"Status: `{_cell(report.get('status', 'unresolved'))}`", "", "| Item | Status |", "| --- | --- |"]
-        for item in report.get("items", []):
-            lines.append(f"| {_cell(item.get('id', ''))} | {_cell(item.get('status', 'unresolved'))} |")
+        items = report.get("items", [])
+        include_paths = any("path" in item for item in items)
+        lines = ["# Corridor Lab batch report", "", f"Status: `{_cell(report.get('status', 'unresolved'))}`", "", "| Item | Status | Path |" if include_paths else "| Item | Status |", "| --- | --- | --- |" if include_paths else "| --- | --- |"]
+        for item in items:
+            row = f"| {_cell(item.get('id', ''))} | {_cell(item.get('status', 'unresolved'))}"
+            lines.append(f"{row} | {_cell(item.get('path', ''))} |" if include_paths else f"{row} |")
         return "\n".join(lines) + "\n"
     if report.get("report_version") == "corridor-lab.pareto/v1":
         lines = ["# Corridor Lab Pareto frontier", "", f"Synthetic scenario: `{scenario_id}`", "", "| Route | Expected recipient | Expected sender cost |", "| --- | ---: | ---: |"]
