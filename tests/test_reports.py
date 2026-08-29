@@ -51,6 +51,16 @@ class ReportTests(unittest.TestCase):
         csv_text = render_report(report, "csv")
         self.assertIn("' \r@SUM(A1:A2)", csv_text)
 
+    def test_batch_markdown_includes_requested_paths(self):
+        report = {
+            "report_version": "corridor-lab.batch/v1",
+            "status": "pass",
+            "items": [{"id": "scenario-0001", "status": "pass", "path": "[review](README.md).json"}],
+        }
+        markdown = render_report(report, "markdown")
+        self.assertIn("| Item | Status | Path |", markdown)
+        self.assertIn(r"| scenario-0001 | pass | \[review\]\(README.md\).json |", markdown)
+
     def test_atomic_write_preserves_target_and_removes_temporary_file_on_replace_failure(self):
         with TemporaryDirectory() as directory:
             target = Path(directory) / "report.json"
