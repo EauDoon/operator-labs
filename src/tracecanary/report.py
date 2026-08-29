@@ -99,8 +99,29 @@ def render_human(report: dict[str, Any]) -> str:
 def ensure_values_absent(report: dict[str, Any], values: tuple[str, ...]) -> None:
     """Fail closed if either supported rendering still contains a protected value."""
     output = render_json(report) + render_human(report)
+    ensure_text_values_absent(output, values)
+
+
+def ensure_text_values_absent(output: str, values: tuple[str, ...]) -> None:
+    """Fail closed if report text contains a protected value."""
     if any(value in output for value in values):
         raise UnsafeReportError
+
+
+def ensure_object_values_absent(value: Any, values: tuple[str, ...]) -> None:
+    """Fail closed if nested JSON keys or string values contain a protected value."""
+    pending = [value]
+    while pending:
+        current = pending.pop()
+        if isinstance(current, str):
+            ensure_text_values_absent(current, values)
+        elif isinstance(current, dict):
+            for key, child in current.items():
+                if isinstance(key, str):
+                    ensure_text_values_absent(key, values)
+                pending.append(child)
+        elif isinstance(current, list):
+            pending.extend(current)
 
 
 def render_sarif(batch: dict[str, Any]) -> str:

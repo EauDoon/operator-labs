@@ -17,6 +17,8 @@ from tracecanary.report import (
     UnsafeReportError,
     Violation,
     build_report,
+    ensure_object_values_absent,
+    ensure_text_values_absent,
     ensure_values_absent,
     render_human,
     render_json,
@@ -79,7 +81,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _status_exit(report["status"])
         else:
             batch_report = _run_batch(contract, args.input_dir, args.recursive, args.include_paths)
-            _print_batch(batch_report, args.format)
+            _print_batch(
+                batch_report,
+                args.format,
+                tuple(canary.value for canary in contract.canaries),
+            )
             return _status_exit(batch_report["status"])
         _print(report, args.format)
         return _status_exit(report["status"])
@@ -116,6 +122,8 @@ def _run_batch(contract: Contract, input_dir: Path, recursive: bool, include_pat
         relative = path.relative_to(root).as_posix()
         try:
             report = check_trace(contract, _load_trace(path, contract), mode="batch")
+        except UnsafeReportError:
+            raise
         except (InputError, OtlpError, ValueError):
             report = build_report(
                 contract.contract_version,
@@ -129,14 +137,19 @@ def _run_batch(contract: Contract, input_dir: Path, recursive: bool, include_pat
         items.append(item)
     statuses = {item["status"] for item in items}
     status = "unresolved" if "unresolved" in statuses else "regression" if "regression" in statuses else "pass"
-    return {"batch_version": "tracecanary.batch/v1", "contract_version": contract.contract_version, "status": status, "items": items}
+    batch_report = {"batch_version": "tracecanary.batch/v1", "contract_version": contract.contract_version, "status": status, "items": items}
+    ensure_object_values_absent(
+        batch_report,
+        tuple(canary.value for canary in contract.canaries),
+    )
+    return batch_report
 
 
 def _print(report: dict, output_format: str) -> None:
     print(render_json(report) if output_format == "json" else render_human(report), end="")
 
 
-def _print_batch(report: dict, output_format: str) -> None:
+def _print_batch(report: dict, output_format: str, redacted_values: tuple[str, ...]) -> None:
     if output_format == "json":
         output = render_json(report)
     elif output_format == "sarif":
@@ -147,6 +160,7 @@ def _print_batch(report: dict, output_format: str) -> None:
         lines = [f"TraceCanary batch: {report['status'].upper()} ({len(report['items'])} file(s))"]
         lines.extend(f"- {item['id']}: {item['status']}" for item in report["items"])
         output = "\n".join(lines) + "\n"
+    ensure_text_values_absent(output, redacted_values)
     print(output, end="")
 
 
