@@ -34,9 +34,12 @@ def load_json(path: Path, *, max_bytes: int, max_depth: int) -> Any:
     if size > max_bytes:
         raise InputError(f"input exceeds the {max_bytes}-byte limit")
     try:
-        raw = path.read_bytes()
+        with path.open("rb") as input_file:
+            raw = input_file.read(max_bytes + 1)
     except OSError as exc:
         raise InputError("input file cannot be read") from exc
+    if len(raw) > max_bytes:
+        raise InputError(f"input exceeds the {max_bytes}-byte limit")
     try:
         data = json.loads(
             raw.decode("utf-8"),

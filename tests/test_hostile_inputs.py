@@ -37,6 +37,22 @@ class HostileInputTests(unittest.TestCase):
             with self.assertRaisesRegex(InputError, "exceeds"):
                 load_json(path, max_bytes=1_024, max_depth=10)
 
+    def test_input_that_grows_after_stat_still_obeys_size_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "growing.json"
+            path.write_text("{}", encoding="utf-8")
+            read_sizes: list[int] = []
+
+            class GrowingInput(io.BytesIO):
+                def read(self, size: int = -1) -> bytes:
+                    read_sizes.append(size)
+                    return super().read(size)
+
+            with patch.object(Path, "open", return_value=GrowingInput(b"x" * 2_048)):
+                with self.assertRaisesRegex(InputError, "exceeds"):
+                    load_json(path, max_bytes=1_024, max_depth=10)
+            self.assertEqual(read_sizes, [1_025])
+
     def test_unknown_version_returns_unresolved_exit(self) -> None:
         root = Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory() as directory:
