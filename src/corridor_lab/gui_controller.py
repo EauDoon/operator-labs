@@ -255,7 +255,7 @@ class CorridorGuiController:
 
     def render_last_report(self, output_format: str) -> str | None:
         if self.last_report is None:
-            self.last_error = "run Compare, Evaluate, or Sensitivity before previewing or saving a report"
+            self.last_error = "run Compare, Evaluate, Sensitivity, Pareto, or Grid before previewing or saving a report"
             return None
         try:
             text = render_report(self.last_report, output_format)

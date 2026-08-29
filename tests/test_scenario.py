@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from helpers import route, scenario
 from corridor_lab.canonical import InputError, MAX_INPUT_BYTES, load_json, parse_json_text
-from corridor_lab.cli import main
+from corridor_lab.cli import build_parser, main
 from corridor_lab.scenario import ScenarioError, parse_scenario, parse_scenario_text
 
 
@@ -71,6 +71,33 @@ class ScenarioTests(unittest.TestCase):
                 result = main(["validate", "fictional.json"])
         self.assertEqual(result, 2)
         self.assertIn("error:", stderr.getvalue())
+
+    def test_cli_format_choices_match_documented_commands(self):
+        parser = build_parser()
+        tabular = ("json", "csv", "markdown")
+        frontier = ("json", "markdown")
+        cases = (
+            ("evaluate", [], tabular),
+            ("compare", ["--routes", "routes"], tabular),
+            ("sensitivity", ["--parameter", "fx_spread_bps", "--values", "10"], tabular),
+            (
+                "stress-grid",
+                ["--parameter-a", "fx_rate", "--values-a", "1.7", "--parameter-b", "fx_spread_bps", "--values-b", "25"],
+                tabular,
+            ),
+            ("pareto", [], frontier),
+            ("batch", [], frontier),
+        )
+        for command, extra, allowed in cases:
+            for output_format in ("json", "csv", "markdown"):
+                argv = [command, "input", *extra, "--format", output_format]
+                if output_format in allowed:
+                    self.assertEqual(parser.parse_args(argv).format, output_format)
+                    continue
+                stderr = StringIO()
+                with redirect_stderr(stderr), self.assertRaises(SystemExit) as caught:
+                    parser.parse_args(argv)
+                self.assertEqual(caught.exception.code, 2)
 
     def test_cli_evaluate_requires_embedded_routes(self):
         with tempfile.TemporaryDirectory() as temporary:

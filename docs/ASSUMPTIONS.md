@@ -15,8 +15,9 @@ and `ROUND_UP`. Currency values are retained as `Decimal` calculations and
 rounded only for a displayed amount at the declared currency precision.
 
 Sensitivity changes exactly one of `fx_rate`, `fixed_fee_send`,
-`percent_fee_bps`, or `fx_spread_bps` across the unchanged scenario. It is a
-what-if calculation, not a forecast.
+`percent_fee_bps`, or `fx_spread_bps` across the unchanged scenario. A stress
+grid changes two of those same parameters. Both are what-if calculations, not
+forecasts.
 
 An optional objective can rank routes only after every stated guardrail passes.
 The v1 objectives are maximum expected recipient amount and minimum expected

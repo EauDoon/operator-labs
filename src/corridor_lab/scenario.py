@@ -106,8 +106,8 @@ def _parse_objective(value: Any) -> Objective:
     )
     if not guardrails:
         raise InputError(f"{path}.guardrails must contain at least one constraint")
-    minimum = None
-    maximum = None
+    minimum: Decimal | None = None
+    maximum: Decimal | None = None
     if "minimum_probability_by_deadline" in guardrails:
         minimum = require_decimal(
             guardrails["minimum_probability_by_deadline"],
