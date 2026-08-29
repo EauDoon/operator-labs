@@ -237,8 +237,12 @@ class CorridorGuiController:
     def stress_grid(self, parameter_a: str, values_a_text: str, parameter_b: str, values_b_text: str) -> ActionResult:
         try:
             scenario = self._require_scenario()
-            values_a = [require_decimal(chunk.strip(), "stress value") for chunk in values_a_text.split(",") if chunk.strip()]
-            values_b = [require_decimal(chunk.strip(), "stress value") for chunk in values_b_text.split(",") if chunk.strip()]
+            chunks_a = values_a_text.split(",")
+            chunks_b = values_b_text.split(",")
+            if not all(chunk.strip() for chunk in chunks_a + chunks_b):
+                raise InputError("stress values must be comma-separated decimals")
+            values_a = [require_decimal(chunk.strip(), "stress value") for chunk in chunks_a]
+            values_b = [require_decimal(chunk.strip(), "stress value") for chunk in chunks_b]
             return self._success(run_stress_grid(scenario, parameter_a.strip(), values_a, parameter_b.strip(), values_b))
         except (InputError, OSError, ValueError, DecimalException) as exc:
             return self._failure(exc)

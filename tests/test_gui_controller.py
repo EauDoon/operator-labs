@@ -64,6 +64,13 @@ class GuiControllerTests(unittest.TestCase):
         self.assertIsNone(controller.render_last_report("markdown"))
         self.assertIn("run Compare", controller.last_error)
 
+    def test_stress_grid_rejects_empty_comma_separated_values(self):
+        controller = CorridorGuiController()
+        self.assertIsNone(controller.load_builtin_demo().error)
+        result = controller.stress_grid("fx_spread_bps", "10,,50", "delay_hours", "0,24")
+        self.assertIsNone(result.report)
+        self.assertIn("comma-separated decimals", result.error)
+
     def test_editor_template_validation_rolls_back_on_invalid_draft(self):
         controller = CorridorGuiController()
         self.assertIsNone(controller.load_builtin_demo().error)
