@@ -6,6 +6,7 @@ import json
 import os
 import re
 import tempfile
+from contextlib import AbstractContextManager
 from decimal import Context, Decimal, DecimalException, ROUND_HALF_EVEN, localcontext
 from pathlib import Path
 from typing import Any
@@ -37,7 +38,7 @@ class InputError(ValueError):
     """Raised for malformed or hostile external inputs."""
 
 
-def local_decimal_context():
+def local_decimal_context() -> AbstractContextManager[Context]:
     """Return a fixed calculation context, never a copy of ambient state."""
     return localcontext(FIXED_DECIMAL_CONTEXT)
 

@@ -32,8 +32,9 @@ On Windows, use `py -3.11 -m pip install --user .` when `python` is not on
 `py -3.11 -m corridor_lab.gui` instead.
 
 Each result is deterministic. JSON reports are canonical, UTF-8, sorted-key
-documents with an LF terminator. Use `--format csv` or `--format markdown` for
-other stable reports, and `--output report.json` to write a report.
+documents with an LF terminator. Compare, evaluate, sensitivity, and
+stress-grid also accept `--format csv` or `--format markdown`. Pareto and batch
+accept `--format markdown` only, not csv. Use `--output FILE` to write a report.
 
 ## First screen
 
@@ -98,8 +99,10 @@ corridorlab pareto scenario.json [--format json|markdown] [--output FILE]
 corridorlab batch SCENARIO_DIRECTORY [--recursive] [--include-paths] [--format json|markdown] [--output FILE]
 ```
 
-`evaluate` and `sensitivity` use the routes embedded in the scenario.
-`compare` uses only the route file or directory supplied with `--routes`.
+`evaluate`, `sensitivity`, `stress-grid`, and `pareto` use the routes embedded
+in the scenario. `compare` uses only the route file or directory supplied with
+`--routes`. `batch` evaluates each JSON scenario file in the supplied
+directory.
 
 ## Limits
 

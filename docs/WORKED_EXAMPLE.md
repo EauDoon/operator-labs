@@ -15,7 +15,8 @@ probability and tail-time guardrails. Delete `objective` from a scenario to
 obtain a comparison with no ranking.
 
 `embedded-scenario.json` contains two of the same fictional templates so it can
-exercise `evaluate` and `sensitivity` without external route paths.
+exercise `evaluate`, `sensitivity`, `stress-grid`, and `pareto` without
+external route paths.
 
 In the GUI, load the built-in fictional demo and choose **Explain Report** to
 see the same distinctions in text: recipient versus expected recipient,

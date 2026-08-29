@@ -5,7 +5,6 @@ from __future__ import annotations
 import csv
 import io
 import html
-from typing import Any
 
 from .canonical import MAX_REPORT_BYTES, canonical_dumps
 

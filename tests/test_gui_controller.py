@@ -64,7 +64,7 @@ class GuiControllerTests(unittest.TestCase):
         self.assertIsNone(result.report)
         self.assertIn("load a fictional scenario", result.error)
         self.assertIsNone(controller.render_last_report("markdown"))
-        self.assertIn("run Compare", controller.last_error)
+        self.assertIn("run Compare, Evaluate, Sensitivity, Pareto, or Grid", controller.last_error)
 
     def test_stress_grid_rejects_empty_comma_separated_values(self):
         controller = CorridorGuiController()

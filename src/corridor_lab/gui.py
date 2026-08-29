@@ -10,7 +10,7 @@ import argparse
 import sys
 from typing import Sequence
 
-from .gui_controller import CorridorGuiController
+from .gui_controller import ActionResult, CorridorGuiController
 
 
 STARTUP_FAILURE_MESSAGE = "Corridor Lab could not open its desktop interface. Install or enable Tcl/Tk, then try again."
@@ -191,13 +191,13 @@ def launch_gui() -> int:
 
         def _explain_report(self) -> None:
             if self.controller.last_report is None:
-                self._show_error("Run Compare, Evaluate, or Sensitivity before opening the report explanation.")
+                self._show_error("Run Compare, Evaluate, Sensitivity, Pareto, or Grid before opening the report explanation.")
                 return
             self.format_var.set("markdown")
             self._refresh_preview()
             self.status_var.set("Showing the Markdown report and its text-first explanation.")
 
-        def _complete(self, result: object, success_message: str) -> None:
+        def _complete(self, result: ActionResult, success_message: str) -> None:
             if result.error is not None:
                 self._show_error(result.error)
                 return
@@ -285,7 +285,7 @@ def launch_gui() -> int:
                 return
             self.scenario_var.set(self.controller.scenario_source)
             self.routes_var.set(self.controller.routes_source)
-            self._set_preview("Scenario validated and active. Choose Compare, Evaluate Embedded, or Sensitivity.\n")
+            self._set_preview("Scenario validated and active. Choose Compare, Evaluate Embedded, Sensitivity, Pareto, or Grid.\n")
             self.editor_status_var.set("Scenario validated and active. No scenario file was written.")
             self.status_var.set("Validated in-memory fictional scenario is active. External route selection was cleared.")
 
@@ -320,7 +320,7 @@ def launch_gui() -> int:
                 return
             self.scenario_var.set(self.controller.scenario_source)
             self.routes_var.set(self.controller.routes_source)
-            self.status_var.set("Scenario loaded. Compare uses embedded routes unless a route file or folder is selected.")
+            self.status_var.set("Scenario loaded. Compare and Pareto use embedded routes unless a route file or folder is selected.")
 
         def _select_routes(self, path: str) -> None:
             result = self.controller.load_routes_path(path)
@@ -328,7 +328,7 @@ def launch_gui() -> int:
                 self._show_error(result.error)
                 return
             self.routes_var.set(self.controller.routes_source)
-            self.status_var.set("Route selection loaded. Compare uses this selection; Evaluate and Sensitivity use embedded routes.")
+            self.status_var.set("Route selection loaded. Compare and Pareto use this selection; Evaluate, Sensitivity, and Grid use embedded routes.")
 
         def _choose_route_file(self) -> None:
             path = filedialog.askopenfilename(parent=self.root, title="Select fictional route JSON", filetypes=(("JSON files", "*.json"), ("All files", "*.*")))
@@ -343,7 +343,7 @@ def launch_gui() -> int:
         def _clear_routes(self) -> None:
             self.controller.clear_route_selection()
             self.routes_var.set(self.controller.routes_source)
-            self.status_var.set("Compare now uses embedded routes.")
+            self.status_var.set("Compare and Pareto now use embedded routes.")
 
         def _compare(self) -> None:
             self._complete(self.controller.compare(), "Comparison complete.")
@@ -373,7 +373,7 @@ def launch_gui() -> int:
 
         def _save_report(self) -> None:
             if self.controller.last_report is None:
-                self._show_error("Run Compare, Evaluate, or Sensitivity before saving a report.")
+                self._show_error("Run Compare, Evaluate, Sensitivity, Pareto, or Grid before saving a report.")
                 return
             output_format = self.format_var.get()
             extension = {"json": ".json", "csv": ".csv", "markdown": ".md"}[output_format]

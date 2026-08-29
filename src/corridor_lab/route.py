@@ -11,6 +11,7 @@ from typing import Any
 
 from .canonical import (
     MAX_INPUT_BYTES,
+    MAX_OUTCOMES_PER_ROUTE,
     MAX_ROUTES,
     InputError,
     decimal_text,
@@ -24,7 +25,6 @@ from .canonical import (
     require_identifier,
     require_string,
 )
-from .canonical import MAX_OUTCOMES_PER_ROUTE
 from .outcomes import Outcome
 
 
@@ -51,7 +51,7 @@ class Route:
     liquidity: Liquidity
     outcomes: tuple[Outcome, ...]
 
-    def changed_parameter(self, parameter: str, value: Decimal) -> "Route":
+    def changed_parameter(self, parameter: str, value: Decimal) -> Route:
         """Return a copy changing exactly one documented top-level parameter."""
         if parameter not in {"fx_rate", "fixed_fee_send", "percent_fee_bps", "fx_spread_bps"}:
             raise InputError(f"unsupported sensitivity parameter: {parameter}")

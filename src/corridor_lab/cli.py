@@ -12,7 +12,7 @@ from .canonical import MAX_BATCH_SCENARIOS, InputError, atomic_write_text, requi
 from .comparison import compare_routes, evaluate_scenario, pareto_frontier
 from .model import evaluate_route
 from .report import render_report
-from .route import load_route, load_route_folder
+from .route import Route, load_route, load_route_folder
 from .scenario import load_scenario
 from .sensitivity import run_sensitivity
 from .stress import run_stress_grid
@@ -64,7 +64,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _load_routes_argument(value: str) -> list:
+def _load_routes_argument(value: str) -> list[Route]:
     path = Path(value)
     if path.is_file():
         return [load_route(path)]
@@ -130,6 +130,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "validate":
             sys.stdout.write("valid\n")
             return 0
+        report: dict[str, object]
         if args.command == "evaluate":
             report = evaluate_scenario(scenario)
         elif args.command == "compare":
@@ -149,6 +150,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 raise InputError("pareto requires routes embedded in the scenario")
             evaluations = [evaluate_route(route, scenario.transaction) for route in sorted(scenario.routes, key=lambda item: item.route_id)]
             report = {"report_version": "corridor-lab.pareto/v1", "scenario_id": scenario.scenario_id, "fictional": True, "frontier": pareto_frontier(evaluations)}
+        else:
+            raise InputError(f"unsupported command: {args.command}")
         _emit(render_report(report, args.format), args.output)
         return 0
     except (InputError, OSError, ValueError, DecimalException) as exc:
