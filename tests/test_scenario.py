@@ -2,7 +2,7 @@ import copy
 import json
 import tempfile
 import unittest
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 from decimal import InvalidOperation
 from io import StringIO
 from pathlib import Path
@@ -15,6 +15,16 @@ from corridor_lab.scenario import ScenarioError, parse_scenario, parse_scenario_
 
 
 class ScenarioTests(unittest.TestCase):
+    def test_batch_rejects_empty_directory(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            stdout = StringIO()
+            stderr = StringIO()
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                result = main(["batch", temporary])
+        self.assertEqual(result, 2)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertIn("contains no JSON scenario files", stderr.getvalue())
+
     def test_valid_minimal_scenario(self):
         parsed = parse_scenario(scenario())
         self.assertEqual(parsed.transaction.send_amount, 100)

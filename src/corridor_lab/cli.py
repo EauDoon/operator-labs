@@ -104,6 +104,8 @@ def _batch(input_dir: str, recursive: bool, include_paths: bool) -> dict[str, ob
             path.relative_to(root).as_posix(),
         ),
     )
+    if not paths:
+        raise InputError("batch input_dir contains no JSON scenario files")
     if len(paths) > MAX_BATCH_SCENARIOS:
         raise InputError(f"batch exceeds the {MAX_BATCH_SCENARIOS}-scenario budget")
     items: list[dict[str, object]] = []
