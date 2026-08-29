@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from decimal import Decimal, DecimalException
 from pathlib import Path
 
-from .canonical import InputError, atomic_write_text, parse_json_bytes, read_bounded_bytes, require_decimal
+from .canonical import MAX_ROUTES, InputError, atomic_write_text, parse_json_bytes, read_bounded_bytes, require_decimal
 from .comparison import compare_routes, evaluate_scenario, pareto_frontier
 from .model import evaluate_route
 from .report import render_report
@@ -186,6 +186,8 @@ class CorridorGuiController:
                 files = sorted(item for item in selected.iterdir() if item.is_file() and item.suffix.lower() == ".json")
                 if not files:
                     raise InputError(f"route folder contains no JSON files: {selected}")
+                if len(files) > MAX_ROUTES:
+                    raise InputError(f"route folder exceeds the {MAX_ROUTES}-route budget")
                 routes = tuple(load_route(item) for item in files)
             else:
                 raise InputError(f"route selection is not a file or folder: {selected}")
