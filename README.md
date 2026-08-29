@@ -100,7 +100,11 @@ tracecanary fixture create --output example/
 tracecanary-gui
 ```
 
-From a fresh checkout, set `PYTHONPATH=src` and replace `tracecanary` with `python -m tracecanary`; use `python -m tracecanary.gui` for the GUI. `0` means the contract is satisfied. `1` means a privacy or retention regression was detected. `2` means invalid input, an unsupported version, or an unresolved comparison. Reports identify the canary label, category, key, scope, and JSON path when relevant, but never print the matched canary value.
+From a fresh checkout, set `PYTHONPATH=src` and replace `tracecanary` with `python -m tracecanary`; use `python -m tracecanary.gui` for the GUI. `0` means the contract is satisfied. `1` means a privacy or retention regression was detected. `2` means invalid input, an unsupported version, or an unresolved comparison.
+
+`validate`, `check`, and `diff` accept `--format human` (default) or `--format json`. `batch` accepts `--format json` (default), `human`, `sarif`, or `junit`; `--recursive` includes `*.json` files in subdirectories; `--include-paths` adds directory-relative POSIX paths to JSON, SARIF, and JUnit items. Batch `human` output is a per-item status rollup and does not repeat finding labels.
+
+A single-trace JSON report contains `contract_version`, `mode`, `status`, `summary`, and `violations`. Each finding has `code`, `message`, and `path`, plus `label`/`category` or `key`/`scope` when they apply. Reports never include the matched canary value.
 
 ## Contract overview
 

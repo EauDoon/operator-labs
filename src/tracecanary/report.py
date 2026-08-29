@@ -4,9 +4,54 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import xml.etree.ElementTree as ET
-from typing import Any
+from typing import Any, Literal, NotRequired, TypedDict
 
 from tracecanary.canonical import canonical_json
+
+
+Status = Literal["pass", "regression", "unresolved"]
+ReportMode = Literal["validate", "check", "diff", "batch", "demo", "starter"]
+
+
+class ReportSummary(TypedDict):
+    canary_leaks: int
+    forbidden_attributes: int
+    forbidden_paths: int
+    missing_retained_fields: int
+    baseline_regressions: int
+    total: int
+
+
+class ViolationDict(TypedDict):
+    code: str
+    message: str
+    path: str
+    category: NotRequired[str]
+    key: NotRequired[str]
+    label: NotRequired[str]
+    scope: NotRequired[str]
+
+
+class Report(TypedDict):
+    contract_version: str
+    mode: ReportMode
+    status: Status
+    summary: ReportSummary
+    violations: list[ViolationDict]
+
+
+class BatchItem(TypedDict):
+    id: str
+    status: Status
+    report: Report
+    path: NotRequired[str]
+
+
+class BatchReport(TypedDict):
+    batch_version: str
+    contract_version: str
+    status: Status
+    items: list[BatchItem]
 
 
 @dataclass(frozen=True)
@@ -19,12 +64,16 @@ class Violation:
     key: str | None = None
     scope: str | None = None
 
-    def as_dict(self) -> dict[str, str]:
-        data = {"code": self.code, "message": self.message, "path": self.path}
-        for name in ("category", "key", "label", "scope"):
-            value = getattr(self, name)
-            if value is not None:
-                data[name] = value
+    def as_dict(self) -> ViolationDict:
+        data: ViolationDict = {"code": self.code, "message": self.message, "path": self.path}
+        if self.category is not None:
+            data["category"] = self.category
+        if self.key is not None:
+            data["key"] = self.key
+        if self.label is not None:
+            data["label"] = self.label
+        if self.scope is not None:
+            data["scope"] = self.scope
         return data
 
 
@@ -34,15 +83,15 @@ class UnsafeReportError(ValueError):
 
 def build_report(
     contract_version: str,
-    status: str,
+    status: Status,
     violations: list[Violation],
     *,
-    mode: str,
+    mode: ReportMode,
     redacted_values: tuple[str, ...] = (),
-) -> dict[str, Any]:
+) -> Report:
     safe_violations = [_redact_violation(issue, redacted_values) for issue in violations]
     ordered = sorted(safe_violations, key=lambda issue: (issue.code, issue.path, issue.label or "", issue.key or ""))
-    counts = {
+    summary: ReportSummary = {
         "canary_leaks": sum(issue.code == "TC001" for issue in ordered),
         "forbidden_attributes": sum(issue.code == "TC002" for issue in ordered),
         "forbidden_paths": sum(issue.code == "TC003" for issue in ordered),
@@ -54,7 +103,7 @@ def build_report(
         "contract_version": contract_version,
         "mode": mode,
         "status": status,
-        "summary": counts,
+        "summary": summary,
         "violations": [issue.as_dict() for issue in ordered],
     }
 
@@ -78,25 +127,25 @@ def _redact_violation(issue: Violation, values: tuple[str, ...]) -> Violation:
     )
 
 
-def render_json(report: dict[str, Any]) -> str:
+def render_json(report: Report | BatchReport) -> str:
     return canonical_json(report)
 
 
-def render_human(report: dict[str, Any]) -> str:
+def render_human(report: Report) -> str:
     headline = f"TraceCanary: {report['status'].upper()} ({report['summary']['total']} finding(s))"
     lines = [headline]
     for item in report["violations"]:
         detail = item["message"]
-        if "label" in item:
-            detail += f" [label={item['label']}; category={item['category']}]"
-        if "key" in item:
-            detail += f" [key={item['key']}; scope={item['scope']}]"
+        if "label" in item or "category" in item:
+            detail += f" [label={item.get('label', '')}; category={item.get('category', '')}]"
+        if "key" in item or "scope" in item:
+            detail += f" [key={item.get('key', '')}; scope={item.get('scope', '')}]"
         location = f" at {item['path']}" if item["path"] else ""
         lines.append(f"- {item['code']} {detail}{location}")
     return "\n".join(lines) + "\n"
 
 
-def ensure_values_absent(report: dict[str, Any], values: tuple[str, ...]) -> None:
+def ensure_values_absent(report: Report, values: tuple[str, ...]) -> None:
     """Fail closed if either supported rendering still contains a protected value."""
     output = render_json(report) + render_human(report)
     ensure_text_values_absent(output, values)
@@ -124,7 +173,7 @@ def ensure_object_values_absent(value: Any, values: tuple[str, ...]) -> None:
             pending.extend(current)
 
 
-def render_sarif(batch: dict[str, Any]) -> str:
+def render_sarif(batch: BatchReport) -> str:
     """Render a deterministic SARIF 2.1.0 batch report without host paths."""
     results: list[dict[str, Any]] = []
     for item in batch.get("items", []):
@@ -146,7 +195,7 @@ def render_sarif(batch: dict[str, Any]) -> str:
     return canonical_json(payload)
 
 
-def render_junit(batch: dict[str, Any]) -> str:
+def render_junit(batch: BatchReport) -> str:
     """Render a deterministic JUnit XML batch report without timestamps."""
     items = list(batch.get("items", []))
     failures = sum(item.get("status") == "regression" for item in items)

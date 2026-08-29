@@ -7,10 +7,10 @@ from typing import Any
 
 from tracecanary.contract import Contract
 from tracecanary.otlp import iter_attributes
-from tracecanary.report import Violation, build_report, ensure_values_absent
+from tracecanary.report import Report, Violation, ViolationDict, build_report, ensure_values_absent
 
 
-def diff_traces(contract: Contract, baseline: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
+def diff_traces(contract: Contract, baseline: dict[str, Any], candidate: dict[str, Any]) -> Report:
     """Compare candidate field counts with a contract-satisfying baseline."""
     baseline_report = _without_mode(contract, baseline)
     if baseline_report["status"] != "pass":
@@ -53,7 +53,7 @@ def diff_traces(contract: Contract, baseline: dict[str, Any], candidate: dict[st
     return report
 
 
-def _without_mode(contract: Contract, payload: dict[str, Any]) -> dict[str, Any]:
+def _without_mode(contract: Contract, payload: dict[str, Any]) -> Report:
     from tracecanary.checker import check_trace
 
     return check_trace(contract, payload)
@@ -64,7 +64,7 @@ def _retained_counts(contract: Contract, payload: dict[str, Any]) -> Counter[tup
     return Counter((attribute.scope, attribute.key) for attribute in iter_attributes(payload) if (attribute.scope, attribute.key) in wanted)
 
 
-def _violation_kwargs(item: dict[str, str]) -> dict[str, str | None]:
+def _violation_kwargs(item: ViolationDict) -> dict[str, str | None]:
     return {
         "code": item["code"],
         "path": item["path"],

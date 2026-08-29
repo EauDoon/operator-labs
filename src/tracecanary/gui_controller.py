@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from tracecanary.canonical import InputError, load_json
 from tracecanary.checker import check_trace
@@ -12,7 +13,7 @@ from tracecanary.comparison import diff_traces
 from tracecanary.contract import Contract, ContractError, load_contract, parse_contract
 from tracecanary.fixture import bundle, write_bundle
 from tracecanary.otlp import OtlpError, validate_trace
-from tracecanary.report import UnsafeReportError, Violation, build_report, ensure_values_absent, render_human, render_json
+from tracecanary.report import Report, Status, UnsafeReportError, Violation, build_report, ensure_values_absent, render_human, render_json
 
 
 EXIT_PASS = 0
@@ -35,7 +36,7 @@ class GuiResult:
     exit_code: int
     human: str
     json: str
-    starter_paths: "StarterPaths | None" = None
+    starter_paths: StarterPaths | None = None
 
 
 @dataclass(frozen=True)
@@ -102,21 +103,21 @@ class TraceCanaryController:
             failure_message="The selected destination must be an empty directory for synthetic starter files.",
         )
 
-    def _validate(self, contract_path: Path) -> dict[str, Any]:
+    def _validate(self, contract_path: Path) -> Report:
         contract = load_contract(contract_path)
         report = build_report(contract.contract_version, "pass", [], mode="validate")
         ensure_values_absent(report, tuple(canary.value for canary in contract.canaries))
         return report
 
-    def _check(self, contract_path: Path, input_path: Path) -> dict[str, Any]:
+    def _check(self, contract_path: Path, input_path: Path) -> Report:
         contract = load_contract(contract_path)
         return check_trace(contract, self._load_trace(input_path, contract), mode="check")
 
-    def _diff(self, contract_path: Path, baseline_path: Path, candidate_path: Path) -> dict[str, Any]:
+    def _diff(self, contract_path: Path, baseline_path: Path, candidate_path: Path) -> Report:
         contract = load_contract(contract_path)
         return diff_traces(contract, self._load_trace(baseline_path, contract), self._load_trace(candidate_path, contract))
 
-    def _demo(self) -> dict[str, Any]:
+    def _demo(self) -> Report:
         fixtures = bundle()
         contract = parse_contract(fixtures["contract.json"])
         payload = fixtures["safe-export.json"]
@@ -124,7 +125,7 @@ class TraceCanaryController:
         return check_trace(contract, payload, mode="demo")
 
     @staticmethod
-    def _create_starter(destination: Path) -> dict[str, Any]:
+    def _create_starter(destination: Path) -> Report:
         write_bundle(destination)
         return build_report("tracecanary/v1", "pass", [], mode="starter")
 
@@ -143,7 +144,7 @@ class TraceCanaryController:
     def _run(
         self,
         mode: str,
-        operation: Callable[[], dict[str, Any]],
+        operation: Callable[[], Report],
         *,
         starter_paths: StarterPaths | None = None,
         failure_code: str = GUI005,
@@ -164,7 +165,7 @@ class TraceCanaryController:
         return GuiResult("unresolved", EXIT_UNRESOLVED, render_human(report), render_json(report))
 
 
-def _exit_code(status: str) -> int:
+def _exit_code(status: Status) -> int:
     if status == "pass":
         return EXIT_PASS
     if status == "regression":

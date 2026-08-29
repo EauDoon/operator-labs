@@ -33,6 +33,56 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(status, EXIT_UNRESOLVED)
         self.assertEqual(output.getvalue() + error.getvalue(), "")
 
+    def test_report_object_keys_match_the_documented_schema(self) -> None:
+        contract = load_contract(FIXTURES / "contract.json")
+        payload = load_json(FIXTURES / "leaked-prompt.json", max_bytes=contract.max_input_bytes, max_depth=contract.max_nesting)
+        validate_trace(payload)
+        report = check_trace(contract, payload)
+        self.assertEqual(set(report), {"contract_version", "mode", "status", "summary", "violations"})
+        self.assertEqual(report["mode"], "check")
+        self.assertEqual(report["status"], "regression")
+        self.assertEqual(
+            set(report["summary"]),
+            {
+                "baseline_regressions",
+                "canary_leaks",
+                "forbidden_attributes",
+                "forbidden_paths",
+                "missing_retained_fields",
+                "total",
+            },
+        )
+        self.assertEqual(set(report["violations"][0]), {"category", "code", "label", "message", "path"})
+        self.assertEqual(set(report["violations"][1]), {"code", "key", "message", "path", "scope"})
+
+    def test_batch_report_object_keys_match_the_documented_schema(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            inputs = Path(directory) / "inputs"
+            inputs.mkdir()
+            (inputs / "input.json").write_bytes((FIXTURES / "leaked-prompt.json").read_bytes())
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                status = main(
+                    [
+                        "batch",
+                        "--contract",
+                        str(FIXTURES / "contract.json"),
+                        "--input-dir",
+                        str(inputs),
+                        "--include-paths",
+                        "--format",
+                        "json",
+                    ]
+                )
+            self.assertEqual(status, EXIT_REGRESSION)
+            report = json.loads(output.getvalue())
+            self.assertEqual(set(report), {"batch_version", "contract_version", "items", "status"})
+            self.assertEqual(report["batch_version"], "tracecanary.batch/v1")
+            self.assertEqual(set(report["items"][0]), {"id", "path", "report", "status"})
+            nested = report["items"][0]["report"]
+            self.assertEqual(set(nested), {"contract_version", "mode", "status", "summary", "violations"})
+            self.assertEqual(nested["mode"], "batch")
+
     def test_three_reports_are_byte_identical(self) -> None:
         contract = load_contract(FIXTURES / "contract.json")
         payload = load_json(FIXTURES / "safe-export.json", max_bytes=contract.max_input_bytes, max_depth=contract.max_nesting)

@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
+from typing import Any
 
 from tracecanary.canonical import InputError, load_json
 from tracecanary.checker import check_trace
@@ -14,6 +15,10 @@ from tracecanary.contract import Contract, ContractError, load_contract
 from tracecanary.fixture import write_bundle
 from tracecanary.otlp import OtlpError, validate_trace
 from tracecanary.report import (
+    BatchItem,
+    BatchReport,
+    Report,
+    Status,
     UnsafeReportError,
     Violation,
     build_report,
@@ -99,13 +104,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         return EXIT_UNRESOLVED
 
 
-def _load_trace(path: Path, contract: Contract) -> dict:
+def _load_trace(path: Path, contract: Contract) -> dict[str, Any]:
     payload = load_json(path, max_bytes=contract.max_input_bytes, max_depth=contract.max_nesting)
     validate_trace(payload)
     return payload
 
 
-def _run_batch(contract: Contract, input_dir: Path, recursive: bool, include_paths: bool) -> dict:
+def _run_batch(contract: Contract, input_dir: Path, recursive: bool, include_paths: bool) -> BatchReport:
     try:
         if not input_dir.is_dir():
             raise InputError("--input-dir must be a directory")
@@ -126,7 +131,7 @@ def _run_batch(contract: Contract, input_dir: Path, recursive: bool, include_pat
         raise InputError("batch input contains no JSON files")
     if len(paths) > 256:
         raise InputError("batch input exceeds the 256-file limit")
-    items: list[dict] = []
+    items: list[BatchItem] = []
     for index, path in enumerate(paths, start=1):
         item_id = f"item-{index:04d}"
         relative = path.relative_to(root).as_posix()
@@ -141,13 +146,13 @@ def _run_batch(contract: Contract, input_dir: Path, recursive: bool, include_pat
                 [Violation("TC006", "", "input could not be validated")],
                 mode="batch",
             )
-        item = {"id": item_id, "status": report["status"], "report": report}
+        item: BatchItem = {"id": item_id, "status": report["status"], "report": report}
         if include_paths:
             item["path"] = relative
         items.append(item)
     statuses = {item["status"] for item in items}
-    status = "unresolved" if "unresolved" in statuses else "regression" if "regression" in statuses else "pass"
-    batch_report = {"batch_version": "tracecanary.batch/v1", "contract_version": contract.contract_version, "status": status, "items": items}
+    status: Status = "unresolved" if "unresolved" in statuses else "regression" if "regression" in statuses else "pass"
+    batch_report: BatchReport = {"batch_version": "tracecanary.batch/v1", "contract_version": contract.contract_version, "status": status, "items": items}
     ensure_object_values_absent(
         batch_report,
         tuple(canary.value for canary in contract.canaries),
@@ -155,11 +160,11 @@ def _run_batch(contract: Contract, input_dir: Path, recursive: bool, include_pat
     return batch_report
 
 
-def _print(report: dict, output_format: str) -> None:
+def _print(report: Report, output_format: str) -> None:
     print(render_json(report) if output_format == "json" else render_human(report), end="")
 
 
-def _print_batch(report: dict, output_format: str, redacted_values: tuple[str, ...]) -> None:
+def _print_batch(report: BatchReport, output_format: str, redacted_values: tuple[str, ...]) -> None:
     if output_format == "json":
         output = render_json(report)
     elif output_format == "sarif":
@@ -174,5 +179,5 @@ def _print_batch(report: dict, output_format: str, redacted_values: tuple[str, .
     print(output, end="")
 
 
-def _status_exit(status: str) -> int:
+def _status_exit(status: Status) -> int:
     return EXIT_PASS if status == "pass" else EXIT_REGRESSION if status == "regression" else EXIT_UNRESOLVED

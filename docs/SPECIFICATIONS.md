@@ -28,6 +28,20 @@ This structural subset accepts the fields necessary for the stated v1 checks. In
 | `TC006` | A batch item could not be validated, so that item is unresolved. |
 | `TC900` | The baseline does not satisfy the contract, so comparison is unresolved. |
 
+## Report object
+
+Library functions `check_trace` and `diff_traces` return the same JSON object the CLI prints with `--format json`. The object always contains:
+
+- `contract_version`: the pinned contract identifier.
+- `mode`: `validate`, `check`, `diff`, `batch`, `demo`, or `starter`.
+- `status`: `pass`, `regression`, or `unresolved`.
+- `summary`: integer counters `canary_leaks` (TC001), `forbidden_attributes` (TC002), `forbidden_paths` (TC003), `missing_retained_fields` (TC004), `baseline_regressions` (TC005), and `total`. `TC006` and `TC900` increment only `total`.
+- `violations`: findings ordered by code, path, label, and key.
+
+Each finding contains `code`, `message`, and `path`. Canary findings also include `label` and `category`. Forbidden-attribute and retained-field findings include `key` and `scope`. `path` is empty when a finding is not bound to a JSON location. Optional fields are omitted when they are absent or would expose a canary value.
+
+A batch JSON report contains `batch_version` (`tracecanary.batch/v1`), `contract_version`, `status`, and `items`. Each item has `id`, `status`, and a nested single-trace `report`. `--include-paths` adds `path` with a directory-relative POSIX path. Batch `human` output lists item ids and statuses only; SARIF and JUnit renderings are derived from the same item list.
+
 ## GUI guidance codes
 
 The desktop GUI reserves `GUI001` through `GUI006` for local, safe guidance. These codes never contain selected paths, input values, parser detail, or matched canary values.

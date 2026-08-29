@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import Any
 
 from tracecanary.canonical import json_pointer, pointer_matches
 from tracecanary.contract import Contract
 from tracecanary.otlp import iter_attributes
-from tracecanary.report import Violation, build_report, ensure_values_absent
+from tracecanary.report import Report, ReportMode, Violation, build_report, ensure_values_absent
 
 
-def check_trace(contract: Contract, payload: dict[str, Any], *, mode: str = "check") -> dict[str, Any]:
+def check_trace(contract: Contract, payload: dict[str, Any], *, mode: ReportMode = "check") -> Report:
     """Evaluate a validated OTLP trace, without carrying any canary value into a report."""
     violations: list[Violation] = []
     for path, scalar in _iter_scalars(payload):
