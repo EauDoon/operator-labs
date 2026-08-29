@@ -79,6 +79,40 @@ class OtlpTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(OtlpError):
                 validate_trace(payload(value))
 
+    def test_trace_and_span_ids_are_empty_or_fixed_width_hex(self) -> None:
+        span = {
+            "name": "x",
+            "traceId": "A" * 32,
+            "spanId": "b" * 16,
+            "parentSpanId": "C" * 16,
+            "links": [{"traceId": "d" * 32, "spanId": "E" * 16}],
+        }
+        payload = {"resourceSpans": [{"resource": {}, "scopeSpans": [{"spans": [span]}]}]}
+        validate_trace(payload)
+
+        for target, key in (
+            (span, "traceId"),
+            (span, "spanId"),
+            (span, "parentSpanId"),
+            (span["links"][0], "traceId"),
+            (span["links"][0], "spanId"),
+        ):
+            target[key] = ""
+        validate_trace(payload)
+
+        for target, key, value in (
+            (span, "traceId", "not-hex"),
+            (span, "spanId", "0" * 15),
+            (span, "parentSpanId", "0" * 17),
+            (span["links"][0], "traceId", "g" * 32),
+            (span["links"][0], "spanId", "0" * 15),
+        ):
+            original = target[key]
+            target[key] = value
+            with self.subTest(key=key, value=value), self.assertRaises(OtlpError):
+                validate_trace(payload)
+            target[key] = original
+
     def test_non_json_constants_are_rejected_before_validation(self) -> None:
         import tempfile
 

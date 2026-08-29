@@ -22,6 +22,7 @@ class Attribute:
 
 _INT64 = re.compile(r"(?:0|[1-9][0-9]*|-[1-9][0-9]*)$")
 _UINT64 = re.compile(r"(?:0|[1-9][0-9]*)$")
+_HEX_ID = re.compile(r"[0-9a-fA-F]+$")
 _INT64_MIN = -(2**63)
 _INT64_MAX = 2**63 - 1
 _UINT64_MAX = 2**64 - 1
@@ -52,6 +53,13 @@ def _validate_uint(value: Any, message: str, maximum: int = _UINT32_MAX) -> None
 
 def _validate_optional_string(item: dict[str, Any], key: str, message: str) -> None:
     if key in item and not isinstance(item[key], str):
+        raise OtlpError(message)
+
+
+def _validate_hex_id(value: Any, length: int, message: str) -> None:
+    if not isinstance(value, str):
+        raise OtlpError(message)
+    if value and (len(value) != length or not _HEX_ID.fullmatch(value)):
         raise OtlpError(message)
 
 
@@ -104,8 +112,10 @@ def _validate_span(span: Any, path: tuple[str, ...]) -> None:
         raise OtlpError("span has unsupported fields")
     if not isinstance(span.get("name"), str):
         raise OtlpError("span requires a string name")
-    for key in ("traceId", "spanId", "parentSpanId", "traceState"):
-        _validate_optional_string(span, key, f"span.{key} must be a string")
+    for key, length in (("traceId", 32), ("spanId", 16), ("parentSpanId", 16)):
+        if key in span:
+            _validate_hex_id(span[key], length, f"span.{key} must be a {length}-character hexadecimal string")
+    _validate_optional_string(span, "traceState", "span.traceState must be a string")
     for key in ("startTimeUnixNano", "endTimeUnixNano"):
         if key in span:
             _validate_uint64_string(span[key], f"span.{key} must be a uint64 string")
@@ -140,8 +150,10 @@ def _validate_span(span: Any, path: tuple[str, ...]) -> None:
         for link in links:
             if not isinstance(link, dict) or set(link) - {"traceId", "spanId", "traceState", "attributes", "droppedAttributesCount"}:
                 raise OtlpError("span link has unsupported fields")
-            for key in ("traceId", "spanId", "traceState"):
-                _validate_optional_string(link, key, f"span link {key} must be a string")
+            for key, length in (("traceId", 32), ("spanId", 16)):
+                if key in link:
+                    _validate_hex_id(link[key], length, f"span link {key} must be a {length}-character hexadecimal string")
+            _validate_optional_string(link, "traceState", "span link traceState must be a string")
             if "droppedAttributesCount" in link:
                 _validate_uint(link["droppedAttributesCount"], "span link droppedAttributesCount must be a uint32")
             _validate_attributes(link.get("attributes", []), path + ("links", "attributes"))
