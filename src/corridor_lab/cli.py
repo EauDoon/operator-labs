@@ -73,11 +73,11 @@ def _load_routes_argument(value: str) -> list:
     return load_route_folder(path)
 
 
-def _parse_values(raw: str) -> list[Decimal]:
+def _parse_values(raw: str, flag: str = "--values") -> list[Decimal]:
     chunks = raw.split(",")
     if not all(chunk.strip() for chunk in chunks):
-        raise InputError("--values must be a comma-separated list of decimals")
-    return [require_decimal(chunk.strip(), "sensitivity value") for chunk in chunks]
+        raise InputError(f"{flag} must be a comma-separated list of decimals")
+    return [require_decimal(chunk.strip(), f"{flag} value") for chunk in chunks]
 
 
 def _emit(text: str, output: str | None) -> None:
@@ -135,9 +135,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.command == "compare":
             report = compare_routes(scenario.transaction, _load_routes_argument(args.routes), scenario.objective, scenario.scenario_id)
         elif args.command == "sensitivity":
-            report = run_sensitivity(scenario, args.parameter, _parse_values(args.values))
+            report = run_sensitivity(scenario, args.parameter, _parse_values(args.values, "--values"))
         elif args.command == "stress-grid":
-            report = run_stress_grid(scenario, args.parameter_a, _parse_values(args.values_a), args.parameter_b, _parse_values(args.values_b))
+            report = run_stress_grid(
+                scenario,
+                args.parameter_a,
+                _parse_values(args.values_a, "--values-a"),
+                args.parameter_b,
+                _parse_values(args.values_b, "--values-b"),
+            )
         elif args.command == "pareto":
             if not scenario.routes:
                 raise InputError("pareto requires routes embedded in the scenario")
