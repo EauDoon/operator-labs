@@ -30,6 +30,7 @@ from .outcomes import Outcome
 
 ROUTE_CONTRACT_VERSION = "corridor-lab.route/v1"
 MAX_BPS = Decimal("10000")
+SENSITIVITY_PARAMETERS = ("fx_rate", "fixed_fee_send", "percent_fee_bps", "fx_spread_bps")
 
 
 @dataclass(frozen=True)
@@ -53,15 +54,20 @@ class Route:
 
     def changed_parameter(self, parameter: str, value: Decimal) -> Route:
         """Return a copy changing exactly one documented top-level parameter."""
-        if parameter not in {"fx_rate", "fixed_fee_send", "percent_fee_bps", "fx_spread_bps"}:
-            raise InputError(f"unsupported sensitivity parameter: {parameter}")
-        if parameter == "fx_rate" and value <= 0:
+        name = parameter.strip()
+        if not name:
+            raise InputError("parameter must not be empty")
+        if name not in SENSITIVITY_PARAMETERS:
+            raise InputError(
+                f"unsupported sensitivity parameter: {name} (choose from {', '.join(SENSITIVITY_PARAMETERS)})"
+            )
+        if name == "fx_rate" and value <= 0:
             raise InputError("fx_rate sensitivity values must be greater than zero")
-        if parameter != "fx_rate" and value < 0:
-            raise InputError(f"{parameter} sensitivity values must be non-negative")
-        if parameter.endswith("bps") and value > MAX_BPS:
-            raise InputError(f"{parameter} sensitivity values must not exceed 10000")
-        return replace(self, **{parameter: value})
+        if name != "fx_rate" and value < 0:
+            raise InputError(f"{name} sensitivity values must be non-negative")
+        if name.endswith("bps") and value > MAX_BPS:
+            raise InputError(f"{name} sensitivity values must not exceed 10000")
+        return replace(self, **{name: value})
 
 
 def _parse_liquidity(value: Any, path: str) -> Liquidity:

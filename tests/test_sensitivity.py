@@ -17,8 +17,10 @@ class SensitivityTests(unittest.TestCase):
 
     def test_unsupported_parameter_fails(self):
         parsed = parse_scenario(scenario(routes=[route()]))
-        with self.assertRaises(Exception):
+        with self.assertRaisesRegex(Exception, "choose from fx_rate, fixed_fee_send, percent_fee_bps, fx_spread_bps"):
             run_sensitivity(parsed, "liquidity.prefunding_amount_send", [Decimal("1")])
+        with self.assertRaisesRegex(Exception, "parameter must not be empty"):
+            run_sensitivity(parsed, "  ", [Decimal("1")])
 
     def test_two_parameter_grid_is_bounded_and_deterministic(self):
         parsed = parse_scenario(scenario(routes=[route()]))

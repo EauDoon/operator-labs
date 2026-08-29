@@ -167,6 +167,96 @@ class ScenarioTests(unittest.TestCase):
         self.assertEqual(result, 2)
         self.assertIn("error: --values-a must be a comma-separated list of decimals", stderr.getvalue())
 
+    def test_cli_rejects_empty_scenario_and_batch_paths(self):
+        cases = (
+            (["validate", ""], "scenario must not be empty"),
+            (["validate", "   "], "scenario must not be empty"),
+            (["batch", ""], "input_dir must not be empty"),
+            (["batch", " \t"], "input_dir must not be empty"),
+        )
+        for argv, message in cases:
+            with self.subTest(argv=argv):
+                stderr = StringIO()
+                with redirect_stdout(StringIO()), redirect_stderr(stderr):
+                    result = main(argv)
+                self.assertEqual(result, 2)
+                self.assertIn(message, stderr.getvalue())
+
+    def test_cli_rejects_empty_routes_output_and_parameter(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "scenario.json"
+            path.write_text(json.dumps(scenario(routes=[route()])), encoding="utf-8")
+            cases = (
+                (["compare", str(path), "--routes", ""], "--routes must not be empty"),
+                (["evaluate", str(path), "--output", "   "], "--output must not be empty"),
+                (["sensitivity", str(path), "--parameter", "", "--values", "10"], "--parameter must not be empty"),
+                (
+                    [
+                        "stress-grid",
+                        str(path),
+                        "--parameter-a",
+                        "  ",
+                        "--values-a",
+                        "1.7",
+                        "--parameter-b",
+                        "fx_spread_bps",
+                        "--values-b",
+                        "25",
+                    ],
+                    "--parameter-a must not be empty",
+                ),
+            )
+            for argv, message in cases:
+                with self.subTest(message=message):
+                    stderr = StringIO()
+                    with redirect_stdout(StringIO()), redirect_stderr(stderr):
+                        result = main(argv)
+                    self.assertEqual(result, 2)
+                    self.assertIn(message, stderr.getvalue())
+
+    def test_cli_strips_sensitivity_parameter_whitespace(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "scenario.json"
+            path.write_text(json.dumps(scenario(routes=[route()])), encoding="utf-8")
+            stdout = StringIO()
+            stderr = StringIO()
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                result = main(
+                    ["sensitivity", str(path), "--parameter", " fx_spread_bps ", "--values", "10,25"]
+                )
+        self.assertEqual(result, 0)
+        self.assertEqual(stderr.getvalue(), "")
+        self.assertIn("corridor-lab.sensitivity/v1", stdout.getvalue())
+
+    def test_cli_help_documents_parameters_formats_and_value_flags(self):
+        cases = (
+            (
+                ["sensitivity", "--help"],
+                ("one of fx_rate, fixed_fee_send, percent_fee_bps, fx_spread_bps", "comma-separated decimal values"),
+            ),
+            (
+                ["stress-grid", "--help"],
+                ("--values-a", "comma-separated decimal values", "json, csv, or markdown"),
+            ),
+            (
+                ["batch", "--help"],
+                ("include JSON files in subdirectories", "csv is not supported", "write the report to this UTF-8 path"),
+            ),
+            (
+                ["pareto", "--help"],
+                ("path to a fictional scenario JSON file", "csv is not supported"),
+            ),
+        )
+        for argv, needles in cases:
+            with self.subTest(argv=argv):
+                stdout = StringIO()
+                with redirect_stdout(stdout), self.assertRaises(SystemExit) as caught:
+                    main(argv)
+                self.assertEqual(caught.exception.code, 0)
+                text = " ".join(stdout.getvalue().split())
+                for needle in needles:
+                    self.assertIn(needle, text)
+
     def test_schema_embedded_routes_reference_route_contract(self):
         schema_path = Path(__file__).resolve().parents[1] / "schemas" / "scenario.schema.json"
         schema = json.loads(schema_path.read_text(encoding="utf-8"))
