@@ -158,3 +158,63 @@ class OtlpTests(unittest.TestCase):
             path.write_text('{"resourceSpans":[],"unexpected":NaN}', encoding="utf-8")
             with self.assertRaises(InputError):
                 load_json(path, max_bytes=1000, max_depth=10)
+
+    def test_span_errors_name_the_failing_json_pointer(self) -> None:
+        payload = {
+            "resourceSpans": [
+                {
+                    "resource": {},
+                    "scopeSpans": [{"spans": [{"name": "ok"}, {"kind": 1}]}],
+                }
+            ]
+        }
+        with self.assertRaisesRegex(OtlpError, r"span requires a string name at /resourceSpans/0/scopeSpans/0/spans/1"):
+            validate_trace(payload)
+
+    def test_attribute_errors_name_the_failing_json_pointer_without_keys(self) -> None:
+        marker = "TCANARY_ATTRIBUTE_KEY_9d2a"
+        payload = {
+            "resourceSpans": [
+                {
+                    "resource": {
+                        "attributes": [
+                            {"key": "service.name", "value": {"stringValue": "synthetic"}},
+                            {"key": marker, "value": {"intValue": 1}},
+                        ]
+                    },
+                    "scopeSpans": [],
+                }
+            ]
+        }
+        with self.assertRaisesRegex(OtlpError, r"intValue must be an OTLP JSON int64 string at /resourceSpans/0/resource/attributes/1/value") as caught:
+            validate_trace(payload)
+        self.assertNotIn(marker, str(caught.exception))
+
+    def test_event_and_link_errors_include_indexes(self) -> None:
+        payload = {
+            "resourceSpans": [
+                {
+                    "resource": {},
+                    "scopeSpans": [
+                        {
+                            "spans": [
+                                {
+                                    "name": "ok",
+                                    "events": [{"name": "first"}, {"name": 1}],
+                                }
+                            ]
+                        }
+                    ],
+                }
+            ]
+        }
+        with self.assertRaisesRegex(OtlpError, r"span event requires a string name at /resourceSpans/0/scopeSpans/0/spans/0/events/1"):
+            validate_trace(payload)
+
+        payload["resourceSpans"][0]["scopeSpans"][0]["spans"][0]["events"] = [{"name": "ok"}]
+        payload["resourceSpans"][0]["scopeSpans"][0]["spans"][0]["links"] = [{}, {"traceId": "not-hex"}]
+        with self.assertRaisesRegex(
+            OtlpError,
+            r"span link traceId must be a 32-character hexadecimal string at /resourceSpans/0/scopeSpans/0/spans/0/links/1",
+        ):
+            validate_trace(payload)

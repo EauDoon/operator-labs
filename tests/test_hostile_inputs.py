@@ -94,7 +94,31 @@ class HostileInputTests(unittest.TestCase):
         self.assertEqual(status, EXIT_UNRESOLVED)
         self.assertEqual(output.getvalue(), "")
         self.assertIn("intValue", error.getvalue())
+        self.assertIn("/resourceSpans/0/resource/attributes/0/value", error.getvalue())
         self.assertNotIn(marker, error.getvalue())
+
+    def test_malformed_span_cli_error_names_the_json_pointer_not_the_span_name(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        span_name = "TCANARY_SPAN_NAME_4c81"
+        payload = {
+            "resourceSpans": [
+                {
+                    "resource": {"attributes": [{"key": "service.name", "value": {"stringValue": "synthetic"}}]},
+                    "scopeSpans": [{"spans": [{"name": "ok"}, {"name": span_name, "kind": 6}]}],
+                }
+            ]
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "candidate.json"
+            candidate.write_text(json.dumps(payload), encoding="utf-8")
+            error = io.StringIO()
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
+                status = main(["check", "--contract", str(root / "fixtures" / "v1" / "contract.json"), "--input", str(candidate)])
+        self.assertEqual(status, EXIT_UNRESOLVED)
+        self.assertEqual(output.getvalue(), "")
+        self.assertIn("span.kind must be a uint32 at /resourceSpans/0/scopeSpans/0/spans/1", error.getvalue())
+        self.assertNotIn(span_name, error.getvalue())
 
     def test_unexpected_oserror_is_unresolved_without_leaking_details(self) -> None:
         marker = "TCANARY_OSERROR_PATH_7b22"

@@ -100,7 +100,7 @@ tracecanary fixture create --output example/
 tracecanary-gui
 ```
 
-From a fresh checkout, set `PYTHONPATH=src` and replace `tracecanary` with `python -m tracecanary`; use `python -m tracecanary.gui` for the GUI. `0` means the contract is satisfied. `1` means a privacy or retention regression was detected. `2` means invalid input, an unsupported version, or an unresolved comparison.
+From a fresh checkout, set `PYTHONPATH=src` and replace `tracecanary` with `python -m tracecanary`; use `python -m tracecanary.gui` for the GUI. `0` means the contract is satisfied. `1` means a privacy or retention regression was detected. `2` means invalid input, an unsupported version, or an unresolved comparison. Invalid OTLP structure is reported with a JSON pointer to the failing resource, span, event, link, or attribute; pointers never include span names or attribute keys.
 
 `validate`, `check`, and `diff` accept `--format human` (default) or `--format json`. `batch` accepts `--format json` (default), `human`, `sarif`, or `junit`; `--recursive` includes `*.json` files in subdirectories; `--include-paths` adds directory-relative POSIX paths to JSON, SARIF, and JUnit items. Batch `human` output is a per-item status rollup and does not repeat finding labels.
 

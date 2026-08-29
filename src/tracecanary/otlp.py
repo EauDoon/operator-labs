@@ -8,9 +8,16 @@ import re
 import sys
 from typing import Any, Iterator
 
+from tracecanary.canonical import json_pointer
+
 
 class OtlpError(ValueError):
     """An input that is not the supported OTLP trace shape."""
+
+
+def _located(message: str, path: tuple[str, ...]) -> str:
+    """Attach a JSON pointer so failures name the resource, span, event, or attribute."""
+    return f"{message} at {json_pointer(path)}"
 
 
 @dataclass(frozen=True)
@@ -63,15 +70,15 @@ def _validate_hex_id(value: Any, length: int, message: str) -> None:
         raise OtlpError(message)
 
 
-def _validate_scope(scope: Any) -> None:
+def _validate_scope(scope: Any, path: tuple[str, ...]) -> None:
     if not isinstance(scope, dict) or set(scope) - {"name", "version", "attributes", "droppedAttributesCount"}:
-        raise OtlpError("scope has unsupported fields")
-    _validate_optional_string(scope, "name", "scope.name must be a string")
-    _validate_optional_string(scope, "version", "scope.version must be a string")
+        raise OtlpError(_located("scope has unsupported fields", path))
+    _validate_optional_string(scope, "name", _located("scope.name must be a string", path))
+    _validate_optional_string(scope, "version", _located("scope.version must be a string", path))
     if "attributes" in scope:
-        _validate_attributes(scope["attributes"], ("scope", "attributes"))
+        _validate_attributes(scope["attributes"], path + ("attributes",))
     if "droppedAttributesCount" in scope:
-        _validate_uint(scope["droppedAttributesCount"], "scope.droppedAttributesCount must be a uint32")
+        _validate_uint(scope["droppedAttributesCount"], _located("scope.droppedAttributesCount must be a uint32", path))
 
 
 def validate_trace(payload: Any) -> None:
@@ -81,100 +88,117 @@ def validate_trace(payload: Any) -> None:
     if not isinstance(resources, list):
         raise OtlpError("resourceSpans must be a list")
     for resource_index, resource_span in enumerate(resources):
+        resource_path = ("resourceSpans", str(resource_index))
         if not isinstance(resource_span, dict) or set(resource_span) - {"resource", "scopeSpans", "schemaUrl"}:
-            raise OtlpError("resourceSpans entries have unsupported fields")
+            raise OtlpError(_located("resourceSpans entries have unsupported fields", resource_path))
         if "resource" not in resource_span or "scopeSpans" not in resource_span:
-            raise OtlpError("resourceSpans entries require resource and scopeSpans")
+            raise OtlpError(_located("resourceSpans entries require resource and scopeSpans", resource_path))
         resource = resource_span["resource"]
+        resource_object_path = resource_path + ("resource",)
         if not isinstance(resource, dict) or set(resource) - {"attributes", "droppedAttributesCount"}:
-            raise OtlpError("resource has unsupported fields")
-        _validate_attributes(resource.get("attributes", []), ("resourceSpans", str(resource_index), "resource", "attributes"))
+            raise OtlpError(_located("resource has unsupported fields", resource_object_path))
+        _validate_attributes(resource.get("attributes", []), resource_object_path + ("attributes",))
         if "droppedAttributesCount" in resource:
-            _validate_uint(resource["droppedAttributesCount"], "resource.droppedAttributesCount must be a uint32")
-        _validate_optional_string(resource_span, "schemaUrl", "resourceSpans.schemaUrl must be a string")
+            _validate_uint(
+                resource["droppedAttributesCount"],
+                _located("resource.droppedAttributesCount must be a uint32", resource_object_path),
+            )
+        _validate_optional_string(
+            resource_span,
+            "schemaUrl",
+            _located("resourceSpans.schemaUrl must be a string", resource_path),
+        )
         scopes = resource_span["scopeSpans"]
         if not isinstance(scopes, list):
-            raise OtlpError("scopeSpans must be a list")
+            raise OtlpError(_located("scopeSpans must be a list", resource_path + ("scopeSpans",)))
         for scope_index, scope_span in enumerate(scopes):
+            scope_path = resource_path + ("scopeSpans", str(scope_index))
             if not isinstance(scope_span, dict) or set(scope_span) - {"scope", "spans", "schemaUrl"}:
-                raise OtlpError("scopeSpans entries have unsupported fields")
+                raise OtlpError(_located("scopeSpans entries have unsupported fields", scope_path))
             if "scope" in scope_span:
-                _validate_scope(scope_span["scope"])
-            _validate_optional_string(scope_span, "schemaUrl", "scopeSpans.schemaUrl must be a string")
+                _validate_scope(scope_span["scope"], scope_path + ("scope",))
+            _validate_optional_string(
+                scope_span,
+                "schemaUrl",
+                _located("scopeSpans.schemaUrl must be a string", scope_path),
+            )
             spans = scope_span.get("spans")
             if not isinstance(spans, list):
-                raise OtlpError("scopeSpans entries require a spans list")
+                raise OtlpError(_located("scopeSpans entries require a spans list", scope_path))
             for span_index, span in enumerate(spans):
-                _validate_span(span, ("resourceSpans", str(resource_index), "scopeSpans", str(scope_index), "spans", str(span_index)))
+                _validate_span(span, scope_path + ("spans", str(span_index)))
 
 
 def _validate_span(span: Any, path: tuple[str, ...]) -> None:
     allowed = {"traceId", "spanId", "parentSpanId", "name", "kind", "startTimeUnixNano", "endTimeUnixNano", "attributes", "droppedAttributesCount", "events", "droppedEventsCount", "status", "links", "droppedLinksCount", "flags", "traceState"}
     if not isinstance(span, dict) or set(span) - allowed:
-        raise OtlpError("span has unsupported fields")
+        raise OtlpError(_located("span has unsupported fields", path))
     if not isinstance(span.get("name"), str):
-        raise OtlpError("span requires a string name")
+        raise OtlpError(_located("span requires a string name", path))
     for key, length in (("traceId", 32), ("spanId", 16), ("parentSpanId", 16)):
         if key in span:
-            _validate_hex_id(span[key], length, f"span.{key} must be a {length}-character hexadecimal string")
-    _validate_optional_string(span, "traceState", "span.traceState must be a string")
+            _validate_hex_id(span[key], length, _located(f"span.{key} must be a {length}-character hexadecimal string", path))
+    _validate_optional_string(span, "traceState", _located("span.traceState must be a string", path))
     for key in ("startTimeUnixNano", "endTimeUnixNano"):
         if key in span:
-            _validate_uint64_string(span[key], f"span.{key} must be a uint64 string")
+            _validate_uint64_string(span[key], _located(f"span.{key} must be a uint64 string", path))
     for key in ("kind", "droppedAttributesCount", "droppedEventsCount", "droppedLinksCount", "flags"):
         if key in span:
-            _validate_uint(span[key], f"span.{key} must be a uint32", maximum=5 if key == "kind" else _UINT32_MAX)
+            _validate_uint(span[key], _located(f"span.{key} must be a uint32", path), maximum=5 if key == "kind" else _UINT32_MAX)
     _validate_attributes(span.get("attributes", []), path + ("attributes",))
     events = span.get("events", [])
     if not isinstance(events, list):
-        raise OtlpError("span events must be a list")
+        raise OtlpError(_located("span events must be a list", path))
     for event_index, event in enumerate(events):
+        event_path = path + ("events", str(event_index))
         if not isinstance(event, dict) or set(event) - {"timeUnixNano", "name", "attributes", "droppedAttributesCount"}:
-            raise OtlpError("span event has unsupported fields")
+            raise OtlpError(_located("span event has unsupported fields", event_path))
         if not isinstance(event.get("name"), str):
-            raise OtlpError("span event requires a string name")
+            raise OtlpError(_located("span event requires a string name", event_path))
         if "timeUnixNano" in event:
-            _validate_uint64_string(event["timeUnixNano"], "span event timeUnixNano must be a uint64 string")
+            _validate_uint64_string(event["timeUnixNano"], _located("span event timeUnixNano must be a uint64 string", event_path))
         if "droppedAttributesCount" in event:
-            _validate_uint(event["droppedAttributesCount"], "span event droppedAttributesCount must be a uint32")
-        _validate_attributes(event.get("attributes", []), path + ("events", str(event_index), "attributes"))
+            _validate_uint(event["droppedAttributesCount"], _located("span event droppedAttributesCount must be a uint32", event_path))
+        _validate_attributes(event.get("attributes", []), event_path + ("attributes",))
     status = span.get("status")
     if "status" in span:
+        status_path = path + ("status",)
         if not isinstance(status, dict) or set(status) - {"message", "code"}:
-            raise OtlpError("span status has unsupported fields")
-        _validate_optional_string(status, "message", "span status message must be a string")
+            raise OtlpError(_located("span status has unsupported fields", status_path))
+        _validate_optional_string(status, "message", _located("span status message must be a string", status_path))
         if "code" in status:
-            _validate_uint(status["code"], "span status code must be a uint32", maximum=2)
+            _validate_uint(status["code"], _located("span status code must be a uint32", status_path), maximum=2)
     links = span.get("links")
     if "links" in span:
         if not isinstance(links, list):
-            raise OtlpError("span links must be a list")
-        for link in links:
+            raise OtlpError(_located("span links must be a list", path))
+        for link_index, link in enumerate(links):
+            link_path = path + ("links", str(link_index))
             if not isinstance(link, dict) or set(link) - {"traceId", "spanId", "traceState", "attributes", "droppedAttributesCount", "flags"}:
-                raise OtlpError("span link has unsupported fields")
+                raise OtlpError(_located("span link has unsupported fields", link_path))
             for key, length in (("traceId", 32), ("spanId", 16)):
                 if key in link:
-                    _validate_hex_id(link[key], length, f"span link {key} must be a {length}-character hexadecimal string")
-            _validate_optional_string(link, "traceState", "span link traceState must be a string")
+                    _validate_hex_id(link[key], length, _located(f"span link {key} must be a {length}-character hexadecimal string", link_path))
+            _validate_optional_string(link, "traceState", _located("span link traceState must be a string", link_path))
             if "droppedAttributesCount" in link:
-                _validate_uint(link["droppedAttributesCount"], "span link droppedAttributesCount must be a uint32")
+                _validate_uint(link["droppedAttributesCount"], _located("span link droppedAttributesCount must be a uint32", link_path))
             if "flags" in link:
-                _validate_uint(link["flags"], "span link flags must be a uint32")
-            _validate_attributes(link.get("attributes", []), path + ("links", "attributes"))
+                _validate_uint(link["flags"], _located("span link flags must be a uint32", link_path))
+            _validate_attributes(link.get("attributes", []), link_path + ("attributes",))
 
 
 def _validate_attributes(attributes: Any, path: tuple[str, ...]) -> None:
     if not isinstance(attributes, list):
-        raise OtlpError("attributes must be a list")
+        raise OtlpError(_located("attributes must be a list", path))
     for index, attribute in enumerate(attributes):
         _validate_key_value(attribute, path + (str(index),))
 
 
 def _validate_key_value(attribute: Any, path: tuple[str, ...]) -> None:
     if not isinstance(attribute, dict) or set(attribute) != {"key", "value"}:
-        raise OtlpError("each attribute requires exactly key and value")
+        raise OtlpError(_located("each attribute requires exactly key and value", path))
     if not isinstance(attribute["key"], str) or not attribute["key"]:
-        raise OtlpError("attribute key is invalid")
+        raise OtlpError(_located("attribute key is invalid", path))
     _validate_any_value(attribute["value"], path + ("value",))
 
 
@@ -184,16 +208,16 @@ def _validate_any_value(value: Any, path: tuple[str, ...]) -> None:
     while pending:
         current, current_path = pending.pop()
         if not isinstance(current, dict) or len(current) != 1:
-            raise OtlpError("AnyValue must contain exactly one supported value field")
+            raise OtlpError(_located("AnyValue must contain exactly one supported value field", current_path))
         kind, nested = next(iter(current.items()))
         if kind == "stringValue" or kind == "bytesValue":
             if not isinstance(nested, str):
-                raise OtlpError("stringValue and bytesValue must be strings")
+                raise OtlpError(_located("stringValue and bytesValue must be strings", current_path))
         elif kind == "boolValue":
             if type(nested) is not bool:
-                raise OtlpError("boolValue must be a boolean")
+                raise OtlpError(_located("boolValue must be a boolean", current_path))
         elif kind == "intValue":
-            _validate_int64_string(nested, "intValue must be an OTLP JSON int64 string")
+            _validate_int64_string(nested, _located("intValue must be an OTLP JSON int64 string", current_path))
         elif kind == "doubleValue":
             if type(nested) is int:
                 try:
@@ -205,22 +229,23 @@ def _validate_any_value(value: Any, path: tuple[str, ...]) -> None:
             else:
                 finite = False
             if not finite:
-                raise OtlpError("doubleValue must be a finite JSON number")
+                raise OtlpError(_located("doubleValue must be a finite JSON number", current_path))
         elif kind == "arrayValue":
             if not isinstance(nested, dict) or set(nested) != {"values"} or not isinstance(nested["values"], list):
-                raise OtlpError("arrayValue must contain a values list")
+                raise OtlpError(_located("arrayValue must contain a values list", current_path))
             pending.extend((item, current_path + ("arrayValue", "values", str(index))) for index, item in enumerate(nested["values"]))
         elif kind == "kvlistValue":
             if not isinstance(nested, dict) or set(nested) != {"values"} or not isinstance(nested["values"], list):
-                raise OtlpError("kvlistValue must contain a values list")
+                raise OtlpError(_located("kvlistValue must contain a values list", current_path))
             for index, item in enumerate(nested["values"]):
+                entry_path = current_path + ("kvlistValue", "values", str(index))
                 if not isinstance(item, dict) or set(item) != {"key", "value"}:
-                    raise OtlpError("kvlistValue entries require exactly key and value")
+                    raise OtlpError(_located("kvlistValue entries require exactly key and value", entry_path))
                 if not isinstance(item["key"], str) or not item["key"]:
-                    raise OtlpError("kvlistValue entry key is invalid")
-                pending.append((item["value"], current_path + ("kvlistValue", "values", str(index), "value")))
+                    raise OtlpError(_located("kvlistValue entry key is invalid", entry_path))
+                pending.append((item["value"], entry_path + ("value",)))
         else:
-            raise OtlpError("AnyValue contains an unsupported value field")
+            raise OtlpError(_located("AnyValue contains an unsupported value field", current_path))
 
 
 def iter_attributes(payload: dict[str, Any]) -> Iterator[Attribute]:

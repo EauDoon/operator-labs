@@ -14,7 +14,7 @@ OpenTelemetry describes its GenAI semantic conventions as Development. TraceCana
 
 The top-level object contains only `resourceSpans`. Every resource span contains a `resource` object and `scopeSpans` list. Each scope span contains a `spans` list and may identify an instrumentation scope with attributes and a uint32 `droppedAttributesCount`. Every span has a string `name`, an optional `attributes` list, and optional event and link lists. Links may include attributes and uint32 `flags`. Every event has a string `name` and optional attributes list. Every inspected attribute has exactly `key` and `value` fields, with a non-empty string key and an object value.
 
-This structural subset accepts the fields necessary for the stated v1 checks. Inputs outside the subset return exit code `2` rather than receiving partial analysis.
+This structural subset accepts the fields necessary for the stated v1 checks. Inputs outside the subset return exit code `2` rather than receiving partial analysis. OTLP validation errors include a JSON pointer to the failing resource, instrumentation scope, span, event, link, or attribute. Pointers use field names and array indexes only; they never include span names, attribute keys, or scalar values.
 
 ## Finding codes
 
