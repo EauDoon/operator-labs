@@ -58,7 +58,7 @@ def bundle() -> dict[str, Any]:
 
 def write_bundle(output: Path) -> None:
     """Write the synthetic bundle into an empty destination directory."""
-    if output.exists() and any(output.iterdir()):
+    if output.exists() and (not output.is_dir() or any(output.iterdir())):
         raise ValueError("fixture output directory must be empty")
     output.mkdir(parents=True, exist_ok=True)
     for name, data in bundle().items():

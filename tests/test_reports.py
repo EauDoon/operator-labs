@@ -232,6 +232,18 @@ class ReportTests(unittest.TestCase):
             self.assertEqual(status, EXIT_PASS)
             self.assertEqual(set(path.name for path in Path(directory).iterdir()), set(bundle()))
 
+    def test_fixture_command_rejects_an_existing_file_without_a_traceback(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / "existing.json"
+            destination.write_text("existing", encoding="utf-8")
+            output = io.StringIO()
+            error = io.StringIO()
+            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
+                status = main(["fixture", "create", "--output", str(destination)])
+            self.assertEqual(status, EXIT_UNRESOLVED)
+            self.assertEqual(output.getvalue(), "")
+            self.assertIn("fixture output directory must be empty", error.getvalue())
+
     def test_human_report_omits_location_suffix_for_empty_paths(self) -> None:
         report = {
             "status": "regression",
