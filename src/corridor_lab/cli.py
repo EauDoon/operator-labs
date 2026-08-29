@@ -12,15 +12,31 @@ from .canonical import MAX_BATCH_SCENARIOS, InputError, atomic_write_text, requi
 from .comparison import compare_routes, evaluate_scenario, pareto_frontier
 from .model import evaluate_route
 from .report import render_report
-from .route import Route, load_route, load_route_folder
+from .route import SENSITIVITY_PARAMETERS, Route, load_route, load_route_folder
 from .scenario import load_scenario
 from .sensitivity import run_sensitivity
 from .stress import run_stress_grid
 
+SCENARIO_HELP = "path to a fictional scenario JSON file"
+PARAMETER_HELP = "one of " + ", ".join(SENSITIVITY_PARAMETERS)
+VALUES_HELP = "comma-separated decimal values"
 
-def _add_output_options(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--format", choices=("json", "csv", "markdown"), default="json")
+
+def _add_output_options(
+    parser: argparse.ArgumentParser,
+    *,
+    formats: tuple[str, ...] = ("json", "csv", "markdown"),
+) -> None:
+    if "csv" in formats:
+        format_help = "json, csv, or markdown (default: json)"
+    else:
+        format_help = "json or markdown (default: json; csv is not supported)"
+    parser.add_argument("--format", choices=formats, default="json", help=format_help)
     parser.add_argument("--output", help="write the report to this UTF-8 path")
+
+
+def _add_scenario_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("scenario", help=SCENARIO_HELP)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -28,44 +44,49 @@ def build_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
 
     validate = commands.add_parser("validate", help="validate a synthetic scenario contract")
-    validate.add_argument("scenario")
+    _add_scenario_argument(validate)
 
     evaluate = commands.add_parser("evaluate", help="evaluate routes embedded in a scenario")
-    evaluate.add_argument("scenario")
+    _add_scenario_argument(evaluate)
     _add_output_options(evaluate)
 
     compare = commands.add_parser("compare", help="compare route files against a scenario transaction")
-    compare.add_argument("scenario")
+    _add_scenario_argument(compare)
     compare.add_argument("--routes", required=True, help="a route JSON file or directory of route JSON files")
     _add_output_options(compare)
 
     sensitivity = commands.add_parser("sensitivity", help="vary one declared route parameter")
-    sensitivity.add_argument("scenario")
-    sensitivity.add_argument("--parameter", required=True)
-    sensitivity.add_argument("--values", required=True, help="comma-separated decimal values")
+    _add_scenario_argument(sensitivity)
+    sensitivity.add_argument("--parameter", required=True, help=PARAMETER_HELP)
+    sensitivity.add_argument("--values", required=True, help=VALUES_HELP)
     _add_output_options(sensitivity)
     stress = commands.add_parser("stress-grid", help="run an explicit bounded two-parameter stress grid")
-    stress.add_argument("scenario")
-    stress.add_argument("--parameter-a", required=True)
-    stress.add_argument("--values-a", required=True)
-    stress.add_argument("--parameter-b", required=True)
-    stress.add_argument("--values-b", required=True)
+    _add_scenario_argument(stress)
+    stress.add_argument("--parameter-a", required=True, help=PARAMETER_HELP)
+    stress.add_argument("--values-a", required=True, help=VALUES_HELP)
+    stress.add_argument("--parameter-b", required=True, help=PARAMETER_HELP)
+    stress.add_argument("--values-b", required=True, help=VALUES_HELP)
     _add_output_options(stress)
     pareto = commands.add_parser("pareto", help="show the explicit two-metric Pareto frontier")
-    pareto.add_argument("scenario")
-    pareto.add_argument("--format", choices=("json", "markdown"), default="json")
-    pareto.add_argument("--output")
+    _add_scenario_argument(pareto)
+    _add_output_options(pareto, formats=("json", "markdown"))
     batch = commands.add_parser("batch", help="evaluate a bounded directory of fictional scenarios")
-    batch.add_argument("input_dir")
-    batch.add_argument("--recursive", action="store_true")
-    batch.add_argument("--include-paths", action="store_true")
-    batch.add_argument("--format", choices=("json", "markdown"), default="json")
-    batch.add_argument("--output")
+    batch.add_argument("input_dir", help="directory of fictional scenario JSON files")
+    batch.add_argument("--recursive", action="store_true", help="include JSON files in subdirectories")
+    batch.add_argument("--include-paths", action="store_true", help="add each scenario's relative path to the batch report")
+    _add_output_options(batch, formats=("json", "markdown"))
     return parser
 
 
+def _require_cli_text(value: str, flag: str) -> str:
+    text = value.strip()
+    if not text:
+        raise InputError(f"{flag} must not be empty")
+    return text
+
+
 def _load_routes_argument(value: str) -> list[Route]:
-    path = Path(value)
+    path = Path(_require_cli_text(value, "--routes"))
     if path.is_file():
         return [load_route(path)]
     if not path.is_dir():
@@ -84,11 +105,11 @@ def _emit(text: str, output: str | None) -> None:
     if output is None:
         sys.stdout.write(text)
         return
-    atomic_write_text(Path(output), text)
+    atomic_write_text(Path(_require_cli_text(output, "--output")), text)
 
 
 def _batch(input_dir: str, recursive: bool, include_paths: bool) -> dict[str, object]:
-    root = Path(input_dir).resolve()
+    root = Path(_require_cli_text(input_dir, "input_dir")).resolve()
     if not root.is_dir():
         raise InputError("batch input_dir must be a directory")
     iterator = root.rglob("*.json") if recursive else root.glob("*.json")
@@ -126,7 +147,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             batch_report = _batch(args.input_dir, args.recursive, args.include_paths)
             _emit(render_report(batch_report, args.format), args.output)
             return 0 if batch_report["status"] == "pass" else 2
-        scenario = load_scenario(args.scenario)
+        scenario = load_scenario(_require_cli_text(args.scenario, "scenario"))
         if args.command == "validate":
             sys.stdout.write("valid\n")
             return 0
@@ -136,13 +157,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.command == "compare":
             report = compare_routes(scenario.transaction, _load_routes_argument(args.routes), scenario.objective, scenario.scenario_id)
         elif args.command == "sensitivity":
-            report = run_sensitivity(scenario, args.parameter, _parse_values(args.values, "--values"))
+            report = run_sensitivity(
+                scenario,
+                _require_cli_text(args.parameter, "--parameter"),
+                _parse_values(args.values, "--values"),
+            )
         elif args.command == "stress-grid":
             report = run_stress_grid(
                 scenario,
-                args.parameter_a,
+                _require_cli_text(args.parameter_a, "--parameter-a"),
                 _parse_values(args.values_a, "--values-a"),
-                args.parameter_b,
+                _require_cli_text(args.parameter_b, "--parameter-b"),
                 _parse_values(args.values_b, "--values-b"),
             )
         elif args.command == "pareto":

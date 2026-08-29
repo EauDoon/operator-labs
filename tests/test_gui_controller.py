@@ -73,6 +73,15 @@ class GuiControllerTests(unittest.TestCase):
         self.assertIsNone(result.report)
         self.assertIn("comma-separated decimals", result.error)
 
+    def test_sensitivity_rejects_blank_parameter_name(self):
+        controller = CorridorGuiController()
+        self.assertIsNone(controller.load_builtin_demo().error)
+        result = controller.sensitivity("   ", "10,25")
+        self.assertIsNone(result.report)
+        self.assertIn("parameter must not be empty", result.error)
+        padded = controller.sensitivity(" fx_spread_bps ", "10,25")
+        self.assertIsNone(padded.error)
+
     def test_editor_template_validation_rolls_back_on_invalid_draft(self):
         controller = CorridorGuiController()
         self.assertIsNone(controller.load_builtin_demo().error)
