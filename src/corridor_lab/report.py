@@ -139,6 +139,15 @@ def _currency(report: dict[str, object], key: str, fallback: str) -> str:
     return fallback
 
 
+def _batch_item_error(item: dict[str, object]) -> str:
+    nested = item.get("report")
+    if isinstance(nested, dict):
+        error = nested.get("error")
+        if isinstance(error, str):
+            return error
+    return ""
+
+
 def _objective_summary(report: dict[str, object]) -> str:
     objective = report.get("objective")
     if not isinstance(objective, dict):
@@ -211,10 +220,27 @@ def render_markdown(report: dict[str, object]) -> str:
     if report.get("report_version") == "corridor-lab.batch/v1":
         items = report.get("items", [])
         include_paths = any("path" in item for item in items)
-        lines = ["# Corridor Lab batch report", "", f"Status: `{_cell(report.get('status', 'unresolved'))}`", "", "| Item | Status | Path |" if include_paths else "| Item | Status |", "| --- | --- | --- |" if include_paths else "| --- | --- |"]
+        include_errors = any(_batch_item_error(item) for item in items)
+        headers = ["Item", "Status"]
+        if include_paths:
+            headers.append("Path")
+        if include_errors:
+            headers.append("Error")
+        lines = [
+            "# Corridor Lab batch report",
+            "",
+            f"Status: `{_cell(report.get('status', 'unresolved'))}`",
+            "",
+            "| " + " | ".join(headers) + " |",
+            "| " + " | ".join("---" for _ in headers) + " |",
+        ]
         for item in items:
-            row = f"| {_cell(item.get('id', ''))} | {_cell(item.get('status', 'unresolved'))}"
-            lines.append(f"{row} | {_cell(item.get('path', ''))} |" if include_paths else f"{row} |")
+            values = [item.get("id", ""), item.get("status", "unresolved")]
+            if include_paths:
+                values.append(item.get("path", ""))
+            if include_errors:
+                values.append(_batch_item_error(item))
+            lines.append("| " + " | ".join(_cell(value) for value in values) + " |")
         return "\n".join(lines) + "\n"
     if report.get("report_version") == "corridor-lab.pareto/v1":
         lines = ["# Corridor Lab Pareto frontier", "", f"Synthetic scenario: `{scenario_id}`", "", "| Route | Expected recipient | Expected sender cost |", "| --- | ---: | ---: |"]
