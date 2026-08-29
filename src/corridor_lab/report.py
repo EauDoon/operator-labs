@@ -227,7 +227,7 @@ def render_markdown(report: dict[str, object]) -> str:
         if report.get("report_version") == "corridor-lab.stress-grid/v1":
             lines.extend(
                 [
-                    "| Route | Value A | Value B | Expected recipient | Expected sender cost | Successful by deadline probability |",
+                    f"| Route | {_cell(report.get('parameter_a', 'Parameter A'))} | {_cell(report.get('parameter_b', 'Parameter B'))} | Expected recipient | Expected sender cost | Successful by deadline probability |",
                     "| --- | ---: | ---: | ---: | ---: | ---: |",
                 ]
             )

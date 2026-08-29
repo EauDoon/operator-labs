@@ -35,3 +35,4 @@ class SensitivityTests(unittest.TestCase):
         csv_text = render_report(report, "csv")
         self.assertIn("parameter_a", csv_text)
         self.assertIn("fx_rate", csv_text)
+        self.assertIn("| Route | fx_rate | fx_spread_bps |", render_report(report, "markdown"))
