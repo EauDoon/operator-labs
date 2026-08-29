@@ -5,7 +5,7 @@ TraceCanary evaluates an exported OTLP/HTTP JSON trace against a declared contra
 1. Load the contract with duplicate-key, size, nesting, field, and version checks.
 2. Load and structurally validate an OTLP trace payload containing `resourceSpans`.
 3. Walk every scalar value and compare each string by exact equality against each configured synthetic canary.
-4. Extract resource, span, and event attributes. Check exact forbidden keys and forbidden key prefixes.
+4. Extract resource, instrumentation-scope, span, event, and link attributes. Check exact forbidden keys and forbidden key prefixes.
 5. Check configured wildcard JSON-pointer path prefixes when a matching scalar is populated.
 6. Confirm each required retained field is present at its declared scope.
 7. For `diff`, require the baseline to pass, then compare counts of every required retained field between baseline and candidate.

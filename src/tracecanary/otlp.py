@@ -64,12 +64,14 @@ def _validate_hex_id(value: Any, length: int, message: str) -> None:
 
 
 def _validate_scope(scope: Any) -> None:
-    if not isinstance(scope, dict) or set(scope) - {"name", "version", "attributes"}:
+    if not isinstance(scope, dict) or set(scope) - {"name", "version", "attributes", "droppedAttributesCount"}:
         raise OtlpError("scope has unsupported fields")
     _validate_optional_string(scope, "name", "scope.name must be a string")
     _validate_optional_string(scope, "version", "scope.version must be a string")
     if "attributes" in scope:
         _validate_attributes(scope["attributes"], ("scope", "attributes"))
+    if "droppedAttributesCount" in scope:
+        _validate_uint(scope["droppedAttributesCount"], "scope.droppedAttributesCount must be a uint32")
 
 
 def validate_trace(payload: Any) -> None:
@@ -148,7 +150,7 @@ def _validate_span(span: Any, path: tuple[str, ...]) -> None:
         if not isinstance(links, list):
             raise OtlpError("span links must be a list")
         for link in links:
-            if not isinstance(link, dict) or set(link) - {"traceId", "spanId", "traceState", "attributes", "droppedAttributesCount"}:
+            if not isinstance(link, dict) or set(link) - {"traceId", "spanId", "traceState", "attributes", "droppedAttributesCount", "flags"}:
                 raise OtlpError("span link has unsupported fields")
             for key, length in (("traceId", 32), ("spanId", 16)):
                 if key in link:
@@ -156,6 +158,8 @@ def _validate_span(span: Any, path: tuple[str, ...]) -> None:
             _validate_optional_string(link, "traceState", "span link traceState must be a string")
             if "droppedAttributesCount" in link:
                 _validate_uint(link["droppedAttributesCount"], "span link droppedAttributesCount must be a uint32")
+            if "flags" in link:
+                _validate_uint(link["flags"], "span link flags must be a uint32")
             _validate_attributes(link.get("attributes", []), path + ("links", "attributes"))
 
 
@@ -224,11 +228,16 @@ def iter_attributes(payload: dict[str, Any]) -> Iterator[Attribute]:
         resource_path = ("resourceSpans", str(resource_index), "resource", "attributes")
         yield from _attributes("resource", resource_span["resource"].get("attributes", []), resource_path)
         for scope_index, scope_span in enumerate(resource_span["scopeSpans"]):
+            if "scope" in scope_span:
+                scope_path = ("resourceSpans", str(resource_index), "scopeSpans", str(scope_index), "scope", "attributes")
+                yield from _attributes("scope", scope_span["scope"].get("attributes", []), scope_path)
             for span_index, span in enumerate(scope_span["spans"]):
                 span_path = ("resourceSpans", str(resource_index), "scopeSpans", str(scope_index), "spans", str(span_index))
                 yield from _attributes("span", span.get("attributes", []), span_path + ("attributes",))
                 for event_index, event in enumerate(span.get("events", [])):
                     yield from _attributes("event", event.get("attributes", []), span_path + ("events", str(event_index), "attributes"))
+                for link_index, link in enumerate(span.get("links", [])):
+                    yield from _attributes("link", link.get("attributes", []), span_path + ("links", str(link_index), "attributes"))
 
 
 def _attributes(scope: str, attributes: list[dict[str, Any]], base_path: tuple[str, ...]) -> Iterator[Attribute]:

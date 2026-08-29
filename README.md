@@ -2,7 +2,7 @@
 
 TraceCanary detects privacy regressions in OTLP/HTTP JSON trace exports using synthetic canaries and explicit, version-pinned contracts.
 
-It is a deterministic offline checker for resource attributes, span attributes, and span-event attributes. It searches for exact synthetic canary values, blocks forbidden telemetry attribute keys and JSON path prefixes, and verifies operational fields that must remain after filtering.
+It is a deterministic offline checker for OTLP trace attributes. It searches for exact synthetic canary values and forbidden telemetry keys across resource, instrumentation-scope, span, span-event, and span-link attributes, blocks forbidden JSON path prefixes, and verifies operational fields at resource, span, and event scope.
 
 TraceCanary uses only the Python standard library at runtime. It has no network client, credentials, telemetry, account requirement, or production-data fixture.
 

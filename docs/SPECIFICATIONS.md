@@ -4,7 +4,7 @@
 
 The supported contract version is `tracecanary/v1`; the supported semantic-convention snapshot is `opentelemetry/semconv/1.43.0`. Both identifiers must match exactly. The contract schema is provided in `schemas/contract.schema.json`; runtime validation is authoritative and requires no third-party JSON-schema library.
 
-OpenTelemetry describes its GenAI semantic conventions as Development. TraceCanary pins this reviewed snapshot and checks only a narrow reviewed subset: OTLP JSON resource, span, and event attributes used by its explicit contract. It does not implement the full semantic-convention registry. See the official [semantic conventions documentation](https://opentelemetry.io/docs/specs/semconv/) and [GenAI attribute registry](https://opentelemetry.io/docs/specs/semconv/registry/attributes/gen-ai/).
+OpenTelemetry describes its GenAI semantic conventions as Development. TraceCanary pins this reviewed snapshot and checks only a narrow reviewed subset: OTLP JSON resource, instrumentation-scope, span, event, and link attributes used by its explicit contract. It does not implement the full semantic-convention registry. See the official [semantic conventions documentation](https://opentelemetry.io/docs/specs/semconv/) and [GenAI attribute registry](https://opentelemetry.io/docs/specs/semconv/registry/attributes/gen-ai/).
 
 `canaries` is a non-empty list of unique objects with `label`, `category`, and `value`. The values are exact string sentinels. `forbidden_attribute_keys`, `forbidden_attribute_key_prefixes`, and `forbidden_path_prefixes` are optional unique string lists. Path prefixes use RFC 6901-style segments and allow `*` for one segment. `required_retained_fields` is a list of unique `{scope, key}` entries, where scope is `resource`, `span`, or `event`.
 
@@ -12,7 +12,7 @@ OpenTelemetry describes its GenAI semantic conventions as Development. TraceCana
 
 ## Supported trace shape
 
-The top-level object contains only `resourceSpans`. Every resource span contains a `resource` object and `scopeSpans` list. Each scope span contains a `spans` list. Every span has a string `name`, an optional `attributes` list, and optional event list. Every event has a string `name` and optional attributes list. Every inspected attribute has exactly `key` and `value` fields, with a non-empty string key and an object value.
+The top-level object contains only `resourceSpans`. Every resource span contains a `resource` object and `scopeSpans` list. Each scope span contains a `spans` list and may identify an instrumentation scope with attributes and a uint32 `droppedAttributesCount`. Every span has a string `name`, an optional `attributes` list, and optional event and link lists. Links may include attributes and uint32 `flags`. Every event has a string `name` and optional attributes list. Every inspected attribute has exactly `key` and `value` fields, with a non-empty string key and an object value.
 
 This structural subset accepts the fields necessary for the stated v1 checks. Inputs outside the subset return exit code `2` rather than receiving partial analysis.
 

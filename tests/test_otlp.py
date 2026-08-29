@@ -113,6 +113,24 @@ class OtlpTests(unittest.TestCase):
                 validate_trace(payload)
             target[key] = original
 
+    def test_scope_dropped_count_and_link_flags_are_uint32(self) -> None:
+        scope = {"droppedAttributesCount": 2**32 - 1}
+        link = {"flags": 2**32 - 1}
+        payload = {
+            "resourceSpans": [{
+                "resource": {},
+                "scopeSpans": [{"scope": scope, "spans": [{"name": "x", "links": [link]}]}],
+            }]
+        }
+        validate_trace(payload)
+
+        for target, key in ((scope, "droppedAttributesCount"), (link, "flags")):
+            for value in (-1, 2**32, True, "1"):
+                target[key] = value
+                with self.subTest(key=key, value=value), self.assertRaises(OtlpError):
+                    validate_trace(payload)
+            target[key] = 0
+
     def test_non_json_constants_are_rejected_before_validation(self) -> None:
         import tempfile
 

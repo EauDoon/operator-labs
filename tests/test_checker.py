@@ -57,6 +57,23 @@ class CheckerTests(unittest.TestCase):
     def test_safe_export_is_a_negative_control(self) -> None:
         self.assertEqual(self._check("safe-export.json")["status"], "pass")
 
+    def test_forbidden_keys_in_scope_and_link_attributes_are_found(self) -> None:
+        payload = load_json(FIXTURES / "safe-export.json", max_bytes=self.contract.max_input_bytes, max_depth=self.contract.max_nesting)
+        attribute = {"key": "gen_ai.prompt", "value": {"stringValue": "benign"}}
+        scope_span = payload["resourceSpans"][0]["scopeSpans"][0]
+        scope_span["scope"]["attributes"] = [attribute]
+        scope_span["scope"]["droppedAttributesCount"] = 1
+        scope_span["spans"][0]["links"] = [{"attributes": [attribute], "flags": 1}]
+        validate_trace(payload)
+
+        report = check_trace(self.contract, payload)
+
+        self.assertEqual(report["summary"]["forbidden_attributes"], 2)
+        self.assertEqual(
+            {item["scope"] for item in report["violations"]},
+            {"scope", "link"},
+        )
+
     def test_canary_in_a_valid_kvlist_key_is_found_without_echoing_value(self) -> None:
         payload = load_json(FIXTURES / "safe-export.json", max_bytes=self.contract.max_input_bytes, max_depth=self.contract.max_nesting)
         marker = self.contract.canaries[0].value
