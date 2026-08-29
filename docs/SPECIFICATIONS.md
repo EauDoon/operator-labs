@@ -25,6 +25,7 @@ This structural subset accepts the fields necessary for the stated v1 checks. In
 | `TC003` | A forbidden JSON-pointer path prefix reaches a scalar value. |
 | `TC004` | A contract-required operational field is absent. |
 | `TC005` | A candidate has fewer contract-required fields than a passing baseline. |
+| `TC006` | A batch item could not be validated, so that item is unresolved. |
 | `TC900` | The baseline does not satisfy the contract, so comparison is unresolved. |
 
 ## GUI guidance codes

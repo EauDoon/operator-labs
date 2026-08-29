@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import sys
 import unittest
 from pathlib import Path
@@ -73,6 +74,43 @@ class CheckerTests(unittest.TestCase):
             {item["scope"] for item in report["violations"]},
             {"scope", "link"},
         )
+
+    def test_canaries_in_non_attribute_string_scalars_are_found_without_echo(self) -> None:
+        marker = self.contract.canaries[0].value
+        safe = load_json(FIXTURES / "safe-export.json", max_bytes=self.contract.max_input_bytes, max_depth=self.contract.max_nesting)
+
+        def plant_span_name(payload: dict) -> None:
+            payload["resourceSpans"][0]["scopeSpans"][0]["spans"][0]["name"] = marker
+
+        def plant_event_name(payload: dict) -> None:
+            payload["resourceSpans"][0]["scopeSpans"][0]["spans"][0]["events"][0]["name"] = marker
+
+        def plant_schema_url(payload: dict) -> None:
+            payload["resourceSpans"][0]["schemaUrl"] = marker
+
+        def plant_status_message(payload: dict) -> None:
+            payload["resourceSpans"][0]["scopeSpans"][0]["spans"][0]["status"] = {"message": marker}
+
+        def plant_nested_array(payload: dict) -> None:
+            payload["resourceSpans"][0]["resource"]["attributes"].append(
+                {"key": "synthetic.context", "value": {"arrayValue": {"values": [{"stringValue": marker}]}}}
+            )
+
+        for name, plant in (
+            ("span-name", plant_span_name),
+            ("event-name", plant_event_name),
+            ("schema-url", plant_schema_url),
+            ("status-message", plant_status_message),
+            ("nested-array", plant_nested_array),
+        ):
+            with self.subTest(location=name):
+                payload = copy.deepcopy(safe)
+                plant(payload)
+                validate_trace(payload)
+                report = check_trace(self.contract, payload)
+                self.assertEqual(report["status"], "regression")
+                self.assertEqual(report["summary"]["canary_leaks"], 1)
+                self.assertNotIn(marker, render_json(report) + render_human(report))
 
     def test_canary_in_a_valid_kvlist_key_is_found_without_echoing_value(self) -> None:
         payload = load_json(FIXTURES / "safe-export.json", max_bytes=self.contract.max_input_bytes, max_depth=self.contract.max_nesting)

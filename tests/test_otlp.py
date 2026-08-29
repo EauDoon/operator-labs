@@ -131,6 +131,25 @@ class OtlpTests(unittest.TestCase):
                     validate_trace(payload)
             target[key] = 0
 
+    def test_malformed_shapes_fail_closed(self) -> None:
+        cases = (
+            ({"resourceSpans": None}, "resourceSpans"),
+            ({"resourceSpans": [{"resource": {}, "scopeSpans": None}]}, "scopeSpans"),
+            ({"resourceSpans": [{"resource": {}, "scopeSpans": [{"spans": None}]}]}, "spans"),
+            ({"resourceSpans": [{"resource": {}, "scopeSpans": [{"spans": [{"kind": 1}]}]}]}, "name"),
+            ({"resourceSpans": [{"resource": {}, "scopeSpans": [{"spans": [{"name": "x", "kind": 6}]}]}]}, "kind"),
+            ({"resourceSpans": [{"resource": {}, "scopeSpans": [{"spans": [{"name": "x", "kind": True}]}]}]}, "kind"),
+            ({"resourceSpans": [{"resource": {}, "scopeSpans": [{"spans": [{"name": "x", "status": {"code": 3}}]}]}]}, "status"),
+            ({"resourceSpans": [{"resource": {}, "scopeSpans": [{"spans": [{"name": "x", "events": None}]}]}]}, "events"),
+            ({"resourceSpans": [{"resource": {"attributes": [{"key": "", "value": {"stringValue": "x"}}]}, "scopeSpans": []}]}, "key"),
+            ({"resourceSpans": [{"resource": {"attributes": [{"key": "x", "value": {"intValue": 1}}]}, "scopeSpans": []}]}, "intValue"),
+            ({"resourceSpans": [{"resource": {"attributes": [{"key": "x", "value": {"boolValue": 1}}]}, "scopeSpans": []}]}, "boolValue"),
+            ({"resourceSpans": [{"resource": {"attributes": [{"key": "x", "value": {"arrayValue": {"values": "x"}}}]}, "scopeSpans": []}]}, "arrayValue"),
+        )
+        for payload, fragment in cases:
+            with self.subTest(fragment=fragment), self.assertRaisesRegex(OtlpError, fragment):
+                validate_trace(payload)
+
     def test_non_json_constants_are_rejected_before_validation(self) -> None:
         import tempfile
 

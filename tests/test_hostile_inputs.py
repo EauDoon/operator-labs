@@ -53,6 +53,61 @@ class HostileInputTests(unittest.TestCase):
                     load_json(path, max_bytes=1_024, max_depth=10)
             self.assertEqual(read_sizes, [1_025])
 
+    def test_missing_input_is_unresolved_without_echoing_filename(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        marker = "TCANARY_MISSING_aa11.json"
+        error = io.StringIO()
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
+            status = main(["check", "--contract", str(root / "fixtures" / "v1" / "contract.json"), "--input", marker])
+        self.assertEqual(status, EXIT_UNRESOLVED)
+        self.assertEqual(output.getvalue(), "")
+        self.assertIn("does not exist", error.getvalue())
+        self.assertNotIn(marker, error.getvalue())
+
+    def test_directory_input_is_unresolved_without_echoing_path(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        marker = "TCANARY_DIRECTORY_bb22"
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / marker
+            path.mkdir()
+            error = io.StringIO()
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
+                status = main(["check", "--contract", str(root / "fixtures" / "v1" / "contract.json"), "--input", str(path)])
+        self.assertEqual(status, EXIT_UNRESOLVED)
+        self.assertEqual(output.getvalue(), "")
+        self.assertIn("directory", error.getvalue())
+        self.assertNotIn(marker, error.getvalue())
+
+    def test_malformed_otlp_cli_check_is_unresolved_without_payload_echo(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        marker = "TCANARY_MALFORMED_3e90"
+        payload = {"resourceSpans": [{"resource": {"attributes": [{"key": marker, "value": {"intValue": 1}}]}, "scopeSpans": []}]}
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "candidate.json"
+            candidate.write_text(json.dumps(payload), encoding="utf-8")
+            error = io.StringIO()
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
+                status = main(["check", "--contract", str(root / "fixtures" / "v1" / "contract.json"), "--input", str(candidate)])
+        self.assertEqual(status, EXIT_UNRESOLVED)
+        self.assertEqual(output.getvalue(), "")
+        self.assertIn("intValue", error.getvalue())
+        self.assertNotIn(marker, error.getvalue())
+
+    def test_unexpected_oserror_is_unresolved_without_leaking_details(self) -> None:
+        marker = "TCANARY_OSERROR_PATH_7b22"
+        error = io.StringIO()
+        output = io.StringIO()
+        with patch("tracecanary.cli.load_contract", side_effect=OSError("cannot stat " + marker)):
+            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
+                status = main(["validate", "contract.json"])
+        self.assertEqual(status, EXIT_UNRESOLVED)
+        self.assertEqual(output.getvalue(), "")
+        self.assertIn("could not be accessed", error.getvalue())
+        self.assertNotIn(marker, error.getvalue())
+
     def test_unknown_version_returns_unresolved_exit(self) -> None:
         root = Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory() as directory:

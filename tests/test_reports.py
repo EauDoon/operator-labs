@@ -207,6 +207,47 @@ class ReportTests(unittest.TestCase):
             self.assertEqual(report["status"], "unresolved")
             self.assertEqual(report["items"][0]["report"]["violations"][0]["code"], "TC006")
 
+    def test_batch_keeps_valid_items_when_a_sibling_is_malformed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            inputs = Path(directory) / "inputs"
+            inputs.mkdir()
+            (inputs / "ok.json").write_bytes((FIXTURES / "safe-export.json").read_bytes())
+            (inputs / "bad.json").write_text('{"spans":[]}', encoding="utf-8")
+            output = io.StringIO()
+            error = io.StringIO()
+            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
+                status = main([
+                    "batch",
+                    "--contract",
+                    str(FIXTURES / "contract.json"),
+                    "--input-dir",
+                    str(inputs),
+                    "--format",
+                    "json",
+                ])
+            self.assertEqual(status, EXIT_UNRESOLVED)
+            self.assertEqual(error.getvalue(), "")
+            report = json.loads(output.getvalue())
+            self.assertEqual(report["status"], "unresolved")
+            by_id = {item["id"]: item for item in report["items"]}
+            self.assertEqual(by_id["item-0001"]["status"], "unresolved")
+            self.assertEqual(by_id["item-0001"]["report"]["violations"][0]["code"], "TC006")
+            self.assertEqual(by_id["item-0002"]["status"], "pass")
+
+    def test_fixture_os_error_is_unresolved_without_path_leak(self) -> None:
+        marker = "TCANARY_FIXTURE_PATH_c91a"
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / marker
+            output = io.StringIO()
+            error = io.StringIO()
+            with patch.object(Path, "mkdir", side_effect=OSError("permission denied: " + marker)):
+                with contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
+                    status = main(["fixture", "create", "--output", str(destination)])
+            self.assertEqual(status, EXIT_UNRESOLVED)
+            self.assertEqual(output.getvalue(), "")
+            self.assertIn("could not be written", error.getvalue())
+            self.assertNotIn(marker, error.getvalue())
+
     def test_empty_batch_is_unresolved(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = io.StringIO()

@@ -94,6 +94,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (ContractError, InputError, OtlpError, ValueError) as exc:
         print(f"TraceCanary: UNRESOLVED: {exc}", file=sys.stderr)
         return EXIT_UNRESOLVED
+    except OSError:
+        print("TraceCanary: UNRESOLVED: input or output could not be accessed", file=sys.stderr)
+        return EXIT_UNRESOLVED
 
 
 def _load_trace(path: Path, contract: Contract) -> dict:
@@ -103,17 +106,22 @@ def _load_trace(path: Path, contract: Contract) -> dict:
 
 
 def _run_batch(contract: Contract, input_dir: Path, recursive: bool, include_paths: bool) -> dict:
-    if not input_dir.is_dir():
-        raise InputError("--input-dir must be a directory")
-    root = input_dir.resolve()
-    iterator = root.rglob("*.json") if recursive else root.glob("*.json")
-    paths = sorted(
-        (item for item in iterator if item.is_file() and not item.is_symlink() and item.resolve().is_relative_to(root)),
-        key=lambda item: (
-            item.relative_to(root).as_posix().casefold(),
-            item.relative_to(root).as_posix(),
-        ),
-    )
+    try:
+        if not input_dir.is_dir():
+            raise InputError("--input-dir must be a directory")
+        root = input_dir.resolve()
+        iterator = root.rglob("*.json") if recursive else root.glob("*.json")
+        paths = sorted(
+            (item for item in iterator if item.is_file() and not item.is_symlink() and item.resolve().is_relative_to(root)),
+            key=lambda item: (
+                item.relative_to(root).as_posix().casefold(),
+                item.relative_to(root).as_posix(),
+            ),
+        )
+    except InputError:
+        raise
+    except OSError as exc:
+        raise InputError("batch input cannot be read") from exc
     if not paths:
         raise InputError("batch input contains no JSON files")
     if len(paths) > 256:

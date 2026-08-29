@@ -58,11 +58,16 @@ def bundle() -> dict[str, Any]:
 
 def write_bundle(output: Path) -> None:
     """Write the synthetic bundle into an empty destination directory."""
-    if output.exists() and (not output.is_dir() or any(output.iterdir())):
-        raise ValueError("fixture output directory must be empty")
-    output.mkdir(parents=True, exist_ok=True)
-    for name, data in bundle().items():
-        (output / name).write_text(canonical_json(data), encoding="utf-8", newline="\n")
+    try:
+        if output.exists() and (not output.is_dir() or any(output.iterdir())):
+            raise ValueError("fixture output directory must be empty")
+        output.mkdir(parents=True, exist_ok=True)
+        for name, data in bundle().items():
+            (output / name).write_text(canonical_json(data), encoding="utf-8", newline="\n")
+    except ValueError:
+        raise
+    except OSError as exc:
+        raise ValueError("fixture output directory could not be written") from exc
 
 
 def _safe_trace() -> dict[str, Any]:
