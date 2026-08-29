@@ -21,8 +21,10 @@ class Attribute:
 
 
 _INT64 = re.compile(r"(?:0|[1-9][0-9]*|-[1-9][0-9]*)$")
+_UINT64 = re.compile(r"(?:0|[1-9][0-9]*)$")
 _INT64_MIN = -(2**63)
 _INT64_MAX = 2**63 - 1
+_UINT64_MAX = 2**64 - 1
 _UINT32_MAX = 2**32 - 1
 
 
@@ -33,6 +35,13 @@ def _validate_int64_string(value: Any, message: str) -> None:
         raise OtlpError(message)
     parsed = int(value)
     if parsed < _INT64_MIN or parsed > _INT64_MAX:
+        raise OtlpError(message)
+
+
+def _validate_uint64_string(value: Any, message: str) -> None:
+    if not isinstance(value, str) or not _UINT64.fullmatch(value):
+        raise OtlpError(message)
+    if len(value) > 20 or int(value) > _UINT64_MAX:
         raise OtlpError(message)
 
 
@@ -99,7 +108,7 @@ def _validate_span(span: Any, path: tuple[str, ...]) -> None:
         _validate_optional_string(span, key, f"span.{key} must be a string")
     for key in ("startTimeUnixNano", "endTimeUnixNano"):
         if key in span:
-            _validate_int64_string(span[key], f"span.{key} must be a signed int64 string")
+            _validate_uint64_string(span[key], f"span.{key} must be a uint64 string")
     for key in ("kind", "droppedAttributesCount", "droppedEventsCount", "droppedLinksCount", "flags"):
         if key in span:
             _validate_uint(span[key], f"span.{key} must be a uint32", maximum=5 if key == "kind" else _UINT32_MAX)
@@ -113,7 +122,7 @@ def _validate_span(span: Any, path: tuple[str, ...]) -> None:
         if not isinstance(event.get("name"), str):
             raise OtlpError("span event requires a string name")
         if "timeUnixNano" in event:
-            _validate_int64_string(event["timeUnixNano"], "span event timeUnixNano must be a signed int64 string")
+            _validate_uint64_string(event["timeUnixNano"], "span event timeUnixNano must be a uint64 string")
         if "droppedAttributesCount" in event:
             _validate_uint(event["droppedAttributesCount"], "span event droppedAttributesCount must be a uint32")
         _validate_attributes(event.get("attributes", []), path + ("events", str(event_index), "attributes"))

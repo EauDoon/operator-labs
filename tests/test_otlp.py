@@ -65,6 +65,20 @@ class OtlpTests(unittest.TestCase):
         with self.assertRaises(OtlpError):
             validate_trace({"resourceSpans": [{"resource": {"attributes": [{"key": "x", "value": {"doubleValue": 10**5000}}]}, "scopeSpans": []}]})
 
+    def test_timestamps_use_the_otlp_uint64_range(self) -> None:
+        def payload(value: str) -> dict:
+            return {
+                "resourceSpans": [{
+                    "resource": {},
+                    "scopeSpans": [{"spans": [{"name": "x", "startTimeUnixNano": value}]}],
+                }]
+            }
+
+        validate_trace(payload("18446744073709551615"))
+        for value in ("-1", "18446744073709551616"):
+            with self.subTest(value=value), self.assertRaises(OtlpError):
+                validate_trace(payload(value))
+
     def test_non_json_constants_are_rejected_before_validation(self) -> None:
         import tempfile
 
