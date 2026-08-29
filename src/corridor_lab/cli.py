@@ -85,6 +85,22 @@ def _require_cli_text(value: str, flag: str) -> str:
     return text
 
 
+def _failure_text(exc: BaseException) -> str:
+    """Render a CLI diagnostic that keeps the exception type and chained cause."""
+    message = str(exc).strip() or type(exc).__name__
+    cause = exc.__cause__
+    if cause is None:
+        return message
+    cause_text = str(cause).strip() or type(cause).__name__
+    if cause_text in message:
+        return message
+    return f"{message}: {cause_text}"
+
+
+def _write_error(message: str) -> None:
+    sys.stderr.write(f"error: {message}\n")
+
+
 def _load_routes_argument(value: str) -> list[Route]:
     path = Path(_require_cli_text(value, "--routes"))
     if path.is_file():
@@ -109,9 +125,10 @@ def _emit(text: str, output: str | None) -> None:
 
 
 def _batch(input_dir: str, recursive: bool, include_paths: bool) -> dict[str, object]:
-    root = Path(_require_cli_text(input_dir, "input_dir")).resolve()
+    displayed = Path(_require_cli_text(input_dir, "input_dir"))
+    root = displayed.resolve()
     if not root.is_dir():
-        raise InputError("batch input_dir must be a directory")
+        raise InputError(f"batch input_dir must be a directory: {displayed}")
     iterator = root.rglob("*.json") if recursive else root.glob("*.json")
     paths = sorted(
         (path for path in iterator if path.is_file() and not path.is_symlink() and path.resolve().is_relative_to(root)),
@@ -121,22 +138,34 @@ def _batch(input_dir: str, recursive: bool, include_paths: bool) -> dict[str, ob
         ),
     )
     if not paths:
-        raise InputError("batch input_dir contains no JSON scenario files")
+        raise InputError(f"batch input_dir contains no JSON scenario files: {displayed}")
     if len(paths) > MAX_BATCH_SCENARIOS:
         raise InputError(f"batch exceeds the {MAX_BATCH_SCENARIOS}-scenario budget")
     items: list[dict[str, object]] = []
     for index, path in enumerate(paths, start=1):
+        relative = path.relative_to(root).as_posix()
         try:
             report = evaluate_scenario(load_scenario(path))
             status = "pass"
-        except (InputError, OSError, ValueError, DecimalException):
-            report = {"status": "unresolved", "error": "scenario could not be evaluated"}
+        except (InputError, OSError, ValueError, DecimalException) as exc:
+            report = {"status": "unresolved", "error": f"{relative}: {_failure_text(exc)}"}
             status = "unresolved"
         item: dict[str, object] = {"id": f"scenario-{index:04d}", "status": status, "report": report}
         if include_paths:
-            item["path"] = path.relative_to(root).as_posix()
+            item["path"] = relative
         items.append(item)
     return {"report_version": "corridor-lab.batch/v1", "status": "unresolved" if any(item["status"] == "unresolved" for item in items) else "pass", "items": items}
+
+
+def _emit_unresolved_batch_errors(batch_report: dict[str, object]) -> None:
+    for item in batch_report.get("items", []):
+        if not isinstance(item, dict) or item.get("status") != "unresolved":
+            continue
+        nested = item.get("report")
+        detail = nested.get("error") if isinstance(nested, dict) else None
+        if not isinstance(detail, str) or not detail.strip():
+            detail = "scenario could not be evaluated"
+        _write_error(f"{item.get('id', 'scenario')}: {detail}")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -146,7 +175,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "batch":
             batch_report = _batch(args.input_dir, args.recursive, args.include_paths)
             _emit(render_report(batch_report, args.format), args.output)
-            return 0 if batch_report["status"] == "pass" else 2
+            if batch_report["status"] == "pass":
+                return 0
+            _emit_unresolved_batch_errors(batch_report)
+            return 2
         scenario = load_scenario(_require_cli_text(args.scenario, "scenario"))
         if args.command == "validate":
             sys.stdout.write("valid\n")
@@ -180,5 +212,5 @@ def main(argv: Sequence[str] | None = None) -> int:
         _emit(render_report(report, args.format), args.output)
         return 0
     except (InputError, OSError, ValueError, DecimalException) as exc:
-        sys.stderr.write(f"error: {exc}\n")
+        _write_error(_failure_text(exc))
         return 2

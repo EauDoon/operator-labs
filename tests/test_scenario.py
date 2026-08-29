@@ -70,7 +70,49 @@ class ScenarioTests(unittest.TestCase):
             with redirect_stderr(stderr):
                 result = main(["validate", "fictional.json"])
         self.assertEqual(result, 2)
-        self.assertIn("error:", stderr.getvalue())
+        self.assertEqual(stderr.getvalue(), "error: InvalidOperation\n")
+
+    def test_cli_includes_chained_exception_cause(self):
+        def boom(_path: object) -> None:
+            try:
+                raise InvalidOperation("division impossible")
+            except InvalidOperation as exc:
+                raise InputError("decimal calculation failed") from exc
+
+        stderr = StringIO()
+        with patch("corridor_lab.cli.load_scenario", side_effect=boom):
+            with redirect_stderr(stderr):
+                result = main(["validate", "fictional.json"])
+        self.assertEqual(result, 2)
+        self.assertEqual(stderr.getvalue(), "error: decimal calculation failed: division impossible\n")
+
+    def test_batch_preserves_evaluation_cause_and_names_the_file(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "ok.json").write_text(json.dumps(scenario(routes=[route()])), encoding="utf-8")
+            (root / "broken.json").write_text(json.dumps(scenario()), encoding="utf-8")
+            stdout = StringIO()
+            stderr = StringIO()
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                result = main(["batch", str(root), "--include-paths", "--format", "json"])
+        self.assertEqual(result, 2)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["status"], "unresolved")
+        unresolved = [item for item in payload["items"] if item["status"] == "unresolved"]
+        self.assertEqual(len(unresolved), 1)
+        error = unresolved[0]["report"]["error"]
+        self.assertIn("broken.json", error)
+        self.assertIn("evaluate requires routes embedded in the scenario", error)
+        self.assertNotIn("could not be evaluated", error)
+        self.assertIn("error: scenario-0001: broken.json: evaluate requires routes embedded in the scenario", stderr.getvalue())
+
+    def test_batch_names_missing_directory(self):
+        missing = Path("missing-batch-dir")
+        stderr = StringIO()
+        with redirect_stdout(StringIO()), redirect_stderr(stderr):
+            result = main(["batch", str(missing)])
+        self.assertEqual(result, 2)
+        self.assertIn(f"error: batch input_dir must be a directory: {missing}", stderr.getvalue())
 
     def test_cli_format_choices_match_documented_commands(self):
         parser = build_parser()

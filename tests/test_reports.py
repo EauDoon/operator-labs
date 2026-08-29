@@ -61,6 +61,26 @@ class ReportTests(unittest.TestCase):
         self.assertIn("| Item | Status | Path |", markdown)
         self.assertIn(r"| scenario-0001 | pass | \[review\]\(README.md\).json |", markdown)
 
+    def test_batch_markdown_includes_evaluation_errors(self):
+        report = {
+            "report_version": "corridor-lab.batch/v1",
+            "status": "unresolved",
+            "items": [
+                {
+                    "id": "scenario-0001",
+                    "status": "unresolved",
+                    "path": "broken.json",
+                    "report": {"status": "unresolved", "error": "broken.json: evaluate requires routes embedded in the scenario"},
+                }
+            ],
+        }
+        markdown = render_report(report, "markdown")
+        self.assertIn("| Item | Status | Path | Error |", markdown)
+        self.assertIn(
+            "| scenario-0001 | unresolved | broken.json | broken.json: evaluate requires routes embedded in the scenario |",
+            markdown,
+        )
+
     def test_atomic_write_preserves_target_and_removes_temporary_file_on_replace_failure(self):
         with TemporaryDirectory() as directory:
             target = Path(directory) / "report.json"
