@@ -8,7 +8,7 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
-from helpers import scenario
+from helpers import route, scenario
 from corridor_lab.canonical import InputError, MAX_INPUT_BYTES, load_json, parse_json_text
 from corridor_lab.cli import main
 from corridor_lab.scenario import ScenarioError, parse_scenario, parse_scenario_text
@@ -71,6 +71,74 @@ class ScenarioTests(unittest.TestCase):
                 result = main(["validate", "fictional.json"])
         self.assertEqual(result, 2)
         self.assertIn("error:", stderr.getvalue())
+
+    def test_cli_evaluate_requires_embedded_routes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "scenario.json"
+            path.write_text(json.dumps(scenario()), encoding="utf-8")
+            stdout = StringIO()
+            stderr = StringIO()
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                result = main(["evaluate", str(path)])
+        self.assertEqual(result, 2)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertIn("evaluate requires routes embedded in the scenario", stderr.getvalue())
+
+    def test_cli_compare_rejects_missing_routes_path(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "scenario.json"
+            path.write_text(json.dumps(scenario()), encoding="utf-8")
+            missing = Path(temporary) / "missing-routes"
+            stderr = StringIO()
+            with redirect_stdout(StringIO()), redirect_stderr(stderr):
+                result = main(["compare", str(path), "--routes", str(missing)])
+        self.assertEqual(result, 2)
+        self.assertIn("--routes is not a file or directory", stderr.getvalue())
+
+    def test_cli_compare_rejects_empty_route_folder(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "scenario.json"
+            path.write_text(json.dumps(scenario()), encoding="utf-8")
+            folder = Path(temporary) / "routes"
+            folder.mkdir()
+            stderr = StringIO()
+            with redirect_stdout(StringIO()), redirect_stderr(stderr):
+                result = main(["compare", str(path), "--routes", str(folder)])
+        self.assertEqual(result, 2)
+        self.assertIn("contains no JSON files", stderr.getvalue())
+
+    def test_cli_sensitivity_rejects_blank_value_slots(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "scenario.json"
+            path.write_text(json.dumps(scenario(routes=[route()])), encoding="utf-8")
+            stderr = StringIO()
+            with redirect_stdout(StringIO()), redirect_stderr(stderr):
+                result = main(["sensitivity", str(path), "--parameter", "fx_spread_bps", "--values", "10,,50"])
+        self.assertEqual(result, 2)
+        self.assertIn("--values must be a comma-separated list of decimals", stderr.getvalue())
+
+    def test_cli_stress_grid_names_the_invalid_values_flag(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "scenario.json"
+            path.write_text(json.dumps(scenario(routes=[route()])), encoding="utf-8")
+            stderr = StringIO()
+            with redirect_stdout(StringIO()), redirect_stderr(stderr):
+                result = main(
+                    [
+                        "stress-grid",
+                        str(path),
+                        "--parameter-a",
+                        "fx_rate",
+                        "--values-a",
+                        "1.7,",
+                        "--parameter-b",
+                        "fx_spread_bps",
+                        "--values-b",
+                        "25,50",
+                    ]
+                )
+        self.assertEqual(result, 2)
+        self.assertIn("error: --values-a must be a comma-separated list of decimals", stderr.getvalue())
 
     def test_schema_embedded_routes_reference_route_contract(self):
         schema_path = Path(__file__).resolve().parents[1] / "schemas" / "scenario.schema.json"

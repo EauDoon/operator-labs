@@ -197,4 +197,6 @@ def pareto_frontier(evaluations: Iterable[RouteEvaluation]) -> list[dict[str, st
 
 
 def evaluate_scenario(scenario: Scenario) -> dict[str, object]:
+    if not scenario.routes:
+        raise InputError("evaluate requires routes embedded in the scenario")
     return compare_routes(scenario.transaction, scenario.routes, scenario.objective, scenario.scenario_id)
