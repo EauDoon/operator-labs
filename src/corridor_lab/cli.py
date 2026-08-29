@@ -12,7 +12,7 @@ from .canonical import MAX_BATCH_SCENARIOS, InputError, atomic_write_text, requi
 from .comparison import compare_routes, evaluate_scenario, pareto_frontier
 from .model import evaluate_route
 from .report import render_report
-from .route import load_route
+from .route import load_route, load_route_folder
 from .scenario import load_scenario
 from .sensitivity import run_sensitivity
 from .stress import run_stress_grid
@@ -70,12 +70,7 @@ def _load_routes_argument(value: str) -> list:
         return [load_route(path)]
     if not path.is_dir():
         raise InputError(f"--routes is not a file or directory: {path}")
-    files = sorted(item for item in path.iterdir() if item.is_file() and item.suffix.lower() == ".json")
-    if not files:
-        raise InputError(f"--routes directory contains no JSON files: {path}")
-    if len(files) > 64:
-        raise InputError("--routes directory exceeds the 64-route budget")
-    return [load_route(item) for item in files]
+    return load_route_folder(path)
 
 
 def _parse_values(raw: str) -> list[Decimal]:

@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import os
+import stat as stat_module
 from dataclasses import dataclass, replace
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 from .canonical import (
+    MAX_INPUT_BYTES,
+    MAX_ROUTES,
     InputError,
     decimal_text,
     load_json,
+    parse_json_bytes,
     require_bool,
     require_decimal,
     require_keys,
@@ -169,3 +174,94 @@ def parse_route(value: Any, path: str = "route") -> Route:
 
 def load_route(path: str | Path) -> Route:
     return parse_route(load_json(path), str(path))
+
+
+def _read_scanned_route(
+    directory: Path,
+    name: str,
+    expected: os.stat_result,
+    directory_fd: int | None,
+) -> Route:
+    """Read the same regular file observed during the directory scan."""
+
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor: int | None = None
+    try:
+        descriptor = (
+            os.open(name, flags, dir_fd=directory_fd)
+            if directory_fd is not None
+            else os.open(directory / name, flags)
+        )
+        opened = os.fstat(descriptor)
+        if not stat_module.S_ISREG(opened.st_mode) or not os.path.samestat(expected, opened):
+            raise InputError("route folder changed while being read")
+        with os.fdopen(descriptor, "rb") as route_file:
+            descriptor = None
+            raw = route_file.read(MAX_INPUT_BYTES + 1)
+    except OSError as exc:
+        raise InputError("route folder changed while being read") from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+    if len(raw) > MAX_INPUT_BYTES:
+        raise InputError(f"input exceeds {MAX_INPUT_BYTES} bytes")
+    return parse_route(parse_json_bytes(raw), str(directory / name))
+
+
+def load_route_folder(path: str | Path) -> list[Route]:
+    """Load a bounded snapshot of regular JSON files without following links."""
+
+    directory = Path(path)
+    directory_fd: int | None = None
+    try:
+        expected_directory = os.lstat(directory)
+        if not stat_module.S_ISDIR(expected_directory.st_mode):
+            raise InputError(f"route selection is not a folder: {directory}")
+
+        use_directory_fd = (
+            os.scandir in os.supports_fd
+            and os.open in os.supports_dir_fd
+            and os.stat in os.supports_dir_fd
+        )
+        if use_directory_fd:
+            flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+            directory_fd = os.open(directory, flags)
+            if not os.path.samestat(expected_directory, os.fstat(directory_fd)):
+                raise InputError("route folder changed while being read")
+            scan_target: str | Path | int = directory_fd
+        else:
+            scan_target = directory
+
+        with os.scandir(scan_target) as iterator:
+            files = sorted(
+                (
+                    (
+                        entry.name,
+                        os.stat(entry.name, dir_fd=directory_fd, follow_symlinks=False)
+                        if directory_fd is not None
+                        else os.stat(entry.path, follow_symlinks=False),
+                    )
+                    for entry in iterator
+                    if entry.name.lower().endswith(".json")
+                    and entry.is_file(follow_symlinks=False)
+                ),
+                key=lambda item: item[0],
+            )
+        if directory_fd is None and not os.path.samestat(expected_directory, os.lstat(directory)):
+            raise InputError("route folder changed while being read")
+        if not files:
+            raise InputError(f"route folder contains no JSON files: {directory}")
+        if len(files) > MAX_ROUTES:
+            raise InputError(f"route folder exceeds the {MAX_ROUTES}-route budget")
+        routes = [
+            _read_scanned_route(directory, name, metadata, directory_fd)
+            for name, metadata in files
+        ]
+        if directory_fd is None and not os.path.samestat(expected_directory, os.lstat(directory)):
+            raise InputError("route folder changed while being read")
+        return routes
+    except OSError as exc:
+        raise InputError(f"cannot read route folder: {directory}") from exc
+    finally:
+        if directory_fd is not None:
+            os.close(directory_fd)
