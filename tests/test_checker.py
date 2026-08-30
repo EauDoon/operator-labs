@@ -139,6 +139,7 @@ class CheckerTests(unittest.TestCase):
             required_retained_fields=(),
             max_input_bytes=5_000_000,
             max_nesting=100,
+            max_batch_files=256,
         )
         payload = {
             "resourceSpans": [
@@ -174,6 +175,7 @@ class CheckerTests(unittest.TestCase):
             required_retained_fields=(),
             max_input_bytes=5_000_000,
             max_nesting=100,
+            max_batch_files=256,
         )
         payload = {"resourceSpans": []}
         validate_trace(payload)

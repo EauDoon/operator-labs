@@ -109,6 +109,13 @@ class CliUsageTests(unittest.TestCase):
         self.assertEqual(output, "")
         self.assertIn("invalid choice", error)
 
+    def test_batch_help_documents_the_file_limit_default(self) -> None:
+        status, output, error = self._run(["batch", "--help"])
+        self.assertEqual(status, EXIT_PASS)
+        self.assertEqual(error, "")
+        self.assertIn("limits.max_batch_files", output)
+        self.assertIn("default 256", output)
+
     def test_directory_with_no_json_files_is_unresolved(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             (Path(directory) / "notes.txt").write_text("not a trace\n", encoding="utf-8")

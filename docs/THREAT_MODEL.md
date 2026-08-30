@@ -13,7 +13,7 @@ TraceCanary is intended to detect a narrow regression: a known, synthetic sentin
 
 - Duplicate JSON object keys fail closed.
 - Duplicate OTLP attribute keys and duplicate span identifiers fail closed.
-- File-size and nesting limits fail closed before trace analysis.
+- File-size, nesting, and batch-file-count limits fail closed before trace analysis.
 - Unsupported contract and semantic-convention versions return unresolved status.
 - Reports omit matched canary values even when a check fails.
 - Input ordering cannot change JSON report byte order.

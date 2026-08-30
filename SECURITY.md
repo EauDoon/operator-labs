@@ -12,7 +12,7 @@ Before public disclosure, report a suspected vulnerability through the repositor
 
 ## Security boundary
 
-TraceCanary rejects duplicate JSON keys and applies configurable input-size and nesting limits. These controls reduce parser ambiguity and resource exhaustion risk; they are not a substitute for sandboxing untrusted files or applying process-level resource limits.
+TraceCanary rejects duplicate JSON keys and applies configurable input-size, nesting, and batch-file limits. These controls reduce parser ambiguity and resource exhaustion risk; they are not a substitute for sandboxing untrusted files or applying process-level resource limits.
 
 The tool reports exact configured synthetic canaries only. It does not validate redaction pipelines, discover arbitrary secrets, determine legal compliance, or certify a trace as safe.
 

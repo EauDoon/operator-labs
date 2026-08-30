@@ -34,7 +34,7 @@ def bundle() -> dict[str, Any]:
             {"scope": "span", "key": "gen_ai.operation.name"},
             {"scope": "event", "key": "telemetry.event.class"},
         ],
-        "limits": {"max_input_bytes": 5000000, "max_nesting": 100},
+        "limits": {"max_input_bytes": 5000000, "max_nesting": 100, "max_batch_files": 256},
     }
     safe = _safe_trace()
     prompt = _with_attribute(safe, "gen_ai.prompt", PROMPT)

@@ -102,7 +102,7 @@ tracecanary-gui
 
 From a fresh checkout, set `PYTHONPATH=src` and replace `tracecanary` with `python -m tracecanary`; use `python -m tracecanary.gui` for the GUI. `0` means the contract is satisfied. `1` means a privacy or retention regression was detected. `2` means invalid input, an unsupported version, or an unresolved comparison. Invalid OTLP structure, including duplicate attribute keys and duplicate span IDs, is reported with a JSON pointer to the failing resource, span, event, link, or attribute; pointers never include span names or attribute keys.
 
-`validate`, `check`, and `diff` accept `--format human` (default) or `--format json`. `batch` accepts `--format json` (default), `human`, `sarif`, or `junit`; `--recursive` includes `*.json` files in subdirectories; `--include-paths` adds directory-relative POSIX paths to JSON, SARIF, and JUnit items. Batch `human` output is a per-item status rollup and does not repeat finding labels.
+`validate`, `check`, and `diff` accept `--format human` (default) or `--format json`. `batch` accepts `--format json` (default), `human`, `sarif`, or `junit`; `--recursive` includes `*.json` files in subdirectories; `--include-paths` adds directory-relative POSIX paths to JSON, SARIF, and JUnit items. Batch input is bounded by `limits.max_batch_files` (default 256). Batch `human` output is a per-item status rollup and does not repeat finding labels.
 
 A single-trace JSON report contains `contract_version`, `mode`, `status`, `summary`, and `violations`. Each finding has `code`, `message`, and `path`, plus `label`/`category` or `key`/`scope` when they apply. Reports never include the matched canary value.
 

@@ -11,7 +11,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from tracecanary.cli import EXIT_UNRESOLVED, main
-from tracecanary.contract import ContractError, load_contract, parse_contract
+from tracecanary.contract import (
+    DEFAULT_MAX_BATCH_FILES,
+    DEFAULT_MAX_INPUT_BYTES,
+    DEFAULT_MAX_NESTING,
+    ContractError,
+    load_contract,
+    parse_contract,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -86,6 +93,32 @@ class ContractTests(unittest.TestCase):
                 status = main(["validate", str(path)])
         self.assertEqual(status, EXIT_UNRESOLVED)
         self.assertNotIn(marker, error.getvalue())
+
+    def test_omitted_limits_use_documented_defaults(self) -> None:
+        data = {
+            "contract_version": "tracecanary/v1",
+            "semantic_conventions_version": "opentelemetry/semconv/1.43.0",
+            "canaries": [{"label": "a", "category": "test", "value": "synthetic"}],
+            "required_retained_fields": [],
+        }
+        contract = parse_contract(data)
+        self.assertEqual(contract.max_input_bytes, DEFAULT_MAX_INPUT_BYTES)
+        self.assertEqual(contract.max_nesting, DEFAULT_MAX_NESTING)
+        self.assertEqual(contract.max_batch_files, DEFAULT_MAX_BATCH_FILES)
+        self.assertEqual(DEFAULT_MAX_BATCH_FILES, 256)
+
+    def test_invalid_max_batch_files_is_rejected(self) -> None:
+        for value in (0, 10_001, True, "256"):
+            with self.subTest(value=value):
+                data = {
+                    "contract_version": "tracecanary/v1",
+                    "semantic_conventions_version": "opentelemetry/semconv/1.43.0",
+                    "canaries": [{"label": "a", "category": "test", "value": "synthetic"}],
+                    "required_retained_fields": [],
+                    "limits": {"max_batch_files": value},
+                }
+                with self.assertRaisesRegex(ContractError, "max_batch_files"):
+                    parse_contract(data)
 
     def test_report_visible_contract_fields_cannot_contain_canary_values(self) -> None:
         marker = "synthetic canary sample value"

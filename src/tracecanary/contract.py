@@ -13,6 +13,7 @@ SUPPORTED_CONTRACT_VERSION = "tracecanary/v1"
 SUPPORTED_SEMCONV_VERSION = "opentelemetry/semconv/1.43.0"
 DEFAULT_MAX_INPUT_BYTES = 5_000_000
 DEFAULT_MAX_NESTING = 100
+DEFAULT_MAX_BATCH_FILES = 256
 
 
 class ContractError(ValueError):
@@ -43,6 +44,7 @@ class Contract:
     required_retained_fields: tuple[RetainedField, ...]
     max_input_bytes: int
     max_nesting: int
+    max_batch_files: int
 
 
 def load_contract(path: Path) -> Contract:
@@ -86,7 +88,7 @@ def parse_contract(raw: Any) -> Contract:
     if any(not item.startswith("/") for item in paths):
         raise ContractError("forbidden path prefixes must be JSON pointers")
     _reject_reportable_canary_values(canaries, retained, keys, key_prefixes, paths)
-    max_bytes, max_nesting = _parse_limits(raw.get("limits", {}))
+    max_bytes, max_nesting, max_batch_files = _parse_limits(raw.get("limits", {}))
     return Contract(
         contract_version=version,
         semantic_conventions_version=semconv,
@@ -97,6 +99,7 @@ def parse_contract(raw: Any) -> Contract:
         required_retained_fields=retained,
         max_input_bytes=max_bytes,
         max_nesting=max_nesting,
+        max_batch_files=max_batch_files,
     )
 
 
@@ -161,13 +164,16 @@ def _reject_reportable_canary_values(
         raise ContractError("report-visible contract fields must not contain canary values")
 
 
-def _parse_limits(value: Any) -> tuple[int, int]:
-    if not isinstance(value, dict) or set(value) - {"max_input_bytes", "max_nesting"}:
+def _parse_limits(value: Any) -> tuple[int, int, int]:
+    if not isinstance(value, dict) or set(value) - {"max_input_bytes", "max_nesting", "max_batch_files"}:
         raise ContractError("limits contains unsupported fields")
     max_bytes = value.get("max_input_bytes", DEFAULT_MAX_INPUT_BYTES)
     max_nesting = value.get("max_nesting", DEFAULT_MAX_NESTING)
+    max_batch_files = value.get("max_batch_files", DEFAULT_MAX_BATCH_FILES)
     if type(max_bytes) is not int or not 1_024 <= max_bytes <= 50_000_000:
         raise ContractError("limits.max_input_bytes must be an integer from 1024 to 50000000")
     if type(max_nesting) is not int or not 2 <= max_nesting <= 1_000:
         raise ContractError("limits.max_nesting must be an integer from 2 to 1000")
-    return max_bytes, max_nesting
+    if type(max_batch_files) is not int or not 1 <= max_batch_files <= 10_000:
+        raise ContractError("limits.max_batch_files must be an integer from 1 to 10000")
+    return max_bytes, max_nesting, max_batch_files

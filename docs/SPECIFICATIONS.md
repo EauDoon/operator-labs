@@ -8,7 +8,7 @@ OpenTelemetry describes its GenAI semantic conventions as Development. TraceCana
 
 `canaries` is a non-empty list of unique objects with `label`, `category`, and `value`. The values are exact string sentinels. `forbidden_attribute_keys`, `forbidden_attribute_key_prefixes`, and `forbidden_path_prefixes` are optional unique string lists. Path prefixes use RFC 6901-style segments and allow `*` for one segment. `required_retained_fields` is a list of unique `{scope, key}` entries, where scope is `resource`, `span`, or `event`.
 
-`limits.max_input_bytes` defaults to 5,000,000 and must be from 1,024 through 50,000,000. `limits.max_nesting` defaults to 100 and must be from 2 through 1,000.
+`limits.max_input_bytes` defaults to 5,000,000 and must be from 1,024 through 50,000,000. `limits.max_nesting` defaults to 100 and must be from 2 through 1,000. `limits.max_batch_files` defaults to 256 and must be from 1 through 10,000; `batch` rejects a directory that contains more JSON files than this limit.
 
 ## Supported trace shape
 

@@ -87,7 +87,12 @@ def build_parser() -> argparse.ArgumentParser:
     diff.add_argument("--format", choices=("human", "json"), default="human", help="report format (default: human)")
     batch = commands.add_parser("batch", help="check a bounded directory of OTLP trace exports")
     batch.add_argument("--contract", required=True, type=_cli_path, help="TraceCanary contract JSON file")
-    batch.add_argument("--input-dir", required=True, type=_cli_path, help="directory of OTLP/HTTP JSON trace exports")
+    batch.add_argument(
+        "--input-dir",
+        required=True,
+        type=_cli_path,
+        help="directory of OTLP/HTTP JSON trace exports (bounded by contract limits.max_batch_files, default 256)",
+    )
     batch.add_argument("--recursive", action="store_true", help="include *.json files in subdirectories")
     batch.add_argument("--include-paths", action="store_true", help="include input-relative POSIX paths in reports")
     batch.add_argument("--format", choices=("human", "json", "sarif", "junit"), default="json", help="report format (default: json)")
@@ -164,8 +169,8 @@ def _run_batch(contract: Contract, input_dir: Path, recursive: bool, include_pat
         raise InputError("batch input cannot be read") from exc
     if not paths:
         raise InputError("batch input contains no JSON files")
-    if len(paths) > 256:
-        raise InputError("batch input exceeds the 256-file limit")
+    if len(paths) > contract.max_batch_files:
+        raise InputError(f"batch input exceeds the {contract.max_batch_files}-file limit")
     items: list[BatchItem] = []
     for index, path in enumerate(paths, start=1):
         item_id = f"item-{index:04d}"
