@@ -360,7 +360,7 @@ class ReportTests(unittest.TestCase):
             for name in ("a.json", "b.json", "c.json"):
                 candidate = inputs / name
                 candidate.write_bytes(safe)
-                candidates.append(candidate)
+                candidates.append(candidate.resolve())
 
             def bounded_candidates():
                 yield from candidates
