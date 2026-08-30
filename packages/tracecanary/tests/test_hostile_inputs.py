@@ -23,6 +23,45 @@ class HostileInputTests(unittest.TestCase):
             with self.assertRaisesRegex(InputError, "duplicate"):
                 load_json(path, max_bytes=1_024, max_depth=10)
 
+    def test_unpaired_unicode_surrogates_fail_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "invalid-unicode.json"
+            for raw in ('{"value":"\\ud800"}', '{"\\udfff":"value"}'):
+                with self.subTest(raw=raw):
+                    path.write_bytes(raw.encode("ascii"))
+                    with self.assertRaisesRegex(InputError, "Unicode scalar"):
+                        load_json(path, max_bytes=1_024, max_depth=10)
+
+    def test_valid_supplementary_unicode_pair_is_accepted(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "valid-unicode.json"
+            path.write_bytes(b'{"value":"\\ud83d\\ude00"}')
+            self.assertEqual(
+                load_json(path, max_bytes=1_024, max_depth=10),
+                {"value": "\U0001f600"},
+            )
+
+    def test_unpaired_surrogate_cli_error_is_utf8_safe(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "candidate.json"
+            candidate.write_bytes(b'{"resourceSpans":[],"value":"\\ud800"}')
+            error = io.StringIO()
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
+                status = main([
+                    "check",
+                    "--contract",
+                    str(root / "fixtures" / "v1" / "contract.json"),
+                    "--input",
+                    str(candidate),
+                ])
+
+        self.assertEqual(status, EXIT_UNRESOLVED)
+        self.assertEqual(output.getvalue(), "")
+        self.assertIn("invalid Unicode scalar", error.getvalue())
+        error.getvalue().encode("utf-8")
+
     def test_excessive_nesting_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "deep.json"

@@ -61,6 +61,7 @@ def load_json(path: Path, *, max_bytes: int, max_depth: int) -> Any:
     except json.JSONDecodeError as exc:
         raise InputError("input is not valid JSON") from exc
     _check_depth(data, max_depth)
+    _check_unicode_scalars(data)
     return data
 
 
@@ -75,6 +76,23 @@ def _check_depth(value: Any, limit: int) -> None:
             pending.extend((child, depth + 1) for child in current.values())
         elif isinstance(current, list):
             pending.extend((child, depth + 1) for child in current)
+
+
+def _check_unicode_scalars(value: Any) -> None:
+    """Reject escaped lone surrogates that cannot be emitted as UTF-8."""
+    pending = [value]
+    while pending:
+        current = pending.pop()
+        if isinstance(current, str):
+            try:
+                current.encode("utf-8")
+            except UnicodeEncodeError as exc:
+                raise InputError("input contains an invalid Unicode scalar value") from exc
+        elif isinstance(current, dict):
+            pending.extend(current.keys())
+            pending.extend(current.values())
+        elif isinstance(current, list):
+            pending.extend(current)
 
 
 def canonical_json(value: Any) -> str:
