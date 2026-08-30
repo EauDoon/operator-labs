@@ -1,0 +1,13 @@
+{
+  "contract_version": "tracecanary/v1",
+  "semantic_conventions_version": "opentelemetry/semconv/1.43.0",
+  "canaries": [{"label": "example-prompt", "category": "prompt", "value": "TCANARY_EXAMPLE_PROMPT_18c3"}],
+  "forbidden_attribute_keys": ["gen_ai.prompt"],
+  "forbidden_attribute_key_prefixes": [],
+  "forbidden_path_prefixes": [],
+  "required_retained_fields": [
+    {"scope": "resource", "key": "service.name"},
+    {"scope": "span", "key": "gen_ai.operation.name"},
+    {"scope": "event", "key": "telemetry.event.class"}
+  ]
+}
