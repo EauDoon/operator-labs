@@ -3,9 +3,9 @@ requires = ["setuptools==83.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "corridor-lab"
+name = "tracecanary"
 version = "0.1.1"
-description = "Deterministic comparison of synthetic cross-border payment routes."
+description = "Deterministic privacy-regression checks for synthetic OTLP trace canaries."
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "Apache-2.0"}
@@ -16,20 +16,20 @@ classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
-  "Topic :: Office/Business :: Financial",
+  "Topic :: Security",
 ]
 
+[project.urls]
+Source = "https://github.com/EauDoon/operator-labs/tree/main/packages/tracecanary"
+Issues = "https://github.com/EauDoon/operator-labs/issues"
+Security = "https://github.com/EauDoon/operator-labs/blob/main/packages/tracecanary/SECURITY.md"
+Documentation = "https://github.com/EauDoon/operator-labs/tree/main/packages/tracecanary#readme"
+
 [project.scripts]
-corridorlab = "corridor_lab.cli:main"
+tracecanary = "tracecanary.cli:main"
 
 [project.gui-scripts]
-corridorlab-gui = "corridor_lab.gui:main"
-
-[project.urls]
-Source = "https://github.com/EauDoon/corridor-lab"
-Issues = "https://github.com/EauDoon/corridor-lab/issues"
-Security = "https://github.com/EauDoon/corridor-lab/security/policy"
-Documentation = "https://github.com/EauDoon/corridor-lab#readme"
+tracecanary-gui = "tracecanary.gui:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

@@ -1,8 +1,14 @@
-name: CI
+name: Corridor Lab CI
 
 on:
   push:
+    paths:
+      - "packages/corridor-lab/**"
+      - ".github/workflows/corridor-lab.yml"
   pull_request:
+    paths:
+      - "packages/corridor-lab/**"
+      - ".github/workflows/corridor-lab.yml"
 
 permissions:
   contents: read
@@ -10,6 +16,10 @@ permissions:
 concurrency:
   group: corridor-lab-ci-${{ github.ref }}
   cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: packages/corridor-lab
 
 jobs:
   test:

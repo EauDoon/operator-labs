@@ -1,0 +1,1 @@
+{"contract_version":"tracecanary/v1","mode":"check","status":"pass","summary":{"baseline_regressions":0,"canary_leaks":0,"forbidden_attributes":0,"forbidden_paths":0,"missing_retained_fields":0,"total":0},"violations":[]}
