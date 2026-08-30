@@ -203,9 +203,9 @@ def _batch(input_dir: str, recursive: bool, include_paths: bool) -> dict[str, ob
     root = displayed.resolve()
     if not root.is_dir():
         raise InputError(f"batch input_dir must be a directory: {displayed}")
-    iterator = root.rglob("*.json") if recursive else root.glob("*.json")
+    iterator = root.rglob("*") if recursive else root.iterdir()
     paths = sorted(
-        (path for path in iterator if path.is_file() and not path.is_symlink() and path.resolve().is_relative_to(root)),
+        (path for path in iterator if path.name.lower().endswith(".json") and path.is_file() and not path.is_symlink() and path.resolve().is_relative_to(root)),
         key=lambda path: (
             path.relative_to(root).as_posix().casefold(),
             path.relative_to(root).as_posix(),

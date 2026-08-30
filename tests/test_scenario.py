@@ -34,6 +34,14 @@ class ScenarioTests(unittest.TestCase):
         self.assertEqual(stdout.getvalue(), "")
         self.assertIn("contains no JSON scenario files", stderr.getvalue())
 
+    def test_batch_accepts_case_insensitive_json_suffix(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "scenario.JSON"
+            path.write_text(json.dumps(scenario(routes=[route()])), encoding="utf-8")
+            with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+                result = main(["batch", temporary])
+        self.assertEqual(result, 0)
+
     def test_valid_minimal_scenario(self):
         parsed = parse_scenario(scenario())
         self.assertEqual(parsed.transaction.send_amount, 100)
