@@ -26,10 +26,10 @@ corridorlab = "corridor_lab.cli:main"
 corridorlab-gui = "corridor_lab.gui:main"
 
 [project.urls]
-Source = "https://github.com/EauDoon/corridor-lab"
-Issues = "https://github.com/EauDoon/corridor-lab/issues"
-Security = "https://github.com/EauDoon/corridor-lab/security/policy"
-Documentation = "https://github.com/EauDoon/corridor-lab#readme"
+Source = "https://github.com/EauDoon/operator-labs/tree/main/packages/corridor-lab"
+Issues = "https://github.com/EauDoon/operator-labs/issues"
+Security = "https://github.com/EauDoon/operator-labs/blob/main/packages/corridor-lab/SECURITY.md"
+Documentation = "https://github.com/EauDoon/operator-labs/tree/main/packages/corridor-lab#readme"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

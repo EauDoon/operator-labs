@@ -405,3 +405,6 @@ class ReportTests(unittest.TestCase):
                     rendered.append(output.getvalue())
                 self.assertEqual(rendered[0], rendered[1])
                 self.assertNotIn(str(inputs), rendered[0])
+                if output_format == "sarif":
+                    driver = json.loads(rendered[0])["runs"][0]["tool"]["driver"]
+                    self.assertEqual(driver["informationUri"], "https://github.com/EauDoon/operator-labs/tree/main/packages/tracecanary")

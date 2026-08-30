@@ -17,9 +17,9 @@ class MetadataTests(unittest.TestCase):
         self.assertEqual(
             project["urls"],
             {
-                "Source": "https://github.com/EauDoon/tracecanary",
-                "Issues": "https://github.com/EauDoon/tracecanary/issues",
-                "Security": "https://github.com/EauDoon/tracecanary/security/policy",
-                "Documentation": "https://github.com/EauDoon/tracecanary#readme",
+                "Source": "https://github.com/EauDoon/operator-labs/tree/main/packages/tracecanary",
+                "Issues": "https://github.com/EauDoon/operator-labs/issues",
+                "Security": "https://github.com/EauDoon/operator-labs/blob/main/packages/tracecanary/SECURITY.md",
+                "Documentation": "https://github.com/EauDoon/operator-labs/tree/main/packages/tracecanary#readme",
             },
         )
