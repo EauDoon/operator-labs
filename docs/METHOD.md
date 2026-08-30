@@ -3,7 +3,7 @@
 TraceCanary evaluates an exported OTLP/HTTP JSON trace against a declared contract. It does not mutate the trace or the exporter configuration.
 
 1. Load the contract with duplicate-key, size, nesting, field, and version checks.
-2. Load and structurally validate an OTLP trace payload containing `resourceSpans`. Validation failures name the failing JSON pointer in the error message.
+2. Load and structurally validate an OTLP trace payload containing `resourceSpans`. Duplicate attribute keys and duplicate span IDs fail closed. Validation failures name the failing JSON pointer in the error message.
 3. Walk every scalar value and compare each string by exact equality against each configured synthetic canary.
 4. Extract resource, instrumentation-scope, span, event, and link attributes. Check exact forbidden keys and forbidden key prefixes.
 5. Check configured wildcard JSON-pointer path prefixes when a matching scalar is populated.

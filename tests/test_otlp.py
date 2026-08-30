@@ -190,6 +190,78 @@ class OtlpTests(unittest.TestCase):
             validate_trace(payload)
         self.assertNotIn(marker, str(caught.exception))
 
+    def test_duplicate_attribute_keys_are_rejected(self) -> None:
+        payload = {
+            "resourceSpans": [
+                {
+                    "resource": {
+                        "attributes": [
+                            {"key": "service.name", "value": {"stringValue": "synthetic"}},
+                            {"key": "service.name", "value": {"stringValue": "other"}},
+                        ]
+                    },
+                    "scopeSpans": [],
+                }
+            ]
+        }
+        with self.assertRaisesRegex(OtlpError, r"attribute keys must be unique at /resourceSpans/0/resource/attributes/1"):
+            validate_trace(payload)
+
+    def test_duplicate_kvlist_keys_are_rejected(self) -> None:
+        payload = {
+            "resourceSpans": [
+                {
+                    "resource": {
+                        "attributes": [
+                            {
+                                "key": "structured",
+                                "value": {
+                                    "kvlistValue": {
+                                        "values": [
+                                            {"key": "nested", "value": {"stringValue": "one"}},
+                                            {"key": "nested", "value": {"stringValue": "two"}},
+                                        ]
+                                    }
+                                },
+                            }
+                        ]
+                    },
+                    "scopeSpans": [],
+                }
+            ]
+        }
+        with self.assertRaisesRegex(
+            OtlpError,
+            r"kvlistValue keys must be unique at /resourceSpans/0/resource/attributes/0/value/kvlistValue/values/1",
+        ):
+            validate_trace(payload)
+
+    def test_duplicate_span_ids_within_a_trace_are_rejected(self) -> None:
+        payload = {
+            "resourceSpans": [
+                {
+                    "resource": {},
+                    "scopeSpans": [
+                        {
+                            "spans": [
+                                {"name": "first", "traceId": "A" * 32, "spanId": "b" * 16},
+                                {"name": "second", "traceId": "a" * 32, "spanId": "B" * 16},
+                            ]
+                        }
+                    ],
+                }
+            ]
+        }
+        with self.assertRaisesRegex(OtlpError, r"spanId must be unique within a trace at /resourceSpans/0/scopeSpans/0/spans/1"):
+            validate_trace(payload)
+
+        payload["resourceSpans"][0]["scopeSpans"][0]["spans"][1]["traceId"] = "c" * 32
+        validate_trace(payload)
+
+        for span in payload["resourceSpans"][0]["scopeSpans"][0]["spans"]:
+            span["spanId"] = ""
+        validate_trace(payload)
+
     def test_event_and_link_errors_include_indexes(self) -> None:
         payload = {
             "resourceSpans": [

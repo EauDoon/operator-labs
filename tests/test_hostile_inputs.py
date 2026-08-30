@@ -97,6 +97,34 @@ class HostileInputTests(unittest.TestCase):
         self.assertIn("/resourceSpans/0/resource/attributes/0/value", error.getvalue())
         self.assertNotIn(marker, error.getvalue())
 
+    def test_duplicate_attribute_cli_error_omits_the_repeated_key(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        marker = "TCANARY_DUPLICATE_KEY_5d70"
+        payload = {
+            "resourceSpans": [
+                {
+                    "resource": {
+                        "attributes": [
+                            {"key": marker, "value": {"stringValue": "one"}},
+                            {"key": marker, "value": {"stringValue": "two"}},
+                        ]
+                    },
+                    "scopeSpans": [{"spans": [{"name": "synthetic"}]}],
+                }
+            ]
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "candidate.json"
+            candidate.write_text(json.dumps(payload), encoding="utf-8")
+            error = io.StringIO()
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
+                status = main(["check", "--contract", str(root / "fixtures" / "v1" / "contract.json"), "--input", str(candidate)])
+        self.assertEqual(status, EXIT_UNRESOLVED)
+        self.assertEqual(output.getvalue(), "")
+        self.assertIn("attribute keys must be unique at /resourceSpans/0/resource/attributes/1", error.getvalue())
+        self.assertNotIn(marker, error.getvalue())
+
     def test_malformed_span_cli_error_names_the_json_pointer_not_the_span_name(self) -> None:
         root = Path(__file__).resolve().parents[1]
         span_name = "TCANARY_SPAN_NAME_4c81"

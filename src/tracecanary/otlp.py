@@ -87,6 +87,7 @@ def validate_trace(payload: Any) -> None:
     resources = payload.get("resourceSpans")
     if not isinstance(resources, list):
         raise OtlpError("resourceSpans must be a list")
+    seen_span_ids: set[tuple[str, str]] = set()
     for resource_index, resource_span in enumerate(resources):
         resource_path = ("resourceSpans", str(resource_index))
         if not isinstance(resource_span, dict) or set(resource_span) - {"resource", "scopeSpans", "schemaUrl"}:
@@ -126,7 +127,9 @@ def validate_trace(payload: Any) -> None:
             if not isinstance(spans, list):
                 raise OtlpError(_located("scopeSpans entries require a spans list", scope_path))
             for span_index, span in enumerate(spans):
-                _validate_span(span, scope_path + ("spans", str(span_index)))
+                span_path = scope_path + ("spans", str(span_index))
+                _validate_span(span, span_path)
+                _reject_duplicate_span_id(span, span_path, seen_span_ids)
 
 
 def _validate_span(span: Any, path: tuple[str, ...]) -> None:
@@ -187,11 +190,27 @@ def _validate_span(span: Any, path: tuple[str, ...]) -> None:
             _validate_attributes(link.get("attributes", []), link_path + ("attributes",))
 
 
+def _reject_duplicate_span_id(span: dict[str, Any], path: tuple[str, ...], seen: set[tuple[str, str]]) -> None:
+    span_id = span.get("spanId") or ""
+    if not span_id:
+        return
+    identity = ((span.get("traceId") or "").casefold(), span_id.casefold())
+    if identity in seen:
+        raise OtlpError(_located("spanId must be unique within a trace", path))
+    seen.add(identity)
+
+
 def _validate_attributes(attributes: Any, path: tuple[str, ...]) -> None:
     if not isinstance(attributes, list):
         raise OtlpError(_located("attributes must be a list", path))
+    seen_keys: set[str] = set()
     for index, attribute in enumerate(attributes):
-        _validate_key_value(attribute, path + (str(index),))
+        item_path = path + (str(index),)
+        _validate_key_value(attribute, item_path)
+        key = attribute["key"]
+        if key in seen_keys:
+            raise OtlpError(_located("attribute keys must be unique", item_path))
+        seen_keys.add(key)
 
 
 def _validate_key_value(attribute: Any, path: tuple[str, ...]) -> None:
@@ -237,12 +256,16 @@ def _validate_any_value(value: Any, path: tuple[str, ...]) -> None:
         elif kind == "kvlistValue":
             if not isinstance(nested, dict) or set(nested) != {"values"} or not isinstance(nested["values"], list):
                 raise OtlpError(_located("kvlistValue must contain a values list", current_path))
+            seen_keys: set[str] = set()
             for index, item in enumerate(nested["values"]):
                 entry_path = current_path + ("kvlistValue", "values", str(index))
                 if not isinstance(item, dict) or set(item) != {"key", "value"}:
                     raise OtlpError(_located("kvlistValue entries require exactly key and value", entry_path))
                 if not isinstance(item["key"], str) or not item["key"]:
                     raise OtlpError(_located("kvlistValue entry key is invalid", entry_path))
+                if item["key"] in seen_keys:
+                    raise OtlpError(_located("kvlistValue keys must be unique", entry_path))
+                seen_keys.add(item["key"])
                 pending.append((item["value"], entry_path + ("value",)))
         else:
             raise OtlpError(_located("AnyValue contains an unsupported value field", current_path))
