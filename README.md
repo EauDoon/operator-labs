@@ -35,6 +35,9 @@ Each result is deterministic. JSON reports are canonical, UTF-8, sorted-key
 documents with an LF terminator. Compare, evaluate, sensitivity, and
 stress-grid also accept `--format csv` or `--format markdown`. Pareto and batch
 accept `--format markdown` only, not csv. Use `--output FILE` to write a report.
+If `--format` is omitted, it is inferred from `--output` (`.json`, `.md` /
+`.markdown`, `.csv`) or from `CORRIDOR_LAB_FORMAT`; otherwise JSON is the
+default. An explicit `--format` always wins.
 
 ## First screen
 
