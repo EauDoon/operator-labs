@@ -156,8 +156,13 @@ def _run_batch(contract: Contract, input_dir: Path, recursive: bool, include_pat
             raise InputError("--input-dir must be a directory")
         root = input_dir.resolve()
         iterator = root.rglob("*.json") if recursive else root.glob("*.json")
-        paths = sorted(
-            (item for item in iterator if item.is_file() and not item.is_symlink() and item.resolve().is_relative_to(root)),
+        paths: list[Path] = []
+        for item in iterator:
+            if item.is_file() and not item.is_symlink() and item.resolve().is_relative_to(root):
+                paths.append(item)
+                if len(paths) > contract.max_batch_files:
+                    break
+        paths.sort(
             key=lambda item: (
                 item.relative_to(root).as_posix().casefold(),
                 item.relative_to(root).as_posix(),
