@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from decimal import Decimal, DecimalException
 from pathlib import Path
-from typing import Sequence
+from typing import Mapping, Sequence
 
 from .canonical import MAX_BATCH_SCENARIOS, InputError, atomic_write_text, require_decimal_values
 from .comparison import compare_routes, evaluate_scenario, pareto_frontier
@@ -20,18 +21,91 @@ from .stress import run_stress_grid
 SCENARIO_HELP = "path to a fictional scenario JSON file"
 PARAMETER_HELP = "one of " + ", ".join(SENSITIVITY_PARAMETERS)
 VALUES_HELP = "comma-separated decimal values"
+DEFAULT_REPORT_FORMAT = "json"
+REPORT_FORMAT_ENV = "CORRIDOR_LAB_FORMAT"
+TABULAR_REPORT_FORMATS = ("json", "csv", "markdown")
+FRONTIER_REPORT_FORMATS = ("json", "markdown")
+REPORT_FORMAT_BY_SUFFIX = {
+    ".json": "json",
+    ".md": "markdown",
+    ".markdown": "markdown",
+    ".csv": "csv",
+}
+
+
+def resolve_report_format(
+    explicit: str | None,
+    output: str | None,
+    allowed: tuple[str, ...],
+    *,
+    environ: Mapping[str, str] | None = None,
+) -> str:
+    """Choose a report format from --format, --output suffix, env, then JSON."""
+    if explicit is not None:
+        if explicit not in allowed:
+            raise InputError(f"unsupported report format: {explicit}")
+        return explicit
+    suffix_format = _format_from_output_path(output)
+    if suffix_format is not None:
+        if suffix_format not in allowed:
+            raise InputError(
+                f"--output suffix implies {suffix_format}, which is not supported (choose {', '.join(allowed)})"
+            )
+        return suffix_format
+    env_format = _format_from_env(environ)
+    if env_format is not None:
+        if env_format not in allowed:
+            raise InputError(
+                f"{REPORT_FORMAT_ENV}={env_format} is not supported (choose {', '.join(allowed)})"
+            )
+        return env_format
+    if DEFAULT_REPORT_FORMAT in allowed:
+        return DEFAULT_REPORT_FORMAT
+    return allowed[0]
+
+
+def _format_from_output_path(output: str | None) -> str | None:
+    if output is None:
+        return None
+    text = output.strip()
+    if not text:
+        return None
+    return REPORT_FORMAT_BY_SUFFIX.get(Path(text).suffix.lower())
+
+
+def _format_from_env(environ: Mapping[str, str] | None) -> str | None:
+    source = os.environ if environ is None else environ
+    raw = source.get(REPORT_FORMAT_ENV)
+    if raw is None:
+        return None
+    text = raw.strip().casefold()
+    if not text:
+        return None
+    return text
+
+
+def _command_formats(command: str) -> tuple[str, ...]:
+    if command in {"pareto", "batch"}:
+        return FRONTIER_REPORT_FORMATS
+    return TABULAR_REPORT_FORMATS
 
 
 def _add_output_options(
     parser: argparse.ArgumentParser,
     *,
-    formats: tuple[str, ...] = ("json", "csv", "markdown"),
+    formats: tuple[str, ...] = TABULAR_REPORT_FORMATS,
 ) -> None:
     if "csv" in formats:
-        format_help = "json, csv, or markdown (default: json)"
+        format_help = (
+            "json, csv, or markdown (default: json; inferred from --output or "
+            f"{REPORT_FORMAT_ENV})"
+        )
     else:
-        format_help = "json or markdown (default: json; csv is not supported)"
-    parser.add_argument("--format", choices=formats, default="json", help=format_help)
+        format_help = (
+            "json or markdown (default: json; csv is not supported; inferred from "
+            f"--output or {REPORT_FORMAT_ENV})"
+        )
+    parser.add_argument("--format", choices=formats, default=None, help=format_help)
     parser.add_argument("--output", help="write the report to this UTF-8 path")
 
 
@@ -69,12 +143,12 @@ def build_parser() -> argparse.ArgumentParser:
     _add_output_options(stress)
     pareto = commands.add_parser("pareto", help="show the explicit two-metric Pareto frontier")
     _add_scenario_argument(pareto)
-    _add_output_options(pareto, formats=("json", "markdown"))
+    _add_output_options(pareto, formats=FRONTIER_REPORT_FORMATS)
     batch = commands.add_parser("batch", help="evaluate a bounded directory of fictional scenarios")
     batch.add_argument("input_dir", help="directory of fictional scenario JSON files")
     batch.add_argument("--recursive", action="store_true", help="include JSON files in subdirectories")
     batch.add_argument("--include-paths", action="store_true", help="add each scenario's relative path to the batch report")
-    _add_output_options(batch, formats=("json", "markdown"))
+    _add_output_options(batch, formats=FRONTIER_REPORT_FORMATS)
     return parser
 
 
@@ -172,17 +246,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
+        if args.command == "validate":
+            load_scenario(_require_cli_text(args.scenario, "scenario"))
+            sys.stdout.write("valid\n")
+            return 0
+        output_format = resolve_report_format(
+            getattr(args, "format", None),
+            getattr(args, "output", None),
+            _command_formats(args.command),
+        )
         if args.command == "batch":
             batch_report = _batch(args.input_dir, args.recursive, args.include_paths)
-            _emit(render_report(batch_report, args.format), args.output)
+            _emit(render_report(batch_report, output_format), args.output)
             if batch_report["status"] == "pass":
                 return 0
             _emit_unresolved_batch_errors(batch_report)
             return 2
         scenario = load_scenario(_require_cli_text(args.scenario, "scenario"))
-        if args.command == "validate":
-            sys.stdout.write("valid\n")
-            return 0
         report: dict[str, object]
         if args.command == "evaluate":
             report = evaluate_scenario(scenario)
@@ -209,7 +289,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             report = {"report_version": "corridor-lab.pareto/v1", "scenario_id": scenario.scenario_id, "fictional": True, "frontier": pareto_frontier(evaluations)}
         else:
             raise InputError(f"unsupported command: {args.command}")
-        _emit(render_report(report, args.format), args.output)
+        _emit(render_report(report, output_format), args.output)
         return 0
     except (InputError, OSError, ValueError, DecimalException) as exc:
         _write_error(_failure_text(exc))

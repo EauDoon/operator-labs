@@ -1,5 +1,6 @@
 import copy
 import json
+import os
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -10,7 +11,15 @@ from unittest.mock import patch
 
 from helpers import route, scenario
 from corridor_lab.canonical import InputError, MAX_INPUT_BYTES, load_json, parse_json_text
-from corridor_lab.cli import build_parser, main
+from corridor_lab.cli import (
+    DEFAULT_REPORT_FORMAT,
+    FRONTIER_REPORT_FORMATS,
+    REPORT_FORMAT_ENV,
+    TABULAR_REPORT_FORMATS,
+    build_parser,
+    main,
+    resolve_report_format,
+)
 from corridor_lab.scenario import ScenarioError, parse_scenario, parse_scenario_text
 
 
@@ -152,6 +161,68 @@ class ScenarioTests(unittest.TestCase):
                 with redirect_stderr(stderr), self.assertRaises(SystemExit) as caught:
                     parser.parse_args(argv)
                 self.assertEqual(caught.exception.code, 2)
+
+    def test_report_format_prefers_flag_then_suffix_then_env(self):
+        self.assertEqual(
+            resolve_report_format("json", "report.md", TABULAR_REPORT_FORMATS, environ={REPORT_FORMAT_ENV: "csv"}),
+            "json",
+        )
+        self.assertEqual(
+            resolve_report_format(None, "Report.MD", TABULAR_REPORT_FORMATS, environ={REPORT_FORMAT_ENV: "csv"}),
+            "markdown",
+        )
+        self.assertEqual(
+            resolve_report_format(None, "report.txt", TABULAR_REPORT_FORMATS, environ={REPORT_FORMAT_ENV: " Markdown "}),
+            "markdown",
+        )
+        self.assertEqual(
+            resolve_report_format(None, None, TABULAR_REPORT_FORMATS, environ={REPORT_FORMAT_ENV: ""}),
+            DEFAULT_REPORT_FORMAT,
+        )
+        with self.assertRaisesRegex(InputError, "--output suffix implies csv"):
+            resolve_report_format(None, "frontier.csv", FRONTIER_REPORT_FORMATS)
+        with self.assertRaisesRegex(InputError, f"{REPORT_FORMAT_ENV}=csv is not supported"):
+            resolve_report_format(None, None, FRONTIER_REPORT_FORMATS, environ={REPORT_FORMAT_ENV: "CSV"})
+        with self.assertRaisesRegex(InputError, f"{REPORT_FORMAT_ENV}=xml is not supported"):
+            resolve_report_format(None, None, TABULAR_REPORT_FORMATS, environ={REPORT_FORMAT_ENV: "xml"})
+
+    def test_cli_infers_format_from_output_suffix_and_env(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "scenario.json"
+            path.write_text(json.dumps(scenario(routes=[route()])), encoding="utf-8")
+            markdown_output = Path(temporary) / "report.md"
+            csv_output = Path(temporary) / "report.csv"
+            stdout = StringIO()
+            with redirect_stdout(stdout), redirect_stderr(StringIO()):
+                result = main(["evaluate", str(path), "--output", str(markdown_output)])
+            self.assertEqual(result, 0)
+            self.assertTrue(markdown_output.read_text(encoding="utf-8").startswith("# Corridor Lab report"))
+            with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+                result = main(["evaluate", str(path), "--format", "json", "--output", str(markdown_output)])
+            self.assertEqual(result, 0)
+            self.assertTrue(markdown_output.read_text(encoding="utf-8").startswith("{"))
+            with patch.dict(os.environ, {REPORT_FORMAT_ENV: "csv"}):
+                with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+                    result = main(["evaluate", str(path), "--output", str(csv_output)])
+            self.assertEqual(result, 0)
+            self.assertTrue(csv_output.read_text(encoding="utf-8").startswith("route_id,"))
+            stdout = StringIO()
+            with patch.dict(os.environ, {REPORT_FORMAT_ENV: "markdown"}):
+                with redirect_stdout(stdout), redirect_stderr(StringIO()):
+                    result = main(["evaluate", str(path)])
+            self.assertEqual(result, 0)
+            self.assertTrue(stdout.getvalue().startswith("# Corridor Lab report"))
+            stderr = StringIO()
+            with redirect_stdout(StringIO()), redirect_stderr(stderr):
+                result = main(["pareto", str(path), "--output", str(csv_output)])
+            self.assertEqual(result, 2)
+            self.assertIn("--output suffix implies csv, which is not supported", stderr.getvalue())
+            stderr = StringIO()
+            with patch.dict(os.environ, {REPORT_FORMAT_ENV: "yaml"}):
+                with redirect_stdout(StringIO()), redirect_stderr(stderr):
+                    result = main(["evaluate", str(path)])
+            self.assertEqual(result, 2)
+            self.assertIn("CORRIDOR_LAB_FORMAT=yaml is not supported", stderr.getvalue())
 
     def test_cli_evaluate_requires_embedded_routes(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -308,7 +379,16 @@ class ScenarioTests(unittest.TestCase):
             stderr = StringIO()
             with redirect_stdout(stdout), redirect_stderr(stderr):
                 result = main(
-                    ["sensitivity", str(path), "--parameter", " fx_spread_bps ", "--values", "10,25"]
+                    [
+                        "sensitivity",
+                        str(path),
+                        "--parameter",
+                        " fx_spread_bps ",
+                        "--values",
+                        "10,25",
+                        "--format",
+                        "json",
+                    ]
                 )
         self.assertEqual(result, 0)
         self.assertEqual(stderr.getvalue(), "")
@@ -322,7 +402,7 @@ class ScenarioTests(unittest.TestCase):
             ),
             (
                 ["stress-grid", "--help"],
-                ("--values-a", "comma-separated decimal values", "json, csv, or markdown"),
+                ("--values-a", "comma-separated decimal values", "json, csv, or markdown", "CORRIDOR_LAB_FORMAT"),
             ),
             (
                 ["batch", "--help"],
