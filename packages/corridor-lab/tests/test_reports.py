@@ -31,6 +31,20 @@ class ReportTests(unittest.TestCase):
         self.assertNotIn("How to read", render_report(report, "json"))
         self.assertNotIn("How to read", render_report(report, "csv"))
 
+    def test_markdown_explains_an_all_ineligible_ranking(self):
+        objective = {
+            "metric": "maximize_expected_recipient_amount",
+            "guardrails": {"minimum_probability_by_deadline": "0.9", "maximum_tail_hours": "4"},
+        }
+        report = evaluate_scenario(parse_scenario(scenario(routes=[route()], objective=objective)))
+        markdown = render_report(report, "markdown")
+        self.assertIn("No routes met every declared guardrail.", markdown)
+        self.assertIn("### Guardrail rejections", markdown)
+        self.assertIn(
+            "| fictional-route | Minimum successful-by-deadline probability; Maximum tail time |",
+            markdown,
+        )
+
     def test_worked_markdown_fixture_matches_renderer(self):
         root = Path(__file__).resolve().parents[1]
         scenario_file = root / "examples" / "fictional-corridor" / "scenario.json"

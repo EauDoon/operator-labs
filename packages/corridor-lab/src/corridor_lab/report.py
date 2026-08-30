@@ -320,6 +320,20 @@ def render_markdown(report: dict[str, object]) -> str:
         lines.append("| ---: | --- | ---: |")
         for item in ranking["eligible_routes"]:
             lines.append(f"| {_cell(item['rank'])} | {_cell(item['route_id'])} | {_cell(item['objective_value'])} |")
+        rejections = ranking.get("guardrail_rejections", [])
+        if rejections:
+            if not ranking["eligible_routes"]:
+                lines.extend(["", "No routes met every declared guardrail."])
+            guardrail_labels = {
+                "minimum_probability_by_deadline": "Minimum successful-by-deadline probability",
+                "maximum_tail_hours": "Maximum tail time",
+            }
+            lines.extend(["", "### Guardrail rejections", "", "| Route | Failed guardrails |", "| --- | --- |"])
+            for item in rejections:
+                failures = "; ".join(
+                    guardrail_labels.get(name, _cell(name)) for name in item["failed_guardrails"]
+                )
+                lines.append(f"| {_cell(item['route_id'])} | {failures} |")
     frontier = report.get("pareto_frontier")
     if isinstance(frontier, list):
         lines.extend(["", "## Pareto frontier", "", "The frontier keeps both explicit metrics visible: expected recipient amount is maximized and expected sender cost is minimized.", "", "| Route | Expected recipient | Expected sender cost |", "| --- | ---: | ---: |"])
