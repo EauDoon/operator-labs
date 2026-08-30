@@ -342,6 +342,46 @@ class ReportTests(unittest.TestCase):
             self.assertEqual(error.getvalue(), "")
             self.assertEqual(json.loads(output.getvalue())["status"], "pass")
 
+    def test_batch_discovery_stops_after_the_first_over_limit_file(self) -> None:
+        contract_data = json.loads((FIXTURES / "contract.json").read_text(encoding="utf-8"))
+        contract_data["limits"] = {
+            "max_input_bytes": 5_000_000,
+            "max_nesting": 100,
+            "max_batch_files": 2,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            contract = root / "contract.json"
+            inputs = root / "inputs"
+            inputs.mkdir()
+            contract.write_text(json.dumps(contract_data), encoding="utf-8")
+            safe = (FIXTURES / "safe-export.json").read_bytes()
+            candidates = []
+            for name in ("a.json", "b.json", "c.json"):
+                candidate = inputs / name
+                candidate.write_bytes(safe)
+                candidates.append(candidate)
+
+            def bounded_candidates():
+                yield from candidates
+                raise AssertionError("batch discovery consumed past max_batch_files + 1")
+
+            output = io.StringIO()
+            error = io.StringIO()
+            with patch.object(Path, "glob", return_value=bounded_candidates()):
+                with contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
+                    status = main([
+                        "batch",
+                        "--contract",
+                        str(contract),
+                        "--input-dir",
+                        str(inputs),
+                    ])
+
+            self.assertEqual(status, EXIT_UNRESOLVED)
+            self.assertEqual(output.getvalue(), "")
+            self.assertIn("2-file limit", error.getvalue())
+
     def test_empty_batch_is_unresolved(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = io.StringIO()
