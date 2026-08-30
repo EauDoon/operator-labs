@@ -64,6 +64,18 @@ class ScenarioTests(unittest.TestCase):
         with self.assertRaises(ScenarioError):
             parse_scenario(too_precise)
 
+    def test_non_finite_decimals_are_rejected(self):
+        for payload in ("NaN", "Infinity", "-Infinity", "inf", "-inf"):
+            with self.subTest(payload=payload):
+                data = scenario()
+                data["transaction"]["send_amount"] = payload
+                with self.assertRaisesRegex(ScenarioError, "must be finite"):
+                    parse_scenario(data)
+        with self.assertRaisesRegex(ScenarioError, "JSON constant NaN is not permitted"):
+            parse_json_text('{"send_amount": NaN}')
+        with self.assertRaisesRegex(ScenarioError, "JSON constant Infinity is not permitted"):
+            parse_json_text('{"send_amount": Infinity}')
+
     def test_cli_maps_decimal_exception_to_exit_two(self):
         stderr = StringIO()
         with patch("corridor_lab.cli.load_scenario", side_effect=InvalidOperation):
@@ -185,6 +197,38 @@ class ScenarioTests(unittest.TestCase):
                 result = main(["sensitivity", str(path), "--parameter", "fx_spread_bps", "--values", "10,,50"])
         self.assertEqual(result, 2)
         self.assertIn("--values must be a comma-separated list of decimals", stderr.getvalue())
+
+    def test_cli_rejects_non_finite_and_duplicate_value_lists(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "scenario.json"
+            path.write_text(json.dumps(scenario(routes=[route()])), encoding="utf-8")
+            cases = (
+                (["sensitivity", str(path), "--parameter", "fx_spread_bps", "--values", "NaN"], "--values value must be finite"),
+                (["sensitivity", str(path), "--parameter", "fx_spread_bps", "--values", "Infinity"], "--values value must be finite"),
+                (["sensitivity", str(path), "--parameter", "fx_spread_bps", "--values", "10,10.0"], "--values must not contain duplicate values"),
+                (
+                    [
+                        "stress-grid",
+                        str(path),
+                        "--parameter-a",
+                        "fx_rate",
+                        "--values-a",
+                        "1.7,1.70",
+                        "--parameter-b",
+                        "fx_spread_bps",
+                        "--values-b",
+                        "25,50",
+                    ],
+                    "--values-a must not contain duplicate values",
+                ),
+            )
+            for argv, message in cases:
+                with self.subTest(message=message):
+                    stderr = StringIO()
+                    with redirect_stdout(StringIO()), redirect_stderr(stderr):
+                        result = main(argv)
+                    self.assertEqual(result, 2)
+                    self.assertIn(message, stderr.getvalue())
 
     def test_cli_stress_grid_names_the_invalid_values_flag(self):
         with tempfile.TemporaryDirectory() as temporary:

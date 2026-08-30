@@ -1,11 +1,12 @@
 import unittest
+from decimal import Decimal
 
 from helpers import route, scenario
+from corridor_lab.canonical import InputError
+from corridor_lab.report import render_report
 from corridor_lab.scenario import parse_scenario
 from corridor_lab.sensitivity import run_sensitivity
 from corridor_lab.stress import run_stress_grid
-from corridor_lab.report import render_report
-from decimal import Decimal
 
 
 class SensitivityTests(unittest.TestCase):
@@ -38,3 +39,42 @@ class SensitivityTests(unittest.TestCase):
         self.assertIn("parameter_a", csv_text)
         self.assertIn("fx_rate", csv_text)
         self.assertIn("| Route | fx_rate | fx_spread_bps |", render_report(report, "markdown"))
+
+    def test_non_finite_and_non_decimal_sensitivity_values_are_rejected(self):
+        parsed = parse_scenario(scenario(routes=[route()]))
+        route_model = parsed.routes[0]
+        cases = (
+            ([Decimal("NaN")], "must be finite"),
+            ([Decimal("Infinity")], "must be finite"),
+            ([Decimal("-Infinity")], "must be finite"),
+            ([float("inf")], "must be a decimal string or integer"),
+            ("10,25", "must be a list of decimals"),
+        )
+        for values, message in cases:
+            with self.subTest(values=values):
+                with self.assertRaisesRegex(InputError, message):
+                    run_sensitivity(parsed, "fx_spread_bps", values)
+                if not isinstance(values, str):
+                    with self.assertRaisesRegex(InputError, message):
+                        route_model.changed_parameter("fx_spread_bps", values[0])
+
+    def test_duplicate_sensitivity_and_stress_values_are_rejected(self):
+        parsed = parse_scenario(scenario(routes=[route()]))
+        with self.assertRaisesRegex(InputError, "sensitivity must not contain duplicate values"):
+            run_sensitivity(parsed, "fx_spread_bps", [Decimal("10"), Decimal("10.0")])
+        with self.assertRaisesRegex(InputError, "stress grid parameter-a must not contain duplicate values"):
+            run_stress_grid(
+                parsed,
+                "fx_rate",
+                [Decimal("1.7"), Decimal("1.70")],
+                "fx_spread_bps",
+                [Decimal("25"), Decimal("50")],
+            )
+        with self.assertRaisesRegex(InputError, "stress grid parameter-b must not contain duplicate values"):
+            run_stress_grid(
+                parsed,
+                "fx_rate",
+                [Decimal("1.7"), Decimal("1.8")],
+                "fx_spread_bps",
+                [Decimal("25"), Decimal("25")],
+            )

@@ -4,23 +4,24 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from .canonical import InputError, MAX_SENSITIVITY_ROWS, MAX_SENSITIVITY_VALUES, decimal_text
+from .canonical import InputError, MAX_SENSITIVITY_ROWS, MAX_SENSITIVITY_VALUES, decimal_text, require_decimal_values
 from .model import evaluate_route
 from .scenario import Scenario
 
 
 def run_sensitivity(scenario: Scenario, parameter: str, values: list[Decimal]) -> dict[str, object]:
-    if not values:
+    parsed_values = require_decimal_values(values, "sensitivity")
+    if not parsed_values:
         raise InputError("sensitivity requires at least one value")
-    if len(values) > MAX_SENSITIVITY_VALUES:
+    if len(parsed_values) > MAX_SENSITIVITY_VALUES:
         raise InputError(f"sensitivity values exceed the {MAX_SENSITIVITY_VALUES}-value budget")
     if not scenario.routes:
         raise InputError("sensitivity requires routes embedded in the scenario")
-    if len(scenario.routes) * len(values) > MAX_SENSITIVITY_ROWS:
+    if len(scenario.routes) * len(parsed_values) > MAX_SENSITIVITY_ROWS:
         raise InputError(f"sensitivity exceeds the {MAX_SENSITIVITY_ROWS}-row budget")
     rows: list[dict[str, object]] = []
     for route in sorted(scenario.routes, key=lambda item: item.route_id):
-        for value in values:
+        for value in parsed_values:
             changed = route.changed_parameter(parameter, value)
             evaluation = evaluate_route(changed, scenario.transaction)
             rows.append(
