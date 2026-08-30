@@ -1,12 +1,16 @@
-name: portable Windows GUI
+name: TraceCanary portable Windows GUI
 
 on:
   workflow_dispatch:
   push:
-    tags: ["v0.1.*"]
+    tags: ["tracecanary-v0.1.*"]
 
 permissions:
   contents: read
+
+defaults:
+  run:
+    working-directory: packages/tracecanary
 
 jobs:
   build:
@@ -35,7 +39,7 @@ jobs:
         with:
           name: TraceCanary-windows-x64
           path: |
-            dist/TraceCanary-windows-x64.zip
-            dist/TraceCanary-windows-x64.zip.sha256
+            packages/tracecanary/dist/TraceCanary-windows-x64.zip
+            packages/tracecanary/dist/TraceCanary-windows-x64.zip.sha256
           if-no-files-found: error
           retention-days: 14

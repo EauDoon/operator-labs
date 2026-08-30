@@ -1,12 +1,16 @@
-name: portable Windows GUI
+name: Corridor Lab portable Windows GUI
 
 on:
   workflow_dispatch:
   push:
-    tags: ["v0.1.*"]
+    tags: ["corridor-lab-v0.1.*"]
 
 permissions:
   contents: read
+
+defaults:
+  run:
+    working-directory: packages/corridor-lab
 
 jobs:
   build:
@@ -35,7 +39,7 @@ jobs:
         with:
           name: CorridorLab-windows-x64
           path: |
-            dist/CorridorLab-windows-x64.zip
-            dist/CorridorLab-windows-x64.zip.sha256
+            packages/corridor-lab/dist/CorridorLab-windows-x64.zip
+            packages/corridor-lab/dist/CorridorLab-windows-x64.zip.sha256
           if-no-files-found: error
           retention-days: 14

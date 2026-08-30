@@ -7,7 +7,7 @@ offline scenario engine, not a live pricing service or provider recommendation.
 All bundled entities, currencies, rates, fees, probabilities, and timings are
 synthetic. Do not use real customer, account, transaction, or provider data.
 
-![Diagram showing alternative comparison, stress, and Pareto analyses of a synthetic payment scenario, with results available in the GUI or stable reports.](https://raw.githubusercontent.com/EauDoon/corridor-lab/main/.github/assets/project-overview.svg)
+![Diagram showing alternative comparison, stress, and Pareto analyses of a synthetic payment scenario, with results available in the GUI or stable reports.](https://raw.githubusercontent.com/EauDoon/operator-labs/main/packages/corridor-lab/.github/assets/project-overview.svg)
 
 ## Quick start
 
