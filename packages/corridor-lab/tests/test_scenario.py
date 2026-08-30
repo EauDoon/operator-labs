@@ -24,6 +24,37 @@ from corridor_lab.scenario import ScenarioError, parse_scenario, parse_scenario_
 
 
 class ScenarioTests(unittest.TestCase):
+    def test_batch_rejects_a_scenario_swapped_after_discovery(self):
+        import corridor_lab.cli as cli_module
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            inside = root / "inside.json"
+            inside.write_text(json.dumps(scenario(routes=[route()])), encoding="utf-8")
+            replacement = root / "replacement.tmp"
+            replacement.write_text(
+                json.dumps(scenario(routes=[route(route_id="replacement")])),
+                encoding="utf-8",
+            )
+            original_reader = cli_module._read_scanned_scenario
+
+            def swap_before_open(*args):
+                replacement.replace(inside)
+                return original_reader(*args)
+
+            stdout = StringIO()
+            stderr = StringIO()
+            with patch.object(
+                cli_module,
+                "_read_scanned_scenario",
+                side_effect=swap_before_open,
+            ), redirect_stdout(stdout), redirect_stderr(stderr):
+                result = main(["batch", str(root), "--include-paths"])
+
+        self.assertEqual(result, 2)
+        self.assertIn('"status":"unresolved"', stdout.getvalue())
+        self.assertIn("inside.json: batch input changed while being read", stderr.getvalue())
+
     def test_batch_rejects_empty_directory(self):
         with tempfile.TemporaryDirectory() as temporary:
             stdout = StringIO()

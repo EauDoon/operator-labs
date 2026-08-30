@@ -4,17 +4,25 @@ from __future__ import annotations
 
 import argparse
 import os
+import stat as stat_module
 import sys
 from decimal import Decimal, DecimalException
 from pathlib import Path
 from typing import Mapping, Sequence
 
-from .canonical import MAX_BATCH_SCENARIOS, InputError, atomic_write_text, require_decimal_values
+from .canonical import (
+    MAX_BATCH_SCENARIOS,
+    MAX_INPUT_BYTES,
+    InputError,
+    atomic_write_text,
+    parse_json_bytes,
+    require_decimal_values,
+)
 from .comparison import compare_routes, evaluate_scenario, pareto_frontier
 from .model import evaluate_route
 from .report import render_report
 from .route import SENSITIVITY_PARAMETERS, Route, load_route, load_route_folder
-from .scenario import load_scenario
+from .scenario import load_scenario, parse_scenario
 from .sensitivity import run_sensitivity
 from .stress import run_stress_grid
 
@@ -198,6 +206,28 @@ def _emit(text: str, output: str | None) -> None:
     atomic_write_text(Path(_require_cli_text(output, "--output")), text)
 
 
+def _read_scanned_scenario(path: Path, expected: os.stat_result):
+    """Read the same regular scenario file observed during batch discovery."""
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(path, flags)
+        opened = os.fstat(descriptor)
+        if not stat_module.S_ISREG(opened.st_mode) or not os.path.samestat(expected, opened):
+            raise InputError("batch input changed while being read")
+        with os.fdopen(descriptor, "rb") as scenario_file:
+            descriptor = None
+            raw = scenario_file.read(MAX_INPUT_BYTES + 1)
+    except OSError as exc:
+        raise InputError("batch input changed while being read") from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+    if len(raw) > MAX_INPUT_BYTES:
+        raise InputError(f"input exceeds {MAX_INPUT_BYTES} bytes")
+    return parse_scenario(parse_json_bytes(raw))
+
+
 def _batch(input_dir: str, recursive: bool, include_paths: bool) -> dict[str, object]:
     displayed = Path(_require_cli_text(input_dir, "input_dir"))
     root = displayed.resolve()
@@ -205,10 +235,17 @@ def _batch(input_dir: str, recursive: bool, include_paths: bool) -> dict[str, ob
         raise InputError(f"batch input_dir must be a directory: {displayed}")
     iterator = root.rglob("*") if recursive else root.iterdir()
     paths = sorted(
-        (path for path in iterator if path.name.lower().endswith(".json") and path.is_file() and not path.is_symlink() and path.resolve().is_relative_to(root)),
+        (
+            (path, metadata)
+            for path in iterator
+            if path.name.lower().endswith(".json")
+            for metadata in (os.lstat(path),)
+            if stat_module.S_ISREG(metadata.st_mode)
+            and path.resolve().is_relative_to(root)
+        ),
         key=lambda path: (
-            path.relative_to(root).as_posix().casefold(),
-            path.relative_to(root).as_posix(),
+            path[0].relative_to(root).as_posix().casefold(),
+            path[0].relative_to(root).as_posix(),
         ),
     )
     if not paths:
@@ -216,10 +253,10 @@ def _batch(input_dir: str, recursive: bool, include_paths: bool) -> dict[str, ob
     if len(paths) > MAX_BATCH_SCENARIOS:
         raise InputError(f"batch exceeds the {MAX_BATCH_SCENARIOS}-scenario budget")
     items: list[dict[str, object]] = []
-    for index, path in enumerate(paths, start=1):
+    for index, (path, metadata) in enumerate(paths, start=1):
         relative = path.relative_to(root).as_posix()
         try:
-            report = evaluate_scenario(load_scenario(path))
+            report = evaluate_scenario(_read_scanned_scenario(path, metadata))
             status = "pass"
         except (InputError, OSError, ValueError, DecimalException) as exc:
             report = {"status": "unresolved", "error": f"{relative}: {_failure_text(exc)}"}
