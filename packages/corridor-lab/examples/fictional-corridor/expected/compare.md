@@ -19,6 +19,12 @@ Metric: `maximize_expected_recipient_amount`
 | 2 | fictional-linked-instant | 1691.924675 |
 | 3 | fictional-fiat-token-bridge | 1679.72293125 |
 
+### Guardrail rejections
+
+| Route | Failed guardrails |
+| --- | --- |
+| fictional-correspondent-style | Minimum successful-by-deadline probability; Maximum tail time |
+
 ## How to read this report
 
 Recipient figures are in `BRC` and sender-cost figures are in `AMR`.
