@@ -8,7 +8,7 @@ from decimal import Decimal, DecimalException
 from pathlib import Path
 from typing import Sequence
 
-from .canonical import MAX_BATCH_SCENARIOS, InputError, atomic_write_text, require_decimal
+from .canonical import MAX_BATCH_SCENARIOS, InputError, atomic_write_text, require_decimal_values
 from .comparison import compare_routes, evaluate_scenario, pareto_frontier
 from .model import evaluate_route
 from .report import render_report
@@ -114,7 +114,7 @@ def _parse_values(raw: str, flag: str = "--values") -> list[Decimal]:
     chunks = raw.split(",")
     if not all(chunk.strip() for chunk in chunks):
         raise InputError(f"{flag} must be a comma-separated list of decimals")
-    return [require_decimal(chunk.strip(), f"{flag} value") for chunk in chunks]
+    return require_decimal_values([chunk.strip() for chunk in chunks], flag)
 
 
 def _emit(text: str, output: str | None) -> None:

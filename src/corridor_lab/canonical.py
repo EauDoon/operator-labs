@@ -198,6 +198,16 @@ def require_decimal(
     return parsed
 
 
+def require_decimal_values(values: Any, path: str) -> list[Decimal]:
+    """Require a finite decimal list with no duplicate values."""
+    if isinstance(values, (str, bytes)) or not isinstance(values, (list, tuple)):
+        raise InputError(f"{path} must be a list of decimals")
+    parsed = [require_decimal(value, f"{path} value") for value in values]
+    if len(parsed) != len(set(parsed)):
+        raise InputError(f"{path} must not contain duplicate values")
+    return parsed
+
+
 def require_integer(value: Any, path: str, *, minimum: int, maximum: int) -> int:
     if isinstance(value, bool) or not isinstance(value, (int, Decimal)):
         raise InputError(f"{path} must be an integer")

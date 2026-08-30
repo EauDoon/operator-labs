@@ -61,13 +61,14 @@ class Route:
             raise InputError(
                 f"unsupported sensitivity parameter: {name} (choose from {', '.join(SENSITIVITY_PARAMETERS)})"
             )
-        if name == "fx_rate" and value <= 0:
+        parsed = require_decimal(value, f"{name} sensitivity value")
+        if name == "fx_rate" and parsed <= 0:
             raise InputError("fx_rate sensitivity values must be greater than zero")
-        if name != "fx_rate" and value < 0:
+        if name != "fx_rate" and parsed < 0:
             raise InputError(f"{name} sensitivity values must be non-negative")
-        if name.endswith("bps") and value > MAX_BPS:
+        if name.endswith("bps") and parsed > MAX_BPS:
             raise InputError(f"{name} sensitivity values must not exceed 10000")
-        return replace(self, **{name: value})
+        return replace(self, **{name: parsed})
 
 
 def _parse_liquidity(value: Any, path: str) -> Liquidity:
