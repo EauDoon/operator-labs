@@ -234,23 +234,40 @@ def _batch(input_dir: str, recursive: bool, include_paths: bool) -> dict[str, ob
     if not root.is_dir():
         raise InputError(f"batch input_dir must be a directory: {displayed}")
     iterator = root.rglob("*") if recursive else root.iterdir()
-    paths = sorted(
-        (
-            (path, metadata)
-            for path in iterator
-            if path.name.lower().endswith(".json")
-            for metadata in (os.lstat(path),)
-            if stat_module.S_ISREG(metadata.st_mode)
-            and path.resolve().is_relative_to(root)
-        ),
-        key=lambda path: (
-            path[0].relative_to(root).as_posix().casefold(),
-            path[0].relative_to(root).as_posix(),
+    paths: list[tuple[Path, os.stat_result]] = []
+    over_limit = False
+    for path in iterator:
+        if len(paths) > MAX_BATCH_SCENARIOS:
+            # Stop reading the directory as soon as the budget is exceeded.
+            # The full enumeration in the previous implementation allocated
+            # a Path, an os.stat_result, and a resolve() syscall per entry
+            # before raising, which is hostile to large directories on
+            # Windows. Mirror the TraceCanary bound pattern from PR #18.
+            over_limit = True
+            break
+        if not path.name.lower().endswith(".json"):
+            continue
+        try:
+            metadata = os.lstat(path)
+        except OSError:
+            continue
+        if not stat_module.S_ISREG(metadata.st_mode):
+            continue
+        try:
+            if not path.resolve().is_relative_to(root):
+                continue
+        except OSError:
+            continue
+        paths.append((path, metadata))
+    paths.sort(
+        key=lambda entry: (
+            entry[0].relative_to(root).as_posix().casefold(),
+            entry[0].relative_to(root).as_posix(),
         ),
     )
     if not paths:
         raise InputError(f"batch input_dir contains no JSON scenario files: {displayed}")
-    if len(paths) > MAX_BATCH_SCENARIOS:
+    if over_limit or len(paths) > MAX_BATCH_SCENARIOS:
         raise InputError(f"batch exceeds the {MAX_BATCH_SCENARIOS}-scenario budget")
     items: list[dict[str, object]] = []
     for index, (path, metadata) in enumerate(paths, start=1):
