@@ -21,6 +21,17 @@
 - `break-even` over workloads reports a reversal between adjacent declared
   volumes. It does not interpolate, extrapolate, or solve for the crossing
   volume, and it does not imply a route is preferable at untested volumes.
+- Funding schedules are discrete and declared. There is no arrival
+  distribution, seasonality, queue, credit facility, intraday position, or
+  foreign-exchange revaluation inside a period. Every delay is a whole number of
+  declared periods, so a delay shorter than one period cannot be expressed.
+- Funding figures are reported separately from per-transaction sender cost and
+  are deliberately not summed into it. `Required prefunding`,
+  `average tied-up capital`, and `expected loss` are different quantities and
+  must not be added together.
+- A declared schedule that ends does not imply full recovery. Recoveries whose
+  arrival period falls beyond the last declared period are surfaced as
+  `recoveries after horizon` instead of being dropped.
 - Currency labels and precision are formatting inputs, not ISO validation.
 - Ranking only orders assumptions under an explicit objective and guardrails.
   It is not advice or an automated route selection decision.

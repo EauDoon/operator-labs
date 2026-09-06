@@ -1,0 +1,67 @@
+{
+  "contract_version": "corridor-lab.scenario/v2",
+  "scenario_id": "fictional-funding-schedule",
+  "description": "A fictional multi-period funding schedule used to demonstrate declared prefunding, tied-up capital, carrying cost, and loss.",
+  "fictional": true,
+  "transaction": {
+    "send_amount": "1000.00",
+    "send_currency": "AMR",
+    "send_precision": 2,
+    "receive_currency": "BRC",
+    "receive_precision": 2,
+    "rounding": "ROUND_HALF_UP",
+    "deadline_hours": "12",
+    "volume_per_period": "100"
+  },
+  "funding": {
+    "opening_balance_send": "1000.00",
+    "days_per_period": "30",
+    "settlement_delay_periods": 1,
+    "recovery_delay_periods": 0,
+    "periods": [
+      {"period_index": 1, "disbursements_send": "1000.00", "recoveries_send": "0"},
+      {"period_index": 2, "disbursements_send": "1000.00", "recoveries_send": "1000.00"},
+      {"period_index": 3, "disbursements_send": "1000.00", "recoveries_send": "1000.00"}
+    ]
+  },
+  "routes": [
+    {
+      "contract_version": "corridor-lab.route/v2",
+      "route_id": "cheap-capital",
+      "label": "Declared low capital cost with a low failure rate (fictional)",
+      "fictional": true,
+      "fx_rate": "1.7500",
+      "fixed_fee_send": "6.00",
+      "percent_fee_bps": "20",
+      "fx_spread_bps": "50",
+      "liquidity": {
+        "prefunding_amount_send": "20000",
+        "annual_cost_of_capital_bps": "600",
+        "holding_days": "0.5"
+      },
+      "outcomes": [
+        {"outcome_id": "success", "probability": "0.99", "completion": "success", "delay_hours": "2", "recovery_amount_send": "0", "recovery_delay_hours": "0"},
+        {"outcome_id": "failed-recovered", "probability": "0.01", "completion": "failure", "delay_hours": "3", "recovery_amount_send": "950", "recovery_delay_hours": "24"}
+      ]
+    },
+    {
+      "contract_version": "corridor-lab.route/v2",
+      "route_id": "expensive-capital",
+      "label": "Declared high capital cost with a higher failure rate (fictional)",
+      "fictional": true,
+      "fx_rate": "1.7500",
+      "fixed_fee_send": "6.00",
+      "percent_fee_bps": "20",
+      "fx_spread_bps": "50",
+      "liquidity": {
+        "prefunding_amount_send": "20000",
+        "annual_cost_of_capital_bps": "1000",
+        "holding_days": "0.5"
+      },
+      "outcomes": [
+        {"outcome_id": "success", "probability": "0.98", "completion": "success", "delay_hours": "2", "recovery_amount_send": "0", "recovery_delay_hours": "0"},
+        {"outcome_id": "failed-recovered", "probability": "0.02", "completion": "failure", "delay_hours": "3", "recovery_amount_send": "950", "recovery_delay_hours": "24"}
+      ]
+    }
+  ]
+}

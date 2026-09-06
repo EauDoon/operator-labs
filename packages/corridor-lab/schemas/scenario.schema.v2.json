@@ -34,6 +34,32 @@
         ]
       }
     },
+    "funding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["opening_balance_send", "days_per_period", "periods"],
+      "properties": {
+        "opening_balance_send": {"$ref": "#/$defs/decimal"},
+        "days_per_period": {"$ref": "#/$defs/decimal"},
+        "settlement_delay_periods": {"type": "integer", "minimum": 0},
+        "recovery_delay_periods": {"type": "integer", "minimum": 0},
+        "periods": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["period_index", "disbursements_send", "recoveries_send"],
+            "properties": {
+              "period_index": {"type": "integer", "minimum": 1},
+              "disbursements_send": {"$ref": "#/$defs/decimal"},
+              "recoveries_send": {"$ref": "#/$defs/decimal"}
+            }
+          }
+        }
+      }
+    },
     "workload_scenarios": {
       "type": "array",
       "maxItems": 16,

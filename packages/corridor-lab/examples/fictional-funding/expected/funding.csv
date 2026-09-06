@@ -1,0 +1,5 @@
+route_id,recovery_delay_periods,required_prefunding_send,declared_opening_balance_send,shortfall_send,shortfall_periods,average_tied_up_capital_send,peak_settlement_exposure_send,carrying_cost_send,expected_loss_send,total_disbursements_send,total_recoveries_send,recoveries_after_horizon_send
+cheap-capital,0,2000.00,1000.00,1000.00,"2,3",333.33,1000.00,4.93,1.50,3000.00,2000.00,0.00
+cheap-capital,1,3000.00,1000.00,2000.00,"2,3",333.33,1000.00,4.93,1.50,3000.00,2000.00,1000.00
+expensive-capital,0,2000.00,1000.00,1000.00,"2,3",333.33,1000.00,8.22,3.00,3000.00,2000.00,0.00
+expensive-capital,1,3000.00,1000.00,2000.00,"2,3",333.33,1000.00,8.22,3.00,3000.00,2000.00,1000.00

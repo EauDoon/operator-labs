@@ -5,13 +5,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal, DecimalException
 
-from .canonical import InputError, decimal_text, local_decimal_context, require_decimal
+from .canonical import (
+    BPS_DENOMINATOR,
+    DAYS_PER_YEAR,
+    InputError,
+    decimal_text,
+    local_decimal_context,
+    money_text,
+    require_decimal,
+)
 from .route import Route
 from .scenario import Transaction
-
-
-BPS_DENOMINATOR = Decimal("10000")
-DAYS_PER_YEAR = Decimal("365")
 
 
 @dataclass(frozen=True)
@@ -107,16 +111,6 @@ class RouteEvaluation:
             "median_completion_time_hours": decimal_text(self.median_completion_time_hours),
             "tail_completion_time_hours": decimal_text(self.tail_completion_time_hours),
         }
-
-
-def money_text(value: Decimal, precision: int, rounding: str) -> str:
-    try:
-        with local_decimal_context():
-            quantizer = Decimal(1).scaleb(-precision)
-            quantized = value.quantize(quantizer, rounding=rounding)
-            return format(quantized, f".{precision}f")
-    except DecimalException as exc:
-        raise InputError("cannot render decimal amount") from exc
 
 
 def _quantile_time(route: Route, threshold: Decimal) -> Decimal:

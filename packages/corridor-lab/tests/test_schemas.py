@@ -175,7 +175,7 @@ _SCENARIO_FIELDS = {
         "routes",
         "objective",
     },
-    SCENARIO_CONTRACT_VERSION_V2: {
+        SCENARIO_CONTRACT_VERSION_V2: {
         "contract_version",
         "scenario_id",
         "description",
@@ -184,6 +184,7 @@ _SCENARIO_FIELDS = {
         "routes",
         "objective",
         "workload_scenarios",
+        "funding",
     },
 }
 
@@ -260,7 +261,7 @@ class ParserFieldProbeTests(unittest.TestCase):
                 parse_scenario(probe)
             optional = {"routes", "objective"}
             if version == SCENARIO_CONTRACT_VERSION_V2:
-                optional |= {"workload_scenarios"}
+                optional |= {"workload_scenarios", "funding"}
             self.assertEqual(fields, set(document) | optional)
 
 

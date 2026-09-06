@@ -90,6 +90,39 @@ Because a `scenario_volume` period charge reduces the per-transaction deduction,
 it also raises the recipient amount as volume rises. That is a direct
 consequence of the declared amortization and is reported as such.
 
+## Declared funding schedules (`corridor-lab.scenario/v2`)
+
+A v2 scenario may declare a `funding` object. With recoveries `R_i` that have
+become available strictly before period `i`, and disbursements `D_i` of periods
+before `i`:
+
+```text
+balance_start_i = opening_balance + sum(R_j for j < i) - sum(D_j for j < i)
+trough_i        = balance_start_i - D_i
+required_prefunding = max(0, max_i (D_i - (balance_start_i - opening_balance)))
+shortfall           = max(0, required_prefunding - opening_balance)
+average_tied_up_capital = mean_i max(0, balance_start_i)
+carrying_cost = sum_i max(0, balance_start_i) * c / 10000 * days_per_period / 365
+settlement_exposure_i = sum(D_j for j where i < j + settlement_delay_periods)
+expected_loss = total declared disbursements * declared unrecovered-principal rate
+```
+
+A recovery declared for period `i` becomes available in period
+`i + recovery_delay_periods`. Recoveries that would arrive after the last
+declared period are reported as `recoveries_after_horizon_send` rather than
+dropped, so the end of a schedule is never mistaken for full recovery.
+
+Three quantities are kept apart. `required_prefunding_send` is the peak funding
+that must be available and does not depend on the declared opening balance.
+`average_tied_up_capital_send` is a holding statistic given that balance and is
+not a loss. `expected_loss_send` is the route's declared per-transaction
+unrecovered-principal rate applied to the declared total disbursements, and is
+not capital tied up.
+
+These are reported as a separate module. They are never added into
+`expected_sender_cost`, so the existing per-transaction liquidity carry is not
+double counted.
+
 ## Declared workload scenarios (`corridor-lab.scenario/v2`)
 
 A workload is an author-declared number of transactions per period. For each

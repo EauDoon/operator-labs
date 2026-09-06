@@ -10,6 +10,7 @@ from pathlib import Path
 
 from .canonical import InputError, atomic_write_text, parse_json_bytes, read_bounded_bytes, require_decimal
 from .comparison import compare_routes, evaluate_scenario, pareto_frontier
+from .funding import run_funding
 from .model import evaluate_route
 from .report import render_report
 from .route import Route, load_route, load_route_folder
@@ -257,6 +258,24 @@ class CorridorGuiController:
             values_a = [require_decimal(chunk.strip(), "stress value") for chunk in chunks_a]
             values_b = [require_decimal(chunk.strip(), "stress value") for chunk in chunks_b]
             return self._success(run_stress_grid(scenario, parameter_a.strip(), values_a, parameter_b.strip(), values_b))
+        except (InputError, OSError, ValueError, DecimalException) as exc:
+            return self._failure(exc)
+
+    def funding(self, delays_text: str = "") -> ActionResult:
+        try:
+            scenario = self._require_scenario()
+            delays: list[int] | None = None
+            if delays_text.strip():
+                chunks = delays_text.split(",")
+                if not all(chunk.strip() for chunk in chunks):
+                    raise InputError("funding delays must be a comma-separated list of whole periods")
+                delays = []
+                for chunk in chunks:
+                    try:
+                        delays.append(int(chunk.strip()))
+                    except ValueError as exc:
+                        raise InputError("funding delays must contain whole numbers of periods") from exc
+            return self._success(run_funding(scenario, delays))
         except (InputError, OSError, ValueError, DecimalException) as exc:
             return self._failure(exc)
 

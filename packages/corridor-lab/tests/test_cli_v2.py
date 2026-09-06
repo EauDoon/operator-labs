@@ -98,6 +98,40 @@ class CliFeeWorkloadTests(unittest.TestCase):
         self.assertIn("error:", err)
 
 
+    def test_funding_markdown_matches_the_recorded_example(self):
+        funding_example = ROOT / "examples" / "fictional-funding"
+        code, out, _ = self._run(
+            ["funding", str(funding_example / "scenario.json"), "--delays", "0,1", "--format", "markdown"]
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(out, (funding_example / "expected" / "funding.md").read_text(encoding="utf-8"))
+
+    def test_funding_csv_matches_the_recorded_example(self):
+        funding_example = ROOT / "examples" / "fictional-funding"
+        code, out, _ = self._run(
+            ["funding", str(funding_example / "scenario.json"), "--delays", "0,1", "--format", "csv"]
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(out, (funding_example / "expected" / "funding.csv").read_text(encoding="utf-8"))
+
+    def test_funding_defaults_to_the_declared_delay(self):
+        funding_example = ROOT / "examples" / "fictional-funding"
+        code, out, _ = self._run(["funding", str(funding_example / "scenario.json"), "--format", "json"])
+        self.assertEqual(code, 0)
+        self.assertIn('"delays":["0"]', out)
+
+    def test_funding_on_a_scenario_without_a_schedule_is_actionable(self):
+        code, _, err = self._run(["funding", SCENARIO])
+        self.assertEqual(code, 2)
+        self.assertIn("declares no funding schedule", err)
+
+    def test_funding_rejects_non_numeric_delays(self):
+        funding_example = ROOT / "examples" / "fictional-funding"
+        code, _, err = self._run(["funding", str(funding_example / "scenario.json"), "--delays", "0,soon"])
+        self.assertEqual(code, 2)
+        self.assertIn("whole numbers of periods", err)
+
+
 class ExampleAssetTests(unittest.TestCase):
     def test_every_expected_asset_is_referenced_by_the_readme(self):
         readme = (EXAMPLE / "README.md").read_text(encoding="utf-8")
@@ -116,3 +150,4 @@ class ExampleAssetTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

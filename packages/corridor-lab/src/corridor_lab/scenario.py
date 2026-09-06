@@ -5,7 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:  # pragma: no cover - typing only; funding parses without importing scenario
+    from .funding import FundingSchedule
 
 from .canonical import (
     InputError,
@@ -69,6 +72,7 @@ class Scenario:
     objective: Objective | None
     contract_version: str = SCENARIO_CONTRACT_VERSION
     workloads: tuple[Workload, ...] = ()
+    funding: "FundingSchedule | None" = None
 
     @property
     def workload_ids(self) -> tuple[str, ...]:
@@ -222,9 +226,11 @@ def _parse_scenario_v2(item: dict[str, Any]) -> Scenario:
     scenario_id, description, fictional, transaction, routes, objective = _scenario_common(
         item,
         SCENARIO_CONTRACT_VERSION_V2,
-        {"workload_scenarios"},
+        {"workload_scenarios", "funding"},
         (ROUTE_CONTRACT_VERSION, ROUTE_CONTRACT_VERSION_V2),
     )
+    from .funding import parse_funding
+
     return Scenario(
         scenario_id=scenario_id,
         description=description,
@@ -234,6 +240,7 @@ def _parse_scenario_v2(item: dict[str, Any]) -> Scenario:
         objective=objective,
         contract_version=SCENARIO_CONTRACT_VERSION_V2,
         workloads=_parse_workloads(item.get("workload_scenarios", [])),
+        funding=parse_funding(item["funding"]) if "funding" in item else None,
     )
 
 

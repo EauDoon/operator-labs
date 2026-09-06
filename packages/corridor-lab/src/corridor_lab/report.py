@@ -63,6 +63,25 @@ def render_csv(report: dict[str, object]) -> str:
                     "probability_by_deadline",
                 ],
             )
+        if report.get("report_version") == "corridor-lab.funding/v1":
+            return _csv_text(
+                [dict(row) for row in rows],
+                [
+                    "route_id",
+                    "recovery_delay_periods",
+                    "required_prefunding_send",
+                    "declared_opening_balance_send",
+                    "shortfall_send",
+                    "shortfall_periods",
+                    "average_tied_up_capital_send",
+                    "peak_settlement_exposure_send",
+                    "carrying_cost_send",
+                    "expected_loss_send",
+                    "total_disbursements_send",
+                    "total_recoveries_send",
+                    "recoveries_after_horizon_send",
+                ],
+            )
         if report.get("report_version") == "corridor-lab.stress-grid/v1":
             return _csv_text(
                 [dict(row) for row in rows],
@@ -224,6 +243,64 @@ def _comparison_explanation(report: dict[str, object]) -> list[str]:
     return lines
 
 
+def _funding_explanation(report: dict[str, object]) -> list[str]:
+    send_currency = _currency(report, "send_currency", "send currency")
+    schedule = report.get("declared_schedule")
+    lines = [
+        "",
+        "## How to read this funding report",
+        "",
+        f"Every figure is in `{send_currency}` and is driven only by the declared schedule. No arrival distribution, financing availability, or forecast is modelled.",
+        "`Required prefunding` is the peak funding that must be available so that no declared period falls below zero. It does not depend on the declared opening balance.",
+        "`Average tied-up capital` is a holding statistic given the declared opening balance. It is not a loss.",
+        "`Expected loss` applies the route's declared per-transaction unrecovered-principal rate to the declared total disbursements. Loss is not capital tied up, and capital tied up is not loss.",
+        "`Shortfall` is the gap between the required prefunding and the declared opening balance; `Shortfall periods` names the periods that fall below zero.",
+        "`Recoveries after horizon` counts declared recoveries whose arrival period falls beyond the last declared period. It is reported rather than dropped, so the end of a schedule is not a claim of full recovery.",
+        "In the period detail, `Recoveries declared` is what the schedule says that period recovers and `Recoveries arriving` is what actually arrives after the declared recovery delay, available for disbursement from the following period.",
+    ]
+    if isinstance(schedule, dict):
+        lines.append(
+            f"Declared schedule: `{_cell(schedule.get('days_per_period', ''))}`-day periods, "
+            f"settlement delay `{_cell(schedule.get('settlement_delay_periods', ''))}` periods, "
+            f"declared recovery delay `{_cell(schedule.get('recovery_delay_periods', ''))}` periods, "
+            f"opening balance `{_cell(schedule.get('opening_balance_send', ''))}`."
+        )
+    detail = report.get("period_detail")
+    if isinstance(detail, list) and detail:
+        lines.extend(["", "### Declared period detail", ""])
+        for block in detail:
+            lines.append(
+                f"`{_cell(block.get('route_id', ''))}` with a recovery delay of "
+                f"`{_cell(block.get('recovery_delay_periods', ''))}` periods:"
+            )
+            lines.extend(
+                [
+                    "",
+                    "| Period | Balance start | Disbursements | Recoveries declared | Recoveries arriving | Trough | Unsettled exposure |",
+                    "| ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+                ]
+            )
+            for period in block.get("periods", []):
+                lines.append(
+                    "| "
+                    + " | ".join(
+                        _cell(period[name])
+                        for name in (
+                            "period_index",
+                            "balance_start_send",
+                            "disbursements_send",
+                            "recoveries_declared_send",
+                            "recoveries_arriving_send",
+                            "trough_send",
+                            "unsettled_exposure_send",
+                        )
+                    )
+                    + " |"
+                )
+            lines.append("")
+    return lines
+
+
 def _workload_explanation(report: dict[str, object]) -> list[str]:
     send_currency = _currency(report, "send_currency", "send currency")
     receive_currency = _currency(report, "receive_currency", "receive currency")
@@ -326,6 +403,36 @@ def render_markdown(report: dict[str, object]) -> str:
                 ]
             )
         lines.extend(["", "This is an ordering comparison under declared assumptions, not a recommendation."])
+        return "\n".join(lines) + "\n"
+    if report.get("report_version") == "corridor-lab.funding/v1":
+        lines = [
+            "# Corridor Lab funding and liquidity report",
+            "",
+            f"Synthetic scenario: `{scenario_id}`",
+            "",
+            "| Route | Recovery delay (periods) | Required prefunding | Declared opening balance | Shortfall | Shortfall periods | Average tied-up capital | Carrying cost | Expected loss |",
+            "| --- | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: |",
+        ]
+        for row in report.get("rows", []):
+            lines.append(
+                "| "
+                + " | ".join(
+                    _cell(row[name])
+                    for name in (
+                        "route_id",
+                        "recovery_delay_periods",
+                        "required_prefunding_send",
+                        "declared_opening_balance_send",
+                        "shortfall_send",
+                        "shortfall_periods",
+                        "average_tied_up_capital_send",
+                        "carrying_cost_send",
+                        "expected_loss_send",
+                    )
+                )
+                + " |"
+            )
+        lines.extend(_funding_explanation(report))
         return "\n".join(lines) + "\n"
     if "rows" in report:
         if report.get("report_version") == "corridor-lab.workload/v1":

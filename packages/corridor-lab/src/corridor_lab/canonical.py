@@ -30,8 +30,11 @@ MAX_WORKLOADS = 16
 MAX_WORKLOAD_ROWS = 512
 MAX_FUNDING_PERIODS = 64
 MAX_FUNDING_DELAY_VALUES = 16
+MAX_FUNDING_ROWS = 512
 MAX_LEGS = 8
 MAX_BPS = Decimal("10000")
+BPS_DENOMINATOR = Decimal("10000")
+DAYS_PER_YEAR = Decimal("365")
 FIXED_DECIMAL_CONTEXT = Context(
     prec=50,
     rounding=ROUND_HALF_EVEN,
@@ -227,6 +230,17 @@ def require_integer(value: Any, path: str, *, minimum: int, maximum: int) -> int
     if Decimal(integer) != parsed or integer < minimum or integer > maximum:
         raise InputError(f"{path} must be an integer from {minimum} to {maximum}")
     return integer
+
+
+def money_text(value: Decimal, precision: int, rounding: str) -> str:
+    """Quantize a Decimal to a declared currency precision for display."""
+    try:
+        with local_decimal_context():
+            quantizer = Decimal(1).scaleb(-precision)
+            quantized = value.quantize(quantizer, rounding=rounding)
+            return format(quantized, f".{precision}f")
+    except DecimalException as exc:
+        raise InputError("cannot render decimal amount") from exc
 
 
 def atomic_write_text(path: str | Path, text: str, *, max_bytes: int = MAX_REPORT_BYTES) -> None:

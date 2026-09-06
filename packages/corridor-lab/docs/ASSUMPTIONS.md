@@ -42,6 +42,20 @@ A v2 scenario may declare `workload_scenarios`, each with a unique
 never derives a volume: without a declared workload there is no workload
 analysis.
 
+## Declared funding schedules (`corridor-lab.scenario/v2`)
+
+A v2 scenario may declare `funding` with `opening_balance_send`,
+`days_per_period`, optionally `settlement_delay_periods` and
+`recovery_delay_periods`, and an ordered non-empty `periods` array. Each period
+declares `period_index` (strictly increasing from 1), `disbursements_send`, and
+`recoveries_send`, all non-negative.
+
+Every delay is a whole number of declared periods. Corridor Lab does not model
+arrival distributions, intraday timing, financing availability, or credit
+facilities, and does not forecast a period that the schedule does not declare.
+Period figures are reported separately from per-transaction sender cost and are
+never added to it.
+
 An optional objective can rank routes only after every stated guardrail passes.
 The v1 objectives are maximum expected recipient amount and minimum expected
 sender cost. The available guardrails are minimum probability of successful

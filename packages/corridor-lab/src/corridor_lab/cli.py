@@ -19,6 +19,7 @@ from .canonical import (
     require_decimal_values,
 )
 from .comparison import compare_routes, evaluate_scenario, pareto_frontier
+from .funding import run_funding
 from .model import evaluate_route
 from .report import render_report
 from .route import SENSITIVITY_PARAMETERS, Route, load_route, load_route_folder
@@ -154,6 +155,10 @@ def build_parser() -> argparse.ArgumentParser:
     workload.add_argument("scenario")
     workload.add_argument("--workloads", help="comma-separated declared workload ids (default: every declared workload)")
     _add_output_options(workload)
+    funding = commands.add_parser("funding", help="evaluate declared multi-period funding and liquidity")
+    funding.add_argument("scenario")
+    funding.add_argument("--delays", help="comma-separated declared recovery delays in periods (default: the schedule's own value)")
+    _add_output_options(funding)
     break_even = commands.add_parser("break-even", help="explore where two routes cross across declared workloads")
     break_even.add_argument("scenario")
     break_even.add_argument("--left", required=True, help="first route id")
@@ -201,6 +206,21 @@ def _load_routes_argument(value: str) -> list[Route]:
     if not path.is_dir():
         raise InputError(f"--routes is not a file or directory: {path}")
     return load_route_folder(path)
+
+
+def _parse_delays(raw: str | None) -> list[int] | None:
+    if raw is None:
+        return None
+    chunks = raw.split(",")
+    if not all(chunk.strip() for chunk in chunks):
+        raise InputError("--delays must be a comma-separated list of whole periods")
+    parsed: list[int] = []
+    for chunk in chunks:
+        try:
+            parsed.append(int(chunk.strip()))
+        except ValueError as exc:
+            raise InputError("--delays must contain whole numbers of periods") from exc
+    return parsed
 
 
 def _parse_workload_ids(raw: str | None) -> list[str] | None:
@@ -358,6 +378,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         elif args.command == "workload":
             report = run_workload(scenario, _parse_workload_ids(getattr(args, "workloads", None)))
+        elif args.command == "funding":
+            report = run_funding(scenario, _parse_delays(getattr(args, "delays", None)))
         elif args.command == "break-even":
             report = break_even_workloads(
                 scenario,
