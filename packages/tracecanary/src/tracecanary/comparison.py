@@ -7,7 +7,8 @@ from typing import Any
 
 from tracecanary.contract import Contract
 from tracecanary.otlp import iter_attributes
-from tracecanary.report import Report, Violation, ViolationDict, build_report, ensure_values_absent
+from tracecanary.report import Report, Status, Violation, ViolationDict, build_report, ensure_values_absent
+from tracecanary.retention import compare_requirements
 
 
 def diff_traces(contract: Contract, baseline: dict[str, Any], candidate: dict[str, Any]) -> Report:
@@ -40,7 +41,9 @@ def diff_traces(contract: Contract, baseline: dict[str, Any], candidate: dict[st
                     scope=field.scope,
                 )
             )
-    status = "pass" if not violations else "regression"
+    if contract.retention is not None:
+        violations.extend(compare_requirements(contract.retention, baseline, candidate))
+    status = _status(violations)
     canary_values = tuple(canary.value for canary in contract.canaries)
     report = build_report(
         contract.contract_version,
@@ -51,6 +54,13 @@ def diff_traces(contract: Contract, baseline: dict[str, Any], candidate: dict[st
     )
     ensure_values_absent(report, canary_values)
     return report
+
+
+def _status(violations: list[Violation]) -> Status:
+    """An unresolved comparison must never be reported as a pass or a regression."""
+    if any(issue.code == "TC014" for issue in violations):
+        return "unresolved"
+    return "pass" if not violations else "regression"
 
 
 def _without_mode(contract: Contract, payload: dict[str, Any]) -> Report:
@@ -73,4 +83,5 @@ def _violation_kwargs(item: ViolationDict) -> dict[str, str | None]:
         "category": item.get("category"),
         "key": item.get("key"),
         "scope": item.get("scope"),
+        "detail": item.get("detail"),
     }

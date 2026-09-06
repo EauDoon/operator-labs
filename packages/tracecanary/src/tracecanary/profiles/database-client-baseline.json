@@ -1,0 +1,38 @@
+{
+  "contract_version": "tracecanary/v2",
+  "semantic_conventions_version": "opentelemetry/semconv/1.43.0",
+  "canaries": [
+    {"label": "synthetic-db-statement", "category": "db_statement", "value": "TCANARY_DB_STATEMENT_7b3e2f81"},
+    {"label": "synthetic-db-parameter", "category": "db_parameter", "value": "TCANARY_DB_PARAMETER_5d0a6c34"},
+    {"label": "synthetic-db-row", "category": "db_result", "value": "TCANARY_DB_ROW_0f4c9b28"}
+  ],
+  "forbidden_attribute_keys": ["db.query.text", "db.statement"],
+  "forbidden_attribute_key_prefixes": ["db.query.parameter."],
+  "required_retained_fields": [
+    {"scope": "resource", "key": "service.name"},
+    {"scope": "span", "key": "db.system.name"},
+    {"scope": "span", "key": "db.query.summary"}
+  ],
+  "retention": {
+    "version": "tracecanary.retention/v1",
+    "requirements": [
+      {
+        "requirement_id": "db-system",
+        "scope": "span",
+        "key": "db.system.name",
+        "value_types": ["stringValue"],
+        "minimum_count": 1,
+        "comparison": "presence"
+      },
+      {
+        "requirement_id": "query-summary-count",
+        "scope": "span",
+        "key": "db.query.summary",
+        "value_types": ["stringValue"],
+        "minimum_count": 1,
+        "comparison": "count"
+      }
+    ]
+  },
+  "limits": {"max_input_bytes": 5000000, "max_nesting": 100, "max_batch_files": 256}
+}

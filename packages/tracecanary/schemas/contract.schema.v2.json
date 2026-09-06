@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TraceCanary v2 contract",
+  "description": "Additive superset of the v1 contract. A v2 contract accepts every v1 field plus an optional retention object; it still rejects unknown top-level fields.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "semantic_conventions_version", "canaries", "required_retained_fields"],
+  "properties": {
+    "contract_version": {"const": "tracecanary/v2"},
+    "semantic_conventions_version": {"const": "opentelemetry/semconv/1.43.0"},
+    "canaries": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": {"type": "object", "additionalProperties": false, "required": ["label", "category", "value"], "properties": {
+        "label": {"type": "string", "minLength": 1}, "category": {"type": "string", "minLength": 1}, "value": {"type": "string", "minLength": 1}
+      }}
+    },
+    "forbidden_attribute_keys": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "forbidden_attribute_key_prefixes": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "forbidden_path_prefixes": {"type": "array", "items": {"type": "string", "pattern": "^/"}, "uniqueItems": true},
+    "required_retained_fields": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["scope", "key"], "properties": {
+      "scope": {"enum": ["resource", "span", "event"]}, "key": {"type": "string", "minLength": 1}
+    }}},
+    "limits": {"type": "object", "additionalProperties": false, "properties": {
+      "max_input_bytes": {"type": "integer", "minimum": 1024, "maximum": 50000000, "default": 5000000},
+      "max_nesting": {"type": "integer", "minimum": 2, "maximum": 1000, "default": 100},
+      "max_batch_files": {"type": "integer", "minimum": 1, "maximum": 10000, "default": 256}
+    }},
+    "retention": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requirements"],
+      "properties": {
+        "version": {"const": "tracecanary.retention/v1"},
+        "requirements": {
+          "type": "array", "minItems": 1, "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["requirement_id", "scope", "key"],
+            "properties": {
+              "requirement_id": {"type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"},
+              "scope": {"enum": ["resource", "scope", "span", "event", "link"]},
+              "key": {"type": "string", "minLength": 1},
+              "value_types": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {
+                "enum": ["stringValue", "boolValue", "intValue", "doubleValue", "arrayValue", "kvlistValue", "bytesValue"]
+              }},
+              "minimum_count": {"type": "integer", "minimum": 1, "default": 1},
+              "comparison": {"enum": ["presence", "count", "matched_ratio"], "default": "presence"},
+              "matching_keys": {"type": "array", "minItems": 1, "maxItems": 8, "items": {
+                "type": "object", "additionalProperties": false, "required": ["scope", "key"], "properties": {
+                  "scope": {"enum": ["resource", "scope", "span", "event", "link"]}, "key": {"type": "string", "minLength": 1}
+                }
+              }},
+              "denominator_requirement_id": {"type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"}
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "description": "matched_ratio requires both matching_keys and denominator_requirement_id.",
+          "if": {"properties": {"requirements": {"contains": {"properties": {"comparison": {"const": "matched_ratio"}}, "required": ["comparison"]}}}},
+          "then": {"properties": {"requirements": {"items": {
+            "if": {"properties": {"comparison": {"const": "matched_ratio"}}, "required": ["comparison"]},
+            "then": {"required": ["matching_keys", "denominator_requirement_id"]}
+          }}}}
+        },
+        {
+          "description": "matching_keys and denominator_requirement_id are only valid for matched_ratio.",
+          "if": {"properties": {"requirements": {"contains": {"anyOf": [
+            {"required": ["matching_keys"]}, {"required": ["denominator_requirement_id"]}
+          ]}}}},
+          "then": {"properties": {"requirements": {"items": {
+            "anyOf": [
+              {"properties": {"comparison": {"const": "matched_ratio"}}, "required": ["comparison"]},
+              {"not": {"anyOf": [{"required": ["matching_keys"]}, {"required": ["denominator_requirement_id"]}]}}
+            ]
+          }}}}
+        }
+      ]
+    }
+  }
+}

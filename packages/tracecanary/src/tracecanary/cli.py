@@ -8,12 +8,13 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-from tracecanary.canonical import InputError, load_json
+from tracecanary.canonical import InputError, canonical_json, load_json
 from tracecanary.checker import check_trace
 from tracecanary.comparison import diff_traces
 from tracecanary.contract import Contract, ContractError, load_contract
 from tracecanary.fixture import write_bundle
 from tracecanary.otlp import OtlpError, validate_trace
+from tracecanary.profiles import PROFILE_FILENAME, PROFILE_IDS, describe, profile, write_profile
 from tracecanary.report import (
     BatchItem,
     BatchReport,
@@ -100,6 +101,16 @@ def build_parser() -> argparse.ArgumentParser:
     fixture_commands = fixture.add_subparsers(dest="fixture_command", required=True, parser_class=_ArgumentParser)
     create = fixture_commands.add_parser("create", help="write the synthetic fixture bundle")
     create.add_argument("--output", required=True, type=_cli_path, help="empty directory for the synthetic fixture bundle")
+    profiles = commands.add_parser("profile", help="list, show, or create synthetic contract profiles")
+    profile_commands = profiles.add_subparsers(dest="profile_command", required=True, parser_class=_ArgumentParser)
+    list_profiles = profile_commands.add_parser("list", help="list the available contract profiles")
+    list_profiles.add_argument("--format", choices=("human", "json"), default="human", help="report format (default: human)")
+    show_profile = profile_commands.add_parser("show", help="show one contract profile")
+    show_profile.add_argument("--profile", required=True, help="profile id")
+    show_profile.add_argument("--format", choices=("human", "json"), default="human", help="report format (default: human)")
+    create_profile = profile_commands.add_parser("create", help="write a contract profile as contract.json")
+    create_profile.add_argument("--profile", required=True, help="profile id")
+    create_profile.add_argument("--output", required=True, type=_cli_path, help="empty directory for contract.json")
     return parser
 
 
@@ -110,6 +121,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             write_bundle(args.output)
             print(f"Synthetic fixture bundle created at {args.output}")
             return EXIT_PASS
+        if args.command == "profile":
+            return _run_profile(args)
         contract = load_contract(args.contract)
         if args.command == "validate":
             report = build_report(contract.contract_version, "pass", [], mode="validate")
@@ -142,6 +155,45 @@ def main(argv: Sequence[str] | None = None) -> int:
     except OSError:
         print("TraceCanary: UNRESOLVED: input or output could not be accessed", file=sys.stderr)
         return EXIT_UNRESOLVED
+
+
+def _run_profile(args: argparse.Namespace) -> int:
+    """List, show, or create a synthetic contract profile without writing traces."""
+    if args.profile_command == "list":
+        profiles = [describe(profile_id) for profile_id in PROFILE_IDS]
+        if args.format == "json":
+            print(canonical_json({"profiles": profiles}), end="")
+        else:
+            lines = ["TraceCanary profile list"]
+            lines.extend(f"- {item['profile_id']}: {item['title']}" for item in profiles)
+            print("\n".join(lines) + "\n", end="")
+        return EXIT_PASS
+    if args.profile_command == "show":
+        metadata = describe(args.profile)
+        values = tuple(str(canary["value"]) for canary in profile(args.profile).get("canaries", []))
+        if args.format == "json":
+            ensure_object_values_absent(metadata, values)
+            print(canonical_json(metadata), end="")
+        else:
+            lines = [
+                f"TraceCanary profile {metadata['profile_id']}",
+                f"title: {metadata['title']}",
+                f"semantic conventions: {metadata['semantic_conventions_version']}",
+                f"summary: {metadata['summary']}",
+                "covered attributes:",
+            ]
+            lines.extend(f"- {item}" for item in metadata["covered_attributes"])
+            lines.append("retention requirements:")
+            lines.extend(
+                f"- {item['requirement_id']} [{item['scope']}:{item['key']}; {item['comparison']}]"
+                for item in metadata["retention_requirements"]
+            )
+            ensure_text_values_absent("\n".join(lines), values)
+            print("\n".join(lines) + "\n", end="")
+        return EXIT_PASS
+    write_profile(args.profile, args.output)
+    print(f"Contract profile {args.profile} written as {PROFILE_FILENAME}")
+    return EXIT_PASS
 
 
 def _load_trace(path: Path, contract: Contract) -> dict[str, Any]:

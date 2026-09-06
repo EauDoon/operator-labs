@@ -9,6 +9,7 @@ from tracecanary.canonical import json_pointer, pointer_matches
 from tracecanary.contract import Contract
 from tracecanary.otlp import iter_attributes
 from tracecanary.report import Report, ReportMode, Violation, build_report, ensure_values_absent
+from tracecanary.retention import check_requirements
 
 
 def check_trace(contract: Contract, payload: dict[str, Any], *, mode: ReportMode = "check") -> Report:
@@ -30,6 +31,8 @@ def check_trace(contract: Contract, payload: dict[str, Any], *, mode: ReportMode
     for field in contract.required_retained_fields:
         if (field.scope, field.key) not in present:
             violations.append(Violation("TC004", "", "required operational field is absent", key=field.key, scope=field.scope))
+    if contract.retention is not None:
+        violations.extend(check_requirements(contract.retention, payload))
     status = "pass" if not violations else "regression"
     canary_values = tuple(canary.value for canary in contract.canaries)
     report = build_report(

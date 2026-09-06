@@ -8,7 +8,7 @@ Release evidence: [RELEASE-EVIDENCE.md](RELEASE-EVIDENCE.md).
 
 | Check | Command (run from the package directory) | Result |
 |---|---|---|
-| Corridor Lab unit tests | `python -m unittest discover -s tests -v` | 88 passed |
+| Corridor Lab unit tests | `python -m unittest discover -s tests -v` | 88 passed at baseline, 234 after CL-1..CL-3 |
 | TraceCanary unit tests | `python -m unittest discover -s tests -v` | 97 passed |
 | Corridor Lab compile | `python -m compileall -q src` | clean |
 | TraceCanary compile | `python -m compileall -q src` | clean |
@@ -33,10 +33,10 @@ packages installed editable. No pre-existing failures were observed.
 
 | ID | Milestone | Status |
 |---|---|---|
-| CL-1 | Model increment 1: declared tiered fee schedules, transaction vs period charges, workload/volume scenarios | in progress |
-| CL-2 | Model increment 2: bounded multi-period funding and liquidity scenarios | pending |
-| CL-3 | Model increment 3: bounded multi-leg route composition with declared joint outcomes | pending |
-| CL-4 | Guided scenario/route editor + synthetic template library + revision save and diff workflow | pending |
+| CL-1 | Model increment 1: declared tiered fee schedules, transaction vs period charges, workload/volume scenarios | done (db5bab4) |
+| CL-2 | Model increment 2: bounded multi-period funding and liquidity scenarios | done (70dc199) |
+| CL-3 | Model increment 3: bounded multi-leg route composition with declared joint outcomes | done (b868a99) |
+| CL-4 | Guided scenario/route editor + synthetic template library + revision save and diff workflow | in progress |
 | CL-5 | Analysis workflow: scenario-set summary, target-path sweeps, attribution, break-even exploration, visuals | pending |
 | CL-6 | HTML report dossier + export bundles with manifest and fingerprints | pending |
 
@@ -60,9 +60,21 @@ packages installed editable. No pre-existing failures were observed.
 
 ## Current task
 
-CL-1 (tiered fee schedules + workload/volume scenarios): schema evolution to
-`corridor-lab.route/v2` and `corridor-lab.scenario/v2`, `corridor_lab/fees.py`,
-`corridor_lab/workload.py`, CLI `workload` command, hand-worked example, tests.
+CL-4: a synthetic template library that demonstrates genuinely different
+declared cost structures, a guided scenario/route builder, and an explicit
+scenario revision and difference workflow.
+
+## Completed increments (Corridor Lab modeling)
+
+| Commit | Increment | Evidence |
+|---|---|---|
+| db5bab4 | Declared tiered fee schedules, period charges, workload/volume scenarios | `fees.py`, `workload.py`, `examples/fictional-tiered-workload/`, 163 tests |
+| 70dc199 | Declared multi-period funding and liquidity | `funding.py`, `examples/fictional-funding/`, 196 tests |
+| b868a99 | Bounded multi-leg route composition | `legs.py`, `examples/fictional-multi-leg/`, 234 tests |
+
+Each increment has a library implementation, CLI access, a controller action,
+strict schemas, a hand-worked example with byte-exact expected output, and
+documented limitations.
 
 ## Blockers
 

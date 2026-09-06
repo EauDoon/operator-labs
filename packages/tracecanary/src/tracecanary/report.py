@@ -20,6 +20,9 @@ class ReportSummary(TypedDict):
     missing_retained_fields: int
     baseline_regressions: int
     total: int
+    retention_failures: NotRequired[int]
+    retention_regressions: NotRequired[int]
+    unresolved_comparisons: NotRequired[int]
 
 
 class ViolationDict(TypedDict):
@@ -30,6 +33,7 @@ class ViolationDict(TypedDict):
     key: NotRequired[str]
     label: NotRequired[str]
     scope: NotRequired[str]
+    detail: NotRequired[str]
 
 
 class Report(TypedDict):
@@ -63,6 +67,7 @@ class Violation:
     category: str | None = None
     key: str | None = None
     scope: str | None = None
+    detail: str | None = None
 
     def as_dict(self) -> ViolationDict:
         data: ViolationDict = {"code": self.code, "message": self.message, "path": self.path}
@@ -74,6 +79,8 @@ class Violation:
             data["label"] = self.label
         if self.scope is not None:
             data["scope"] = self.scope
+        if self.detail is not None:
+            data["detail"] = self.detail
         return data
 
 
@@ -99,6 +106,15 @@ def build_report(
         "baseline_regressions": sum(issue.code == "TC005" for issue in ordered),
         "total": len(ordered),
     }
+    retention_failures = sum(issue.code in ("TC010", "TC011") for issue in ordered)
+    retention_regressions = sum(issue.code in ("TC012", "TC013") for issue in ordered)
+    unresolved_comparisons = sum(issue.code == "TC014" for issue in ordered)
+    if retention_failures:
+        summary["retention_failures"] = retention_failures
+    if retention_regressions:
+        summary["retention_regressions"] = retention_regressions
+    if unresolved_comparisons:
+        summary["unresolved_comparisons"] = unresolved_comparisons
     return {
         "contract_version": contract_version,
         "mode": mode,
@@ -124,6 +140,7 @@ def _redact_violation(issue: Violation, values: tuple[str, ...]) -> Violation:
         category=redact(issue.category),
         key=redact(issue.key),
         scope=redact(issue.scope),
+        detail=redact(issue.detail),
     )
 
 
@@ -140,6 +157,8 @@ def render_human(report: Report) -> str:
             detail += f" [label={item.get('label', '')}; category={item.get('category', '')}]"
         if "key" in item or "scope" in item:
             detail += f" [key={item.get('key', '')}; scope={item.get('scope', '')}]"
+        if "detail" in item:
+            detail += f" [detail={item.get('detail', '')}]"
         location = f" at {item['path']}" if item["path"] else ""
         lines.append(f"- {item['code']} {detail}{location}")
     return "\n".join(lines) + "\n"

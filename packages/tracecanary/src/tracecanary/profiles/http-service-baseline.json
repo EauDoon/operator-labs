@@ -1,0 +1,43 @@
+{
+  "contract_version": "tracecanary/v2",
+  "semantic_conventions_version": "opentelemetry/semconv/1.43.0",
+  "canaries": [
+    {"label": "synthetic-authorization-header", "category": "request_header", "value": "TCANARY_HTTP_AUTHORIZATION_1e4f7a90"},
+    {"label": "synthetic-cookie-header", "category": "request_header", "value": "TCANARY_HTTP_COOKIE_2c8b53d6"},
+    {"label": "synthetic-query-string", "category": "request_target", "value": "TCANARY_HTTP_QUERY_9a15c0e4"}
+  ],
+  "forbidden_attribute_keys": [
+    "http.request.header.authorization",
+    "http.request.header.cookie",
+    "http.response.header.set-cookie"
+  ],
+  "forbidden_attribute_key_prefixes": ["http.request.header.", "http.response.header."],
+  "forbidden_path_prefixes": ["/resourceSpans/*/scopeSpans/*/spans/*/attributes/*/value/kvlistValue/values/*/value/stringValue"],
+  "required_retained_fields": [
+    {"scope": "resource", "key": "service.name"},
+    {"scope": "span", "key": "http.request.method"},
+    {"scope": "span", "key": "http.route"}
+  ],
+  "retention": {
+    "version": "tracecanary.retention/v1",
+    "requirements": [
+      {
+        "requirement_id": "request-method",
+        "scope": "span",
+        "key": "http.request.method",
+        "value_types": ["stringValue"],
+        "minimum_count": 1,
+        "comparison": "presence"
+      },
+      {
+        "requirement_id": "route-count",
+        "scope": "span",
+        "key": "http.route",
+        "value_types": ["stringValue"],
+        "minimum_count": 1,
+        "comparison": "count"
+      }
+    ]
+  },
+  "limits": {"max_input_bytes": 5000000, "max_nesting": 100, "max_batch_files": 256}
+}

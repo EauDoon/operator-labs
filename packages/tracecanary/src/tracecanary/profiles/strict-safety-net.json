@@ -1,0 +1,56 @@
+{
+  "contract_version": "tracecanary/v2",
+  "semantic_conventions_version": "opentelemetry/semconv/1.43.0",
+  "canaries": [
+    {"label": "synthetic-strict-prompt", "category": "prompt", "value": "TCANARY_STRICT_PROMPT_ab12cd34"},
+    {"label": "synthetic-strict-tool-result", "category": "tool_result", "value": "TCANARY_STRICT_TOOL_RESULT_ef56ab78"},
+    {"label": "synthetic-strict-end-user", "category": "user_identifier", "value": "TCANARY_STRICT_ENDUSER_9c01de23"},
+    {"label": "synthetic-strict-header", "category": "request_header", "value": "TCANARY_STRICT_HEADER_45be6f78"}
+  ],
+  "forbidden_attribute_keys": [
+    "gen_ai.prompt",
+    "gen_ai.tool.call.arguments",
+    "gen_ai.tool.call.result",
+    "db.query.text",
+    "db.statement",
+    "http.request.header.authorization"
+  ],
+  "forbidden_attribute_key_prefixes": [
+    "enduser.",
+    "http.request.header.",
+    "http.response.header.",
+    "db.query.parameter."
+  ],
+  "forbidden_path_prefixes": [
+    "/resourceSpans/*/scopeSpans/*/spans/*/attributes/*/value/bytesValue",
+    "/resourceSpans/*/scopeSpans/*/spans/*/attributes/*/value/kvlistValue/values/*/value/stringValue"
+  ],
+  "required_retained_fields": [
+    {"scope": "resource", "key": "service.name"},
+    {"scope": "span", "key": "gen_ai.operation.name"}
+  ],
+  "retention": {
+    "version": "tracecanary.retention/v1",
+    "requirements": [
+      {
+        "requirement_id": "operation-total",
+        "scope": "span",
+        "key": "gen_ai.operation.name",
+        "value_types": ["stringValue"],
+        "minimum_count": 1,
+        "comparison": "presence"
+      },
+      {
+        "requirement_id": "model-annotated-operations",
+        "scope": "span",
+        "key": "gen_ai.request.model",
+        "value_types": ["stringValue"],
+        "minimum_count": 1,
+        "comparison": "matched_ratio",
+        "matching_keys": [{"scope": "resource", "key": "service.name"}],
+        "denominator_requirement_id": "operation-total"
+      }
+    ]
+  },
+  "limits": {"max_input_bytes": 5000000, "max_nesting": 100, "max_batch_files": 256}
+}

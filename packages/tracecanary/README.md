@@ -19,6 +19,10 @@ Supported in v0.1.1:
 - Baseline-to-candidate retained-field count comparison.
 - Stable JSON and human-readable reports.
 - Bounded directory checks with deterministic JSON, SARIF, and JUnit output.
+- `tracecanary/v2` retention requirements: declared value types, occurrence
+  minimums, and `presence`, `count`, and `matched_ratio` comparison modes.
+- Synthetic contract profiles for GenAI, HTTP, database-client, and
+  broadest-coverage telemetry patterns.
 
 Not supported in v0.1.1:
 
@@ -97,18 +101,50 @@ tracecanary check --contract contract.json --input export.json
 tracecanary diff --contract contract.json --baseline safe.json --candidate changed.json
 tracecanary batch --contract contract.json --input-dir exports --format sarif
 tracecanary fixture create --output example/
+tracecanary profile list
+tracecanary profile show --profile gen-ai-baseline
+tracecanary profile create --profile gen-ai-baseline --output empty-directory/
 tracecanary-gui
 ```
+
+`profile list` and `profile show` write nothing. `profile create` writes
+`contract.json` into an existing empty directory and refuses a non-empty or
+missing one. Profiles ship as package data, so they work from an installed
+wheel as well as from a checkout. See [docs/PROFILES.md](docs/PROFILES.md).
 
 From a fresh checkout, set `PYTHONPATH=src` and replace `tracecanary` with `python -m tracecanary`; use `python -m tracecanary.gui` for the GUI. `0` means the contract is satisfied. `1` means a privacy or retention regression was detected. `2` means invalid input, an unsupported version, or an unresolved comparison. Invalid OTLP structure, including duplicate attribute keys and duplicate span IDs, is reported with a JSON pointer to the failing resource, span, event, link, or attribute; pointers never include span names or attribute keys.
 
 `validate`, `check`, and `diff` accept `--format human` (default) or `--format json`. `batch` accepts `--format json` (default), `human`, `sarif`, or `junit`; `--recursive` includes `*.json` files in subdirectories; `--include-paths` adds directory-relative POSIX paths to JSON, SARIF, and JUnit items. Batch input is bounded by `limits.max_batch_files` (default 256). Batch `human` output is a per-item status rollup and does not repeat finding labels.
 
-A single-trace JSON report contains `contract_version`, `mode`, `status`, `summary`, and `violations`. Each finding has `code`, `message`, and `path`, plus `label`/`category` or `key`/`scope` when they apply. Reports never include the matched canary value.
+A single-trace JSON report contains `contract_version`, `mode`, `status`, `summary`, and `violations`. Each finding has `code`, `message`, and `path`, plus `label`/`category`, `key`/`scope`, or `detail` when they apply. Reports never include the matched canary value.
+
+Finding codes:
+
+| Code | Meaning | Status |
+|---|---|---|
+| `TC001` | An exact synthetic canary survived export | regression |
+| `TC002` | A forbidden telemetry attribute is present | regression |
+| `TC003` | A forbidden JSON path is populated | regression |
+| `TC004` | A required operational field is absent | regression |
+| `TC005` | The candidate retained fewer required fields than the baseline | regression |
+| `TC006` | Input could not be validated | unresolved |
+| `TC010` | A declared retention requirement was not met | regression |
+| `TC011` | A retained attribute's OTLP value kind is not the declared kind | regression |
+| `TC012` | The candidate retained fewer matching attributes than the baseline | regression |
+| `TC013` | The candidate retained a lower matched ratio than the baseline | regression |
+| `TC014` | The comparison identity or denominator could not be established | unresolved |
+
+`TC014` is deliberately unresolved. An identity that appears in only one
+population, or a declared denominator that is not populated, is neither a pass
+nor a regression, and TraceCanary never guesses which it is.
 
 ## Contract overview
 
-The JSON contract is strict. Unknown fields, duplicate keys, unsupported versions, empty canary sets, and malformed limits are rejected. The supported identifiers are `tracecanary/v1` and `opentelemetry/semconv/1.43.0`.
+The JSON contract is strict. Unknown fields, duplicate keys, unsupported versions, empty canary sets, and malformed limits are rejected. The supported contract versions are `tracecanary/v1` and `tracecanary/v2`; the only supported semantic-conventions version is `opentelemetry/semconv/1.43.0`.
+
+`tracecanary/v2` accepts every v1 field plus an optional `retention` object. v1
+behaviour is unchanged: a v1 contract parses, reports, and rejects inputs exactly
+as it did before.
 
 ```json
 {
@@ -124,11 +160,40 @@ The JSON contract is strict. Unknown fields, duplicate keys, unsupported version
 
 `*` matches one JSON-pointer path segment. A path prefix is checked only when it reaches a scalar value. Exact canaries are checked against every string scalar in the validated trace payload.
 
-See [the contract schema](schemas/contract.schema.json), [method](docs/METHOD.md), [threat model](docs/THREAT_MODEL.md), [limitations](docs/LIMITATIONS.md), and [specification](docs/SPECIFICATIONS.md).
+A v2 `retention` object declares requirements that a contract-visible attribute
+must still be exported, optionally with a declared OTLP value kind:
+
+```json
+{
+  "retention": {
+    "version": "tracecanary.retention/v1",
+    "requirements": [
+      {
+        "requirement_id": "operation-total",
+        "scope": "span",
+        "key": "gen_ai.operation.name",
+        "value_types": ["stringValue"],
+        "minimum_count": 1,
+        "comparison": "matched_ratio",
+        "matching_keys": [{"scope": "resource", "key": "service.name"}],
+        "denominator_requirement_id": "operation-total"
+      }
+    ]
+  }
+}
+```
+
+`matched_ratio` requires both `matching_keys` and `denominator_requirement_id`.
+TraceCanary groups observations only by keys the contract explicitly declares;
+TraceCanary never infers a stable identity from arbitrary attribute names, and never
+claims that equal counts establish equivalent per-span retention.
+
+See [the v1 contract schema](schemas/contract.schema.json), [the v2 contract schema](schemas/contract.schema.v2.json), [profiles](docs/PROFILES.md), [method](docs/METHOD.md), [threat model](docs/THREAT_MODEL.md), [limitations](docs/LIMITATIONS.md), and [specification](docs/SPECIFICATIONS.md).
 
 ## Repository map
 
-- `src/tracecanary/` contains the CLI, contract checker, reports, fixture bundle, and GUI controller/window modules.
+- `src/tracecanary/` contains the CLI, contract checker, retention and profile modules, reports, fixture bundle, and GUI controller/window modules.
+- `src/tracecanary/profiles/` contains the shipped synthetic contract profiles.
 - `TraceCanary.pyw` is the Windows double-click checkout launcher.
 - `fixtures/v1/` contains synthetic contracts, trace inputs, and expected reports.
 - `tests/` contains standard-library unit and controller tests.

@@ -4,12 +4,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from tracecanary.canonical import InputError, load_json
 
+if TYPE_CHECKING:  # pragma: no cover - typing-only import
+    from tracecanary.retention import RetentionSpec
+
 
 SUPPORTED_CONTRACT_VERSION = "tracecanary/v1"
+SUPPORTED_CONTRACT_VERSION_V2 = "tracecanary/v2"
+SUPPORTED_CONTRACT_VERSIONS = (SUPPORTED_CONTRACT_VERSION, SUPPORTED_CONTRACT_VERSION_V2)
 SUPPORTED_SEMCONV_VERSION = "opentelemetry/semconv/1.43.0"
 DEFAULT_MAX_INPUT_BYTES = 5_000_000
 DEFAULT_MAX_NESTING = 100
@@ -45,6 +50,7 @@ class Contract:
     max_input_bytes: int
     max_nesting: int
     max_batch_files: int
+    retention: RetentionSpec | None = None
 
 
 def load_contract(path: Path) -> Contract:
@@ -68,6 +74,8 @@ def parse_contract(raw: Any) -> Contract:
         "required_retained_fields",
         "limits",
     }
+    if raw.get("contract_version") == SUPPORTED_CONTRACT_VERSION_V2:
+        allowed = allowed | {"retention"}
     unknown = set(raw) - allowed
     if unknown:
         raise ContractError("contract contains unsupported fields")
@@ -76,7 +84,7 @@ def parse_contract(raw: Any) -> Contract:
         raise ContractError("contract is missing required fields")
     version = raw["contract_version"]
     semconv = raw["semantic_conventions_version"]
-    if version != SUPPORTED_CONTRACT_VERSION:
+    if version not in SUPPORTED_CONTRACT_VERSIONS:
         raise ContractError("unsupported contract version")
     if semconv != SUPPORTED_SEMCONV_VERSION:
         raise ContractError("unsupported semantic-conventions version")
@@ -87,7 +95,8 @@ def parse_contract(raw: Any) -> Contract:
     paths = _string_list(raw.get("forbidden_path_prefixes", []), "forbidden_path_prefixes")
     if any(not item.startswith("/") for item in paths):
         raise ContractError("forbidden path prefixes must be JSON pointers")
-    _reject_reportable_canary_values(canaries, retained, keys, key_prefixes, paths)
+    retention = _parse_retention(raw.get("retention")) if version == SUPPORTED_CONTRACT_VERSION_V2 else None
+    _reject_reportable_canary_values(canaries, retained, keys, key_prefixes, paths, retention)
     max_bytes, max_nesting, max_batch_files = _parse_limits(raw.get("limits", {}))
     return Contract(
         contract_version=version,
@@ -100,7 +109,17 @@ def parse_contract(raw: Any) -> Contract:
         max_input_bytes=max_bytes,
         max_nesting=max_nesting,
         max_batch_files=max_batch_files,
+        retention=retention,
     )
+
+
+def _parse_retention(value: Any) -> RetentionSpec | None:
+    """Parse the optional retention object, which only v2 contracts may carry."""
+    if value is None:
+        return None
+    from tracecanary.retention import parse_retention
+
+    return parse_retention(value)
 
 
 def _parse_canaries(value: Any) -> tuple[Canary, ...]:
@@ -158,8 +177,14 @@ def _reject_reportable_canary_values(
     keys: tuple[str, ...],
     key_prefixes: tuple[str, ...],
     paths: tuple[str, ...],
+    retention: RetentionSpec | None = None,
 ) -> None:
-    reportable = (*keys, *key_prefixes, *paths, *(field.key for field in retained))
+    retention_strings = ()
+    if retention is not None:
+        from tracecanary.retention import reportable_strings
+
+        retention_strings = reportable_strings(retention)
+    reportable = (*keys, *key_prefixes, *paths, *(field.key for field in retained), *retention_strings)
     if any(canary.value in value for canary in canaries for value in reportable):
         raise ContractError("report-visible contract fields must not contain canary values")
 
