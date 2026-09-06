@@ -123,10 +123,11 @@ def render_csv(report: dict[str, object]) -> str:
         item["receive_currency"] = currency["receive"]
         item["send_precision"] = declared_transaction["send_precision"]
         item["receive_precision"] = declared_transaction["receive_precision"]
-        item["fx_rate"] = declared_route["fx_rate"]
-        item["fixed_fee_send_declared"] = declared_route["fixed_fee_send"]
-        item["percent_fee_bps"] = declared_route["percent_fee_bps"]
-        item["fx_spread_bps"] = declared_route["fx_spread_bps"]
+        # A composed route reports its legs instead of scalar fee fields.
+        item["fx_rate"] = declared_route.get("fx_rate", "composed")
+        item["fixed_fee_send_declared"] = declared_route.get("fixed_fee_send", "composed")
+        item["percent_fee_bps"] = declared_route.get("percent_fee_bps", "composed")
+        item["fx_spread_bps"] = declared_route.get("fx_spread_bps", "composed")
         item["prefunding_amount_send"] = declared_route["liquidity"]["prefunding_amount_send"]
         item["annual_cost_of_capital_bps"] = declared_route["liquidity"]["annual_cost_of_capital_bps"]
         item["holding_days"] = declared_route["liquidity"]["holding_days"]

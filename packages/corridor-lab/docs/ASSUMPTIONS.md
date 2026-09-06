@@ -35,6 +35,22 @@ Each period charge declares how it is amortized: over its own
 `period_transactions` (`declared_transactions`) or over the volume in force
 (`scenario_volume`). The default path never guesses a denominator.
 
+## Declared multi-leg composition (`corridor-lab.route/v2`)
+
+A v2 route may declare `legs` instead of scalar rate and fee fields: an ordered
+array of two to eight legs, each with a unique `leg_id`, distinct
+`from_currency` and `to_currency`, a positive `fx_rate`, non-negative
+`fx_spread_bps`, `fixed_fee_send`, `percent_fee_bps`, and `delay_hours`.
+
+The chain must be contiguous: each leg's `from_currency` must equal the previous
+leg's `to_currency`. No currency may appear twice, which rejects cycles and
+revisits. The chain's endpoints must match the transaction's declared send and
+receive currencies.
+
+Every outcome of a composed route must declare a `terminal_leg`. Corridor Lab
+does not assume leg failures are independent and does not multiply success
+probabilities: the declared joint outcomes are taken exactly as declared.
+
 ## Declared workload scenarios (`corridor-lab.scenario/v2`)
 
 A v2 scenario may declare `workload_scenarios`, each with a unique

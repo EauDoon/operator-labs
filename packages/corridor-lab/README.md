@@ -26,6 +26,7 @@ corridorlab batch examples/fictional-corridor/portfolio --format json
 corridorlab workload examples/fictional-tiered-workload/scenario.json --format markdown
 corridorlab break-even examples/fictional-tiered-workload/scenario.json --left tiered-marginal --right flat-fee --format markdown
 corridorlab funding examples/fictional-funding/scenario.json --delays 0,1 --format markdown
+corridorlab evaluate examples/fictional-multi-leg/scenario.json --format markdown
 corridorlab-gui
 corridorlab-gui --smoke-test
 ```
@@ -89,6 +90,9 @@ chosen.
   shortfalls, average tied-up capital, carrying cost, and sensitivity to
   declared settlement and recovery delays. These are reported separately from
   per-transaction sender cost and are never added to it.
+- Bounded multi-leg route composition with explicit currency transitions,
+  declared joint outcomes instead of assumed independence, and rejection of
+  cycles and unsupported structures.
 - Bounded scenario portfolios, explicit two-parameter stress grids, and a Pareto frontier with no composite score.
 
 The default `compare` report has no ranking. A ranking is emitted only when a
@@ -99,7 +103,7 @@ scenario explicitly states an objective and at least one guardrail.
 `schemas/scenario.schema.json` and `schemas/route.schema.json` document v1.
 `schemas/scenario.schema.v2.json` and `schemas/route.schema.v2.json` document the
 v2 contracts, which add declared tiered fee schedules, period charges, workload
-scenarios, and funding schedules. v1 parsing is unchanged: a v1 document is never
+scenarios, funding schedules, and multi-leg composition. v1 parsing is unchanged: a v1 document is never
 reinterpreted, and a v2 contract cannot loosen a v1 constraint.
 
 The schemas provide portable structural checks. The runtime validator is
@@ -143,7 +147,8 @@ See [the model](docs/MODEL.md), [assumptions](docs/ASSUMPTIONS.md),
 [limitations](docs/LIMITATIONS.md), [GUI usage](docs/GUI.md), the
 [worked example](docs/WORKED_EXAMPLE.md), and the
 [tiered fee and workload example](examples/fictional-tiered-workload/README.md),
-and the [funding example](examples/fictional-funding/README.md).
+the [funding example](examples/fictional-funding/README.md), and the
+[multi-leg example](examples/fictional-multi-leg/README.md).
 
 ## Repository map
 

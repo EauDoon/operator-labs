@@ -90,6 +90,42 @@ Because a `scenario_volume` period charge reduces the per-transaction deduction,
 it also raises the recipient amount as volume rises. That is a direct
 consequence of the declared amortization and is reported as such.
 
+## Declared multi-leg composition (`corridor-lab.route/v2`)
+
+A composed route declares `legs`, a contiguous chain of currency transitions.
+Each leg carries its own `fx_rate`, `fx_spread_bps`, `fixed_fee_send`,
+`percent_fee_bps`, and `delay_hours`. A composed route must not also declare
+scalar `fx_rate`, `fx_spread_bps`, `fixed_fee_send`, `percent_fee_bps`, or
+`fee_schedule`, because each leg already carries its own.
+
+Leg fees are charged in each leg's `from_currency` and deducted before that leg
+converts. With `e_i = r_i * (1 - s_i / 10000)`:
+
+```text
+fee_send_i    = fee_i / product(e_j for j < i)
+explicit fee  = sum(fee_send_i)
+recipient     = (S - explicit fee) * product(e_j for all j)
+```
+
+That identity is exact for the declared chain. The conversion is a declared
+valuation convention, not a market quote, and every leg fee is also reported
+partitioned in its own currency alongside the aggregate.
+
+Failure behaviour uses declared joint outcomes, never assumed independence. Each
+outcome names a `terminal_leg`; success probabilities are taken exactly as
+declared and are never multiplied across legs. A success outcome must terminate
+at the final leg. Resolution time is:
+
+```text
+leg_time(k) = sum(delay_hours of legs 1..k)
+resolution  = leg_time(terminal_leg) + outcome.delay_hours
+              + (recovery_delay_hours if the outcome is a failure)
+```
+
+Cycles are rejected by requiring that no currency appears twice in the chain.
+The chain endpoints are checked against the transaction's declared send and
+receive currencies when the route is evaluated.
+
 ## Declared funding schedules (`corridor-lab.scenario/v2`)
 
 A v2 scenario may declare a `funding` object. With recoveries `R_i` that have

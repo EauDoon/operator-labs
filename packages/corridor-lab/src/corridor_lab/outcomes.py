@@ -16,6 +16,7 @@ class Outcome:
     delay_hours: Decimal
     recovery_amount_send: Decimal
     recovery_delay_hours: Decimal
+    terminal_leg: str | None = None
 
     @property
     def resolution_hours(self) -> Decimal:

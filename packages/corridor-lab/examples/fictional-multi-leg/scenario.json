@@ -1,0 +1,79 @@
+{
+  "contract_version": "corridor-lab.scenario/v2",
+  "scenario_id": "fictional-multi-leg-corridor",
+  "description": "A fictional two-leg route compared against a declared single-leg route with declared joint outcomes.",
+  "fictional": true,
+  "transaction": {
+    "send_amount": "1000.00",
+    "send_currency": "AMR",
+    "send_precision": 2,
+    "receive_currency": "BRC",
+    "receive_precision": 2,
+    "rounding": "ROUND_HALF_UP",
+    "deadline_hours": "24",
+    "volume_per_period": "100"
+  },
+  "objective": {
+    "metric": "maximize_expected_recipient_amount",
+    "guardrails": {"minimum_probability_by_deadline": "0.90"}
+  },
+  "routes": [
+    {
+      "contract_version": "corridor-lab.route/v2",
+      "route_id": "two-leg-chain",
+      "label": "Declared two-leg chain with joint outcomes (fictional)",
+      "fictional": true,
+      "liquidity": {
+        "prefunding_amount_send": "20000",
+        "annual_cost_of_capital_bps": "1000",
+        "holding_days": "0.5"
+      },
+      "legs": [
+        {
+          "leg_id": "onshore",
+          "from_currency": "AMR",
+          "to_currency": "USD",
+          "fx_rate": "1.25",
+          "fx_spread_bps": "20",
+          "fixed_fee_send": "1.00",
+          "percent_fee_bps": "10",
+          "delay_hours": "1"
+        },
+        {
+          "leg_id": "offshore",
+          "from_currency": "USD",
+          "to_currency": "BRC",
+          "fx_rate": "1.40",
+          "fx_spread_bps": "30",
+          "fixed_fee_send": "2.00",
+          "percent_fee_bps": "15",
+          "delay_hours": "3"
+        }
+      ],
+      "outcomes": [
+        {"outcome_id": "completed", "probability": "0.95", "completion": "success", "terminal_leg": "offshore", "delay_hours": "0", "recovery_amount_send": "0", "recovery_delay_hours": "0"},
+        {"outcome_id": "failed-on-leg-1", "probability": "0.03", "completion": "failure", "terminal_leg": "onshore", "delay_hours": "0", "recovery_amount_send": "995", "recovery_delay_hours": "12"},
+        {"outcome_id": "failed-on-leg-2", "probability": "0.02", "completion": "failure", "terminal_leg": "offshore", "delay_hours": "0", "recovery_amount_send": "990", "recovery_delay_hours": "24"}
+      ]
+    },
+    {
+      "contract_version": "corridor-lab.route/v2",
+      "route_id": "single-leg-direct",
+      "label": "Declared single-leg direct route (fictional)",
+      "fictional": true,
+      "fx_rate": "1.7412605",
+      "fx_spread_bps": "0",
+      "fixed_fee_send": "5.10",
+      "percent_fee_bps": "0",
+      "liquidity": {
+        "prefunding_amount_send": "20000",
+        "annual_cost_of_capital_bps": "1000",
+        "holding_days": "0.5"
+      },
+      "outcomes": [
+        {"outcome_id": "completed", "probability": "0.95", "completion": "success", "delay_hours": "4", "recovery_amount_send": "0", "recovery_delay_hours": "0"},
+        {"outcome_id": "failed-recovered", "probability": "0.05", "completion": "failure", "delay_hours": "4", "recovery_amount_send": "993", "recovery_delay_hours": "16"}
+      ]
+    }
+  ]
+}

@@ -27,6 +27,7 @@ from .canonical import (
     require_string,
 )
 from .fees import FeeSchedule, parse_fee_schedule
+from .legs import Leg, compose, parse_legs, require_terminal_leg, terminal_leg_delays
 from .outcomes import Outcome
 
 
@@ -57,10 +58,31 @@ class Route:
     outcomes: tuple[Outcome, ...]
     contract_version: str = ROUTE_CONTRACT_VERSION
     fee_schedule: FeeSchedule | None = None
+    legs: tuple[Leg, ...] = ()
 
     @property
     def uses_fee_schedule(self) -> bool:
         return self.fee_schedule is not None
+
+    @property
+    def is_composed(self) -> bool:
+        return bool(self.legs)
+
+    def outcome_resolution_hours(self, outcome: Outcome) -> Decimal:
+        """Time to a final state for a declared outcome.
+
+        Composed routes add the declared leg delays up to the outcome's terminal
+        leg. Single-leg routes use the outcome's own declared delay.
+        """
+        with local_decimal_context():
+            if not self.legs:
+                return outcome.resolution_hours
+            assert outcome.terminal_leg is not None
+            leg_time = terminal_leg_delays(self.legs)[outcome.terminal_leg]
+            additional = outcome.delay_hours
+            if outcome.completion == "failure":
+                additional += outcome.recovery_delay_hours
+            return leg_time + additional
 
     def changed_parameter(self, parameter: str, value: Decimal) -> Route:
         """Return a copy changing exactly one documented top-level parameter."""
@@ -100,11 +122,14 @@ def _parse_liquidity(value: Any, path: str) -> Liquidity:
     )
 
 
-def _parse_outcomes(value: Any, path: str) -> tuple[Outcome, ...]:
+def _parse_outcomes(value: Any, path: str, legs: tuple[Leg, ...] = ()) -> tuple[Outcome, ...]:
+    """Parse declared outcomes, requiring `terminal_leg` only for composed routes."""
     if not isinstance(value, list) or not value:
         raise InputError(f"{path} must be a non-empty array")
     if len(value) > MAX_OUTCOMES_PER_ROUTE:
         raise InputError(f"{path} exceeds the {MAX_OUTCOMES_PER_ROUTE}-outcome budget")
+    known_legs = {leg.leg_id for leg in legs}
+    final_leg = legs[-1].leg_id if legs else None
     parsed: list[Outcome] = []
     seen_ids: set[str] = set()
     for index, raw in enumerate(value):
@@ -120,7 +145,7 @@ def _parse_outcomes(value: Any, path: str) -> tuple[Outcome, ...]:
                 "recovery_amount_send",
                 "recovery_delay_hours",
             },
-            set(),
+            {"terminal_leg"} if legs else set(),
             location,
         )
         outcome_id = require_identifier(item["outcome_id"], f"{location}.outcome_id")
@@ -138,6 +163,15 @@ def _parse_outcomes(value: Any, path: str) -> tuple[Outcome, ...]:
         )
         if completion == "success" and (recovery_amount != 0 or recovery_delay != 0):
             raise InputError(f"{location} success outcome cannot include recovery fields")
+        terminal_leg: str | None = None
+        if legs:
+            if "terminal_leg" not in item:
+                raise InputError(f"{location} missing required field(s): terminal_leg")
+            terminal_leg = require_terminal_leg(item["terminal_leg"], f"{location}.terminal_leg", known_legs)
+            if completion == "success" and terminal_leg != final_leg:
+                raise InputError(
+                    f"{location} is a success outcome, so terminal_leg must be the final leg ({final_leg})"
+                )
         parsed.append(
             Outcome(
                 outcome_id=outcome_id,
@@ -146,6 +180,7 @@ def _parse_outcomes(value: Any, path: str) -> tuple[Outcome, ...]:
                 delay_hours=require_decimal(item["delay_hours"], f"{location}.delay_hours", minimum=Decimal("0")),
                 recovery_amount_send=recovery_amount,
                 recovery_delay_hours=recovery_delay,
+                terminal_leg=terminal_leg,
             )
         )
     with local_decimal_context():
@@ -212,6 +247,9 @@ def _parse_route_v1(item: dict[str, Any], path: str) -> Route:
 
 
 def _parse_route_v2(item: dict[str, Any], path: str) -> Route:
+    """Parse a v2 route, which is either a scalar route or a declared leg chain."""
+    if "legs" in item:
+        return _parse_composed_route_v2(item, path)
     require_keys(
         item,
         {
@@ -260,6 +298,52 @@ def _parse_route_v2(item: dict[str, Any], path: str) -> Route:
         outcomes=_parse_outcomes(item["outcomes"], f"{path}.outcomes"),
         contract_version=ROUTE_CONTRACT_VERSION_V2,
         fee_schedule=parse_fee_schedule(item["fee_schedule"], f"{path}.fee_schedule") if has_schedule else None,
+    )
+
+
+def _parse_composed_route_v2(item: dict[str, Any], path: str) -> Route:
+    """A composed route: an explicit leg chain with declared joint outcomes."""
+    require_keys(
+        item,
+        {
+            "contract_version",
+            "route_id",
+            "label",
+            "fictional",
+            "liquidity",
+            "outcomes",
+            "legs",
+        },
+        # Accepted by the key check so that the explicit message below, which
+        # explains why they must be omitted, is the one a reader sees.
+        {"fx_rate", "fx_spread_bps", "fixed_fee_send", "percent_fee_bps", "fee_schedule"},
+        path,
+    )
+    for field in ("fx_rate", "fx_spread_bps", "fixed_fee_send", "percent_fee_bps", "fee_schedule"):
+        if field in item:
+            raise InputError(
+                f"{path}.{field} must be omitted when legs are declared; each leg carries its own {field}"
+            )
+    fictional = require_bool(item["fictional"], f"{path}.fictional")
+    if not fictional:
+        raise InputError(f"{path}.fictional must be true; Corridor Lab accepts synthetic routes only")
+    # The chain's own structure is validated here. Its endpoints are checked
+    # against the declared send and receive currencies when the route is
+    # evaluated against a transaction, because a route document is also valid
+    # on its own.
+    legs = parse_legs(item["legs"], f"{path}.legs")
+    return Route(
+        route_id=require_identifier(item["route_id"], f"{path}.route_id"),
+        label=require_string(item["label"], f"{path}.label"),
+        fictional=fictional,
+        fx_rate=Decimal("0"),
+        fixed_fee_send=Decimal("0"),
+        percent_fee_bps=Decimal("0"),
+        fx_spread_bps=Decimal("0"),
+        liquidity=_parse_liquidity(item["liquidity"], f"{path}.liquidity"),
+        outcomes=_parse_outcomes(item["outcomes"], f"{path}.outcomes", legs),
+        contract_version=ROUTE_CONTRACT_VERSION_V2,
+        legs=legs,
     )
 
 

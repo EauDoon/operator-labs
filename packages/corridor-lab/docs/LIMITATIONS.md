@@ -32,6 +32,17 @@
 - A declared schedule that ends does not imply full recovery. Recoveries whose
   arrival period falls beyond the last declared period are surfaced as
   `recoveries after horizon` instead of being dropped.
+- Composed routes use declared joint outcomes. Corridor Lab does not assume leg
+  failures are independent, does not multiply success probabilities, and does
+  not derive a per-leg success rate. A dependency model the author does not
+  declare cannot be evaluated.
+- The send-currency aggregation of leg fees is a declared valuation convention
+  based on the route's own declared rates. It is not a market conversion, a
+  hedged rate, or a quote. Partitioned per-leg fees in each leg's own currency
+  are always reported alongside the aggregate.
+- A composed route models one payment travelling one declared chain. It does not
+  model netting, batching, parallel settlement paths, or inventory rebalancing
+  between legs.
 - Currency labels and precision are formatting inputs, not ISO validation.
 - Ranking only orders assumptions under an explicit objective and guardrails.
   It is not advice or an automated route selection decision.

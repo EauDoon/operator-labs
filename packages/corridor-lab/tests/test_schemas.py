@@ -160,6 +160,7 @@ _ROUTE_FIELDS = {
         "percent_fee_bps",
         "fx_spread_bps",
         "fee_schedule",
+        "legs",
         "liquidity",
         "outcomes",
     },
@@ -233,7 +234,7 @@ class ParserFieldProbeTests(unittest.TestCase):
                 parse_route(probe)
             optional: set[str] = set()
             if version == ROUTE_CONTRACT_VERSION_V2:
-                optional = {"fixed_fee_send", "percent_fee_bps"}
+                optional = {"fixed_fee_send", "percent_fee_bps", "fee_schedule", "legs"}
             self.assertEqual(fields, set(document) | optional)
 
     def test_scenario_field_tables_match_the_parser(self):

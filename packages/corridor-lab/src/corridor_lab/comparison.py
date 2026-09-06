@@ -8,6 +8,7 @@ from typing import Iterable
 
 from .canonical import InputError, MAX_ROUTE_PAIRS, decimal_text, local_decimal_context
 from .fees import declared_fee_schedule
+from .legs import declared_legs
 from .model import RouteEvaluation, evaluate_route
 from .route import Route
 from .scenario import Objective, Scenario, Transaction
@@ -48,15 +49,20 @@ def _declared_transaction(transaction: Transaction) -> dict[str, object]:
 
 
 def _declared_route(route: Route) -> dict[str, object]:
+    scalar = {
+        "fx_rate": decimal_text(route.fx_rate),
+        "fixed_fee_send": decimal_text(route.fixed_fee_send),
+        "percent_fee_bps": decimal_text(route.percent_fee_bps),
+        "fx_spread_bps": decimal_text(route.fx_spread_bps),
+    }
     declared: dict[str, object] = {
         "contract_version": route.contract_version,
         "route_id": route.route_id,
         "label": route.label,
         "fictional": route.fictional,
-        "fx_rate": decimal_text(route.fx_rate),
-        "fixed_fee_send": decimal_text(route.fixed_fee_send),
-        "percent_fee_bps": decimal_text(route.percent_fee_bps),
-        "fx_spread_bps": decimal_text(route.fx_spread_bps),
+        # A composed route carries no scalar fee fields; each leg declares its
+        # own, so they are reported under `legs` instead of being invented here.
+        **({} if route.is_composed else scalar),
         "liquidity": {
             "prefunding_amount_send": decimal_text(route.liquidity.prefunding_amount_send),
             "annual_cost_of_capital_bps": decimal_text(route.liquidity.annual_cost_of_capital_bps),
@@ -70,12 +76,15 @@ def _declared_route(route: Route) -> dict[str, object]:
                 "delay_hours": decimal_text(outcome.delay_hours),
                 "recovery_amount_send": decimal_text(outcome.recovery_amount_send),
                 "recovery_delay_hours": decimal_text(outcome.recovery_delay_hours),
+                **({"terminal_leg": outcome.terminal_leg} if outcome.terminal_leg is not None else {}),
             }
             for outcome in route.outcomes
         ],
     }
     if route.fee_schedule is not None:
         declared["fee_schedule"] = declared_fee_schedule(route.fee_schedule)
+    if route.is_composed:
+        declared["legs"] = declared_legs(route.legs)
     return declared
 
 

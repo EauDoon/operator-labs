@@ -52,6 +52,27 @@
         }
       }
     },
+    "legs": {
+      "description": "A declared contiguous currency chain. Each leg carries its own rate, spread, fee, and delay.",
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["leg_id", "from_currency", "to_currency", "fx_rate", "fx_spread_bps", "fixed_fee_send", "percent_fee_bps", "delay_hours"],
+        "properties": {
+          "leg_id": {"type": "string", "minLength": 1, "maxLength": 64},
+          "from_currency": {"type": "string", "minLength": 1},
+          "to_currency": {"type": "string", "minLength": 1},
+          "fx_rate": {"$ref": "#/$defs/decimal"},
+          "fx_spread_bps": {"$ref": "#/$defs/decimal"},
+          "fixed_fee_send": {"$ref": "#/$defs/decimal"},
+          "percent_fee_bps": {"$ref": "#/$defs/decimal"},
+          "delay_hours": {"$ref": "#/$defs/decimal"}
+        }
+      }
+    },
     "liquidity": {
       "type": "object",
       "additionalProperties": false,
@@ -75,22 +96,40 @@
           "completion": {"enum": ["success", "failure"]},
           "delay_hours": {"$ref": "#/$defs/decimal"},
           "recovery_amount_send": {"$ref": "#/$defs/decimal"},
-          "recovery_delay_hours": {"$ref": "#/$defs/decimal"}
+          "recovery_delay_hours": {"$ref": "#/$defs/decimal"},
+          "terminal_leg": {"type": "string", "minLength": 1}
         }
       }
     }
   },
   "oneOf": [
     {
-      "description": "A flat declared fee. No tiered schedule may also be present.",
+      "description": "A flat declared fee. No tiered schedule or leg chain may also be present.",
       "required": ["fixed_fee_send", "percent_fee_bps"],
-      "not": {"required": ["fee_schedule"]}
+      "not": {"anyOf": [{"required": ["fee_schedule"]}, {"required": ["legs"]}]}
     },
     {
       "description": "A declared tiered schedule. Flat fee fields must not also be present.",
       "required": ["fee_schedule"],
       "not": {
-        "anyOf": [{"required": ["fixed_fee_send"]}, {"required": ["percent_fee_bps"]}]
+        "anyOf": [
+          {"required": ["fixed_fee_send"]},
+          {"required": ["percent_fee_bps"]},
+          {"required": ["legs"]}
+        ]
+      }
+    },
+    {
+      "description": "A declared leg chain. Scalar fee and rate fields must not also be present.",
+      "required": ["legs"],
+      "not": {
+        "anyOf": [
+          {"required": ["fx_rate"]},
+          {"required": ["fx_spread_bps"]},
+          {"required": ["fixed_fee_send"]},
+          {"required": ["percent_fee_bps"]},
+          {"required": ["fee_schedule"]}
+        ]
       }
     }
   ],

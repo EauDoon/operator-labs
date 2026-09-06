@@ -92,6 +92,26 @@ class CliFeeWorkloadTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("not an active assumption", err)
 
+    def test_multi_leg_example_matches_the_recorded_output(self):
+        example = ROOT / "examples" / "fictional-multi-leg"
+        code, out, _ = self._run(["evaluate", str(example / "scenario.json"), "--format", "markdown"])
+        self.assertEqual(code, 0)
+        self.assertEqual(out, (example / "expected" / "evaluate.md").read_text(encoding="utf-8"))
+
+    def test_multi_leg_example_json_matches_the_recorded_output(self):
+        example = ROOT / "examples" / "fictional-multi-leg"
+        code, out, _ = self._run(["evaluate", str(example / "scenario.json"), "--format", "json"])
+        self.assertEqual(code, 0)
+        self.assertEqual(out, (example / "expected" / "evaluate.json").read_text(encoding="utf-8"))
+
+    def test_multi_leg_declared_inputs_omit_scalar_fee_fields(self):
+        example = ROOT / "examples" / "fictional-multi-leg"
+        code, out, _ = self._run(["evaluate", str(example / "scenario.json"), "--format", "json"])
+        self.assertEqual(code, 0)
+        self.assertIn('"legs":[{"delay_hours":"1","fixed_fee_send":"1"', out)
+        self.assertIn('"terminal_leg":"offshore"', out)
+        self.assertIn('"fee_basis":"composed"', out)
+
     def test_missing_scenario_reports_exit_two(self):
         code, _, err = self._run(["workload", str(EXAMPLE / "nope.json")])
         self.assertEqual(code, 2)

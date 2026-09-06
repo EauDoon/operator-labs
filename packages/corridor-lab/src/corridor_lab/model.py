@@ -14,6 +14,7 @@ from .canonical import (
     money_text,
     require_decimal,
 )
+from .legs import compose, require_chain_endpoints
 from .route import Route
 from .scenario import Transaction
 
@@ -71,6 +72,8 @@ class RouteEvaluation:
 
     @property
     def fee_basis(self) -> str:
+        if self.route.is_composed:
+            return "composed"
         schedule = self.route.fee_schedule
         if schedule is None:
             return "flat"
@@ -116,11 +119,14 @@ class RouteEvaluation:
 def _quantile_time(route: Route, threshold: Decimal) -> Decimal:
     with local_decimal_context():
         cumulative = Decimal("0")
-        ordered = sorted(route.outcomes, key=lambda outcome: (outcome.resolution_hours, outcome.outcome_id))
+        ordered = sorted(
+            route.outcomes,
+            key=lambda outcome: (route.outcome_resolution_hours(outcome), outcome.outcome_id),
+        )
         for outcome in ordered:
             cumulative += outcome.probability
             if cumulative >= threshold:
-                return outcome.resolution_hours
+                return route.outcome_resolution_hours(outcome)
     raise AssertionError("validated probabilities must cover every quantile")
 
 
@@ -164,17 +170,37 @@ def evaluate_route_at_volume(
 def _evaluate(route: Route, transaction: Transaction, volume: Decimal) -> RouteEvaluation:
     try:
         with local_decimal_context():
-            fixed_fee, percentage_fee, transaction_fee, period_amortized = _fee_components(
-                route, transaction.send_amount, volume
-            )
-            explicit_fee = transaction_fee + period_amortized
-            if explicit_fee > transaction.send_amount:
-                raise InputError(f"route {route.route_id} fees exceed the send amount")
-            amount_converted = transaction.send_amount - explicit_fee
-            gross_recipient = amount_converted * route.fx_rate
-            fx_spread_cost = gross_recipient * route.fx_spread_bps / BPS_DENOMINATOR
-            recipient_amount = gross_recipient - fx_spread_cost
-            effective_fx_rate = route.fx_rate * (Decimal("1") - route.fx_spread_bps / BPS_DENOMINATOR)
+            if route.is_composed:
+                require_chain_endpoints(
+                    route.legs,
+                    f"route {route.route_id}.legs",
+                    transaction.send_currency,
+                    transaction.receive_currency,
+                )
+                plan = compose(route.legs, transaction.send_amount)
+                fixed_fee = Decimal("0")
+                percentage_fee = Decimal("0")
+                transaction_fee = plan.explicit_fee_send
+                period_amortized = Decimal("0")
+                explicit_fee = plan.explicit_fee_send
+                amount_converted = plan.amount_converted_send
+                fx_spread_cost = plan.fx_spread_cost_receive
+                recipient_amount = plan.recipient_amount
+                effective_fx_rate = plan.effective_fx_rate
+                if explicit_fee > transaction.send_amount:
+                    raise InputError(f"route {route.route_id} fees exceed the send amount")
+            else:
+                fixed_fee, percentage_fee, transaction_fee, period_amortized = _fee_components(
+                    route, transaction.send_amount, volume
+                )
+                explicit_fee = transaction_fee + period_amortized
+                if explicit_fee > transaction.send_amount:
+                    raise InputError(f"route {route.route_id} fees exceed the send amount")
+                amount_converted = transaction.send_amount - explicit_fee
+                gross_recipient = amount_converted * route.fx_rate
+                fx_spread_cost = gross_recipient * route.fx_spread_bps / BPS_DENOMINATOR
+                recipient_amount = gross_recipient - fx_spread_cost
+                effective_fx_rate = route.fx_rate * (Decimal("1") - route.fx_spread_bps / BPS_DENOMINATOR)
 
             success_probability = sum(
                 (outcome.probability for outcome in route.outcomes if outcome.completion == "success"), Decimal("0")
@@ -183,7 +209,8 @@ def _evaluate(route: Route, transaction: Transaction, volume: Decimal) -> RouteE
                 (
                     outcome.probability
                     for outcome in route.outcomes
-                    if outcome.completion == "success" and outcome.delay_hours <= transaction.deadline_hours
+                    if outcome.completion == "success"
+                    and route.outcome_resolution_hours(outcome) <= transaction.deadline_hours
                 ),
                 Decimal("0"),
             )
@@ -215,7 +242,8 @@ def _evaluate(route: Route, transaction: Transaction, volume: Decimal) -> RouteE
             )
             liquidity_carry = liquidity_numerator / volume
             expected_time = sum(
-                (outcome.probability * outcome.resolution_hours for outcome in route.outcomes), Decimal("0")
+                (outcome.probability * route.outcome_resolution_hours(outcome) for outcome in route.outcomes),
+                Decimal("0"),
             )
             return RouteEvaluation(
                 route=route,
