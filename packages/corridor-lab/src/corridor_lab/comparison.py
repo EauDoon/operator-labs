@@ -7,6 +7,7 @@ from itertools import combinations
 from typing import Iterable
 
 from .canonical import InputError, MAX_ROUTE_PAIRS, decimal_text, local_decimal_context
+from .fees import declared_fee_schedule
 from .model import RouteEvaluation, evaluate_route
 from .route import Route
 from .scenario import Objective, Scenario, Transaction
@@ -47,8 +48,8 @@ def _declared_transaction(transaction: Transaction) -> dict[str, object]:
 
 
 def _declared_route(route: Route) -> dict[str, object]:
-    return {
-        "contract_version": "corridor-lab.route/v1",
+    declared: dict[str, object] = {
+        "contract_version": route.contract_version,
         "route_id": route.route_id,
         "label": route.label,
         "fictional": route.fictional,
@@ -73,6 +74,9 @@ def _declared_route(route: Route) -> dict[str, object]:
             for outcome in route.outcomes
         ],
     }
+    if route.fee_schedule is not None:
+        declared["fee_schedule"] = declared_fee_schedule(route.fee_schedule)
+    return declared
 
 
 def _declared_objective(objective: Objective) -> dict[str, object]:

@@ -42,6 +42,27 @@ def render_csv(report: dict[str, object]) -> str:
     if "rows" in report:
         rows = report["rows"]
         assert isinstance(rows, list)
+        if report.get("report_version") == "corridor-lab.workload/v1":
+            return _csv_text(
+                [dict(row) for row in rows],
+                [
+                    "workload_id",
+                    "route_id",
+                    "transactions_per_period",
+                    "fee_basis",
+                    "explicit_fee_transaction_send",
+                    "explicit_fee_period_amortized_send",
+                    "explicit_fee_send",
+                    "liquidity_carry_cost_send",
+                    "expected_failure_recovery_cost_send",
+                    "expected_sender_cost",
+                    "period_explicit_fee_send",
+                    "period_expected_sender_cost_send",
+                    "recipient_amount",
+                    "expected_recipient_amount",
+                    "probability_by_deadline",
+                ],
+            )
         if report.get("report_version") == "corridor-lab.stress-grid/v1":
             return _csv_text(
                 [dict(row) for row in rows],
@@ -133,9 +154,9 @@ def _cell(value: object) -> str:
 
 
 def _currency(report: dict[str, object], key: str, fallback: str) -> str:
-    transaction = report.get("transaction")
-    if isinstance(transaction, dict) and isinstance(transaction.get(key), str):
-        return transaction[key]
+    for source in (report.get("transaction"), report):
+        if isinstance(source, dict) and isinstance(source.get(key), str):
+            return source[key]
     return fallback
 
 
@@ -203,6 +224,23 @@ def _comparison_explanation(report: dict[str, object]) -> list[str]:
     return lines
 
 
+def _workload_explanation(report: dict[str, object]) -> list[str]:
+    send_currency = _currency(report, "send_currency", "send currency")
+    receive_currency = _currency(report, "receive_currency", "receive currency")
+    return [
+        "",
+        "## How to read this workload report",
+        "",
+        f"Sender-cost and fee figures are in `{send_currency}`; recipient figures are in `{receive_currency}`.",
+        "Each row pairs one declared workload with one route. A workload is an author-declared number of transactions per period; it is not measured or forecast.",
+        "`Transaction fee` is the per-transaction tiered or flat fee. `Amortized period charge` spreads declared period charges across the workload's transactions.",
+        "`Period sender cost` is the per-transaction expected sender cost multiplied by the declared transactions per period.",
+        "Recipient amount changes across workloads only when a period charge is amortized over the scenario volume, because that charge reduces the per-transaction deduction. It is otherwise constant for the same route.",
+        "Successful-by-deadline probability does not depend on volume.",
+        f"The scenario's own reference volume is `{_cell(report.get('reference_volume_per_period', ''))}` transactions per period.",
+    ]
+
+
 def _sensitivity_explanation() -> list[str]:
     return [
         "",
@@ -248,7 +286,78 @@ def render_markdown(report: dict[str, object]) -> str:
             lines.append(f"| {_cell(item.get('route_id', ''))} | {_cell(item.get('expected_recipient_amount', ''))} | {_cell(item.get('expected_sender_cost', ''))} |")
         lines.extend(["", "Both explicit metrics remain visible. No composite score is calculated."])
         return "\n".join(lines) + "\n"
+    if report.get("report_version") == "corridor-lab.break-even-workload/v1":
+        status = _cell(report.get("status", ""))
+        lines = [
+            "# Corridor Lab break-even workload exploration",
+            "",
+            f"Synthetic scenario: `{scenario_id}`",
+            "",
+            f"Routes: `{_cell(report.get('left_route_id', ''))}` versus `{_cell(report.get('right_route_id', ''))}`.",
+            f"Outcome: `{status}`.",
+            "",
+            "| Workload | Transactions per period | Left expected sender cost | Right expected sender cost | Difference |",
+            "| --- | ---: | ---: | ---: | ---: |",
+        ]
+        for point in report.get("points", []):
+            lines.append(
+                "| "
+                + " | ".join(
+                    _cell(point[name])
+                    for name in (
+                        "workload_id",
+                        "transactions_per_period",
+                        "left_expected_sender_cost",
+                        "right_expected_sender_cost",
+                        "difference_send",
+                    )
+                )
+                + " |"
+            )
+        if "note" in report:
+            lines.extend(["", _cell(report["note"])])
+        elif "lower_workload_id" in report:
+            lines.extend(
+                [
+                    "",
+                    f"The ordering reverses between `{_cell(report['lower_workload_id'])}` and "
+                    f"`{_cell(report['upper_workload_id'])}`. Corridor Lab does not interpolate "
+                    "between declared workloads, so no volume between them is claimed.",
+                ]
+            )
+        lines.extend(["", "This is an ordering comparison under declared assumptions, not a recommendation."])
+        return "\n".join(lines) + "\n"
     if "rows" in report:
+        if report.get("report_version") == "corridor-lab.workload/v1":
+            lines[0] = "# Corridor Lab workload report"
+            lines.extend(
+                [
+                    "| Workload | Route | Transactions per period | Fee basis | Transaction fee | Amortized period charge | Explicit fee | Liquidity carry | Expected sender cost | Period sender cost |",
+                    "| --- | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+                ]
+            )
+            for row in report["rows"]:
+                lines.append(
+                    "| "
+                    + " | ".join(
+                        _cell(row[name])
+                        for name in (
+                            "workload_id",
+                            "route_id",
+                            "transactions_per_period",
+                            "fee_basis",
+                            "explicit_fee_transaction_send",
+                            "explicit_fee_period_amortized_send",
+                            "explicit_fee_send",
+                            "liquidity_carry_cost_send",
+                            "expected_sender_cost",
+                            "period_expected_sender_cost_send",
+                        )
+                    )
+                    + " |"
+                )
+            lines.extend(_workload_explanation(report))
+            return "\n".join(lines) + "\n"
         if report.get("report_version") == "corridor-lab.stress-grid/v1":
             lines.extend(
                 [

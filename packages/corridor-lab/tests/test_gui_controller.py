@@ -6,6 +6,7 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
+import fee_helpers as fh
 from helpers import route, scenario
 import corridor_lab.route as route_module
 from corridor_lab.gui import run_smoke_test
@@ -209,3 +210,35 @@ class GuiControllerTests(unittest.TestCase):
                     else:
                         result = CorridorGuiController().load_routes_path(selected)
                         self.assertIn("changed while being read", result.error)
+
+    def test_workload_actions_require_declared_workloads(self):
+        controller = CorridorGuiController()
+        self.assertIsNone(controller.load_builtin_demo().error)
+        result = controller.workload("")
+        self.assertIsNotNone(result.error)
+        self.assertIn("no workload_scenarios", result.error)
+
+    def test_workload_actions_report_declared_volumes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            scenario_path = root / "scenario.json"
+            scenario_path.write_text(
+                json.dumps(fh.v2_scenario([fh.tiered_route("tiered")], fh.workloads())), encoding="utf-8"
+            )
+            controller = CorridorGuiController()
+            self.assertIsNone(controller.load_scenario_file(scenario_path).error)
+            self.assertIsNone(controller.workload("").error)
+            markdown = controller.render_last_report("markdown")
+            self.assertIn("## How to read this workload report", markdown)
+            self.assertIsNone(controller.workload("low,peak").error)
+            self.assertEqual(len(controller.last_report["rows"]), 2)
+            failure = controller.break_even("tiered", "ghost")
+            self.assertIsNotNone(failure.error)
+            self.assertIn("unknown route id", failure.error)
+
+    def test_workload_id_list_rejects_blank_entries(self):
+        controller = CorridorGuiController()
+        controller.scenario = parse_scenario(fh.v2_scenario([fh.tiered_route()], fh.workloads()))
+        result = controller.workload("low,   ")
+        self.assertIsNotNone(result.error)
+        self.assertIn("comma-separated list", result.error)

@@ -16,6 +16,24 @@ from .route import Route, load_route, load_route_folder
 from .scenario import Scenario, parse_scenario, parse_scenario_text
 from .sensitivity import run_sensitivity
 from .stress import run_stress_grid
+from .workload import break_even_workloads, run_workload
+
+
+def _require_cli_text(value: str, label: str) -> str:
+    text = value.strip()
+    if not text:
+        raise InputError(f"{label} must not be empty")
+    return text
+
+
+def _parse_identifier_list(text: str) -> list[str] | None:
+    """Return None for "every declared workload", otherwise the selected ids."""
+    if text is None or not text.strip():
+        return None
+    chunks = text.split(",")
+    if not all(chunk.strip() for chunk in chunks):
+        raise InputError("workload ids must be a comma-separated list")
+    return [chunk.strip() for chunk in chunks]
 
 
 BUILTIN_DEMO_SCENARIO = {
@@ -239,6 +257,24 @@ class CorridorGuiController:
             values_a = [require_decimal(chunk.strip(), "stress value") for chunk in chunks_a]
             values_b = [require_decimal(chunk.strip(), "stress value") for chunk in chunks_b]
             return self._success(run_stress_grid(scenario, parameter_a.strip(), values_a, parameter_b.strip(), values_b))
+        except (InputError, OSError, ValueError, DecimalException) as exc:
+            return self._failure(exc)
+
+    def workload(self, workload_ids_text: str = "") -> ActionResult:
+        try:
+            scenario = self._require_scenario()
+            identifiers = _parse_identifier_list(workload_ids_text)
+            return self._success(run_workload(scenario, identifiers))
+        except (InputError, OSError, ValueError, DecimalException) as exc:
+            return self._failure(exc)
+
+    def break_even(self, left_route_id: str, right_route_id: str, workload_ids_text: str = "") -> ActionResult:
+        try:
+            scenario = self._require_scenario()
+            left = _require_cli_text(left_route_id, "left route id")
+            right = _require_cli_text(right_route_id, "right route id")
+            identifiers = _parse_identifier_list(workload_ids_text)
+            return self._success(break_even_workloads(scenario, left, right, identifiers))
         except (InputError, OSError, ValueError, DecimalException) as exc:
             return self._failure(exc)
 

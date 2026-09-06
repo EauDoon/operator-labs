@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal, DecimalException
 
-from .canonical import InputError, decimal_text, local_decimal_context
+from .canonical import InputError, decimal_text, local_decimal_context, require_decimal
 from .route import Route
 from .scenario import Transaction
 
@@ -19,6 +19,8 @@ class RouteEvaluation:
     route: Route
     transaction: Transaction
     explicit_fee_send: Decimal
+    explicit_fee_transaction_send: Decimal
+    explicit_fee_period_amortized_send: Decimal
     percentage_fee_send: Decimal
     amount_converted_send: Decimal
     effective_fx_rate: Decimal
@@ -38,9 +40,37 @@ class RouteEvaluation:
 
     @property
     def fixed_expected_cost_send(self) -> Decimal:
-        """Costs independent of the stated transaction volume."""
+        """Costs independent of the stated transaction volume.
+
+        A period charge amortized over ``scenario_volume`` is volume dependent by
+        declaration and is therefore excluded here so that the documented
+        break-even equation stays valid.
+        """
         with local_decimal_context():
-            return self.explicit_fee_send + self.expected_failure_recovery_cost_send
+            volume_independent_fees = self.explicit_fee_send - self.volume_dependent_fee_send
+            return volume_independent_fees + self.expected_failure_recovery_cost_send
+
+    @property
+    def volume_dependent_fee_send(self) -> Decimal:
+        """The part of the explicit fee that moves with the transaction volume."""
+        if self.route.fee_schedule is None:
+            return Decimal("0")
+        with local_decimal_context():
+            return sum(
+                (
+                    charge.amortized(self.transaction.volume_per_period)
+                    for charge in self.route.fee_schedule.period_charges
+                    if charge.amortization_over == "scenario_volume"
+                ),
+                Decimal("0"),
+            )
+
+    @property
+    def fee_basis(self) -> str:
+        schedule = self.route.fee_schedule
+        if schedule is None:
+            return "flat"
+        return schedule.basis
 
     def as_dict(self) -> dict[str, object]:
         tx = self.transaction
@@ -51,6 +81,13 @@ class RouteEvaluation:
             "recipient_amount": money_text(self.recipient_amount, tx.receive_precision, tx.rounding),
             "expected_recipient_amount": money_text(self.expected_recipient_amount, tx.receive_precision, tx.rounding),
             "explicit_fee_send": money_text(self.explicit_fee_send, tx.send_precision, tx.rounding),
+            "explicit_fee_transaction_send": money_text(
+                self.explicit_fee_transaction_send, tx.send_precision, tx.rounding
+            ),
+            "explicit_fee_period_amortized_send": money_text(
+                self.explicit_fee_period_amortized_send, tx.send_precision, tx.rounding
+            ),
+            "fee_basis": self.fee_basis,
             "percentage_fee_send": money_text(self.percentage_fee_send, tx.send_precision, tx.rounding),
             "amount_converted_send": money_text(self.amount_converted_send, tx.send_precision, tx.rounding),
             "effective_fx_rate": decimal_text(self.effective_fx_rate),
@@ -93,6 +130,24 @@ def _quantile_time(route: Route, threshold: Decimal) -> Decimal:
     raise AssertionError("validated probabilities must cover every quantile")
 
 
+def _fee_components(
+    route: Route, send_amount: Decimal, volume: Decimal
+) -> tuple[Decimal, Decimal, Decimal, Decimal]:
+    """Return (fixed, percentage, transaction fee, amortized period charge)."""
+    with local_decimal_context():
+        if route.fee_schedule is not None:
+            breakdown = route.fee_schedule.transaction_fee(send_amount)
+            period_amortized = route.fee_schedule.amortized_period_charges(volume)
+            return (
+                breakdown.fixed_fee_send,
+                breakdown.percentage_fee_send,
+                breakdown.total_send,
+                period_amortized,
+            )
+        percentage_fee = send_amount * route.percent_fee_bps / BPS_DENOMINATOR
+        return route.fixed_fee_send, percentage_fee, route.fixed_fee_send + percentage_fee, Decimal("0")
+
+
 def evaluate_route(route: Route, transaction: Transaction) -> RouteEvaluation:
     """Evaluate a declared route using only declared assumptions.
 
@@ -101,10 +156,24 @@ def evaluate_route(route: Route, transaction: Transaction) -> RouteEvaluation:
     Failure and recovery cost is the principal not returned in a failure state;
     it deliberately excludes already separately reported explicit fees.
     """
+    return _evaluate(route, transaction, transaction.volume_per_period)
+
+
+def evaluate_route_at_volume(
+    route: Route, transaction: Transaction, volume_per_period: Decimal
+) -> RouteEvaluation:
+    """Evaluate a route under an explicitly supplied declared volume."""
+    parsed = require_decimal(volume_per_period, "volume_per_period", positive=True)
+    return _evaluate(route, transaction, parsed)
+
+
+def _evaluate(route: Route, transaction: Transaction, volume: Decimal) -> RouteEvaluation:
     try:
         with local_decimal_context():
-            percentage_fee = transaction.send_amount * route.percent_fee_bps / BPS_DENOMINATOR
-            explicit_fee = route.fixed_fee_send + percentage_fee
+            fixed_fee, percentage_fee, transaction_fee, period_amortized = _fee_components(
+                route, transaction.send_amount, volume
+            )
+            explicit_fee = transaction_fee + period_amortized
             if explicit_fee > transaction.send_amount:
                 raise InputError(f"route {route.route_id} fees exceed the send amount")
             amount_converted = transaction.send_amount - explicit_fee
@@ -150,7 +219,7 @@ def evaluate_route(route: Route, transaction: Transaction) -> RouteEvaluation:
                 * route.liquidity.holding_days
                 / DAYS_PER_YEAR
             )
-            liquidity_carry = liquidity_numerator / transaction.volume_per_period
+            liquidity_carry = liquidity_numerator / volume
             expected_time = sum(
                 (outcome.probability * outcome.resolution_hours for outcome in route.outcomes), Decimal("0")
             )
@@ -158,6 +227,8 @@ def evaluate_route(route: Route, transaction: Transaction) -> RouteEvaluation:
                 route=route,
                 transaction=transaction,
                 explicit_fee_send=explicit_fee,
+                explicit_fee_transaction_send=transaction_fee,
+                explicit_fee_period_amortized_send=period_amortized,
                 percentage_fee_send=percentage_fee,
                 amount_converted_send=amount_converted,
                 effective_fx_rate=effective_fx_rate,

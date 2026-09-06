@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .canonical import (
+    MAX_BPS,
     MAX_INPUT_BYTES,
     MAX_OUTCOMES_PER_ROUTE,
     MAX_ROUTES,
@@ -25,11 +26,14 @@ from .canonical import (
     require_identifier,
     require_string,
 )
+from .fees import FeeSchedule, parse_fee_schedule
 from .outcomes import Outcome
 
 
 ROUTE_CONTRACT_VERSION = "corridor-lab.route/v1"
-MAX_BPS = Decimal("10000")
+ROUTE_CONTRACT_VERSION_V2 = "corridor-lab.route/v2"
+SUPPORTED_ROUTE_CONTRACT_VERSIONS = (ROUTE_CONTRACT_VERSION, ROUTE_CONTRACT_VERSION_V2)
+MAX_BPS = MAX_BPS
 SENSITIVITY_PARAMETERS = ("fx_rate", "fixed_fee_send", "percent_fee_bps", "fx_spread_bps")
 
 
@@ -51,6 +55,12 @@ class Route:
     fx_spread_bps: Decimal
     liquidity: Liquidity
     outcomes: tuple[Outcome, ...]
+    contract_version: str = ROUTE_CONTRACT_VERSION
+    fee_schedule: FeeSchedule | None = None
+
+    @property
+    def uses_fee_schedule(self) -> bool:
+        return self.fee_schedule is not None
 
     def changed_parameter(self, parameter: str, value: Decimal) -> Route:
         """Return a copy changing exactly one documented top-level parameter."""
@@ -60,6 +70,10 @@ class Route:
         if name not in SENSITIVITY_PARAMETERS:
             raise InputError(
                 f"unsupported sensitivity parameter: {name} (choose from {', '.join(SENSITIVITY_PARAMETERS)})"
+            )
+        if self.uses_fee_schedule and name in ("fixed_fee_send", "percent_fee_bps"):
+            raise InputError(
+                f"route {self.route_id} declares a tiered fee schedule, so {name} is not an active assumption"
             )
         parsed = require_decimal(value, f"{name} sensitivity value")
         if name == "fx_rate" and parsed <= 0:
@@ -142,7 +156,26 @@ def _parse_outcomes(value: Any, path: str) -> tuple[Outcome, ...]:
 
 
 def parse_route(value: Any, path: str = "route") -> Route:
+    """Dispatch on the declared route contract version.
+
+    ``corridor-lab.route/v1`` keeps its original strict field set. The v2
+    contract adds optional declared fee structures and never reinterprets a v1
+    document.
+    """
     item = require_object(value, path)
+    if "contract_version" not in item:
+        raise InputError(f"{path} missing required field(s): contract_version")
+    version = require_string(item["contract_version"], f"{path}.contract_version")
+    if version == ROUTE_CONTRACT_VERSION:
+        return _parse_route_v1(item, path)
+    if version == ROUTE_CONTRACT_VERSION_V2:
+        return _parse_route_v2(item, path)
+    raise InputError(
+        f"{path}.contract_version must be one of {', '.join(SUPPORTED_ROUTE_CONTRACT_VERSIONS)}"
+    )
+
+
+def _parse_route_v1(item: dict[str, Any], path: str) -> Route:
     require_keys(
         item,
         {
@@ -160,8 +193,6 @@ def parse_route(value: Any, path: str = "route") -> Route:
         set(),
         path,
     )
-    if require_string(item["contract_version"], f"{path}.contract_version") != ROUTE_CONTRACT_VERSION:
-        raise InputError(f"{path}.contract_version must equal {ROUTE_CONTRACT_VERSION}")
     fictional = require_bool(item["fictional"], f"{path}.fictional")
     if not fictional:
         raise InputError(f"{path}.fictional must be true; Corridor Lab accepts synthetic routes only")
@@ -175,8 +206,61 @@ def parse_route(value: Any, path: str = "route") -> Route:
         fx_spread_bps=require_decimal(item["fx_spread_bps"], f"{path}.fx_spread_bps", minimum=Decimal("0"), maximum=MAX_BPS),
         liquidity=_parse_liquidity(item["liquidity"], f"{path}.liquidity"),
         outcomes=_parse_outcomes(item["outcomes"], f"{path}.outcomes"),
+        contract_version=ROUTE_CONTRACT_VERSION,
     )
     return route
+
+
+def _parse_route_v2(item: dict[str, Any], path: str) -> Route:
+    require_keys(
+        item,
+        {
+            "contract_version",
+            "route_id",
+            "label",
+            "fictional",
+            "fx_rate",
+            "fx_spread_bps",
+            "liquidity",
+            "outcomes",
+        },
+        {"fixed_fee_send", "percent_fee_bps", "fee_schedule"},
+        path,
+    )
+    fictional = require_bool(item["fictional"], f"{path}.fictional")
+    if not fictional:
+        raise InputError(f"{path}.fictional must be true; Corridor Lab accepts synthetic routes only")
+    has_schedule = "fee_schedule" in item
+    if has_schedule:
+        for field in ("fixed_fee_send", "percent_fee_bps"):
+            if field in item:
+                raise InputError(
+                    f"{path}.{field} must be omitted when fee_schedule is declared; "
+                    "mixing a flat fee with a tiered schedule would double count fees"
+                )
+        fixed_fee = Decimal("0")
+        percent_fee_bps = Decimal("0")
+    else:
+        for field in ("fixed_fee_send", "percent_fee_bps"):
+            if field not in item:
+                raise InputError(f"{path} missing required field(s): {field}")
+        fixed_fee = require_decimal(item["fixed_fee_send"], f"{path}.fixed_fee_send", minimum=Decimal("0"))
+        percent_fee_bps = require_decimal(
+            item["percent_fee_bps"], f"{path}.percent_fee_bps", minimum=Decimal("0"), maximum=MAX_BPS
+        )
+    return Route(
+        route_id=require_identifier(item["route_id"], f"{path}.route_id"),
+        label=require_string(item["label"], f"{path}.label"),
+        fictional=fictional,
+        fx_rate=require_decimal(item["fx_rate"], f"{path}.fx_rate", positive=True),
+        fixed_fee_send=fixed_fee,
+        percent_fee_bps=percent_fee_bps,
+        fx_spread_bps=require_decimal(item["fx_spread_bps"], f"{path}.fx_spread_bps", minimum=Decimal("0"), maximum=MAX_BPS),
+        liquidity=_parse_liquidity(item["liquidity"], f"{path}.liquidity"),
+        outcomes=_parse_outcomes(item["outcomes"], f"{path}.outcomes"),
+        contract_version=ROUTE_CONTRACT_VERSION_V2,
+        fee_schedule=parse_fee_schedule(item["fee_schedule"], f"{path}.fee_schedule") if has_schedule else None,
+    )
 
 
 def load_route(path: str | Path) -> Route:

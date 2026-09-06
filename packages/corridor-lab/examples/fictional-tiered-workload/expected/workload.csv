@@ -1,0 +1,7 @@
+workload_id,route_id,transactions_per_period,fee_basis,explicit_fee_transaction_send,explicit_fee_period_amortized_send,explicit_fee_send,liquidity_carry_cost_send,expected_failure_recovery_cost_send,expected_sender_cost,period_explicit_fee_send,period_expected_sender_cost_send,recipient_amount,expected_recipient_amount,probability_by_deadline
+low,flat-fee,50,flat,8.00,0.00,8.00,0.05,0.40,8.45,400.00,422.74,1727.32,1692.77,0.95
+low,tiered-marginal,50,marginal,6.25,8.00,14.25,0.20,0.40,14.85,712.50,742.50,1716.44,1682.11,0.95
+base,flat-fee,100,flat,8.00,0.00,8.00,0.03,0.40,8.43,800.00,842.74,1727.32,1692.77,0.95
+base,tiered-marginal,100,marginal,6.25,4.00,10.25,0.10,0.40,10.75,1025.00,1075.00,1723.40,1688.93,0.95
+peak,flat-fee,400,flat,8.00,0.00,8.00,0.01,0.40,8.41,3200.00,3362.74,1727.32,1692.77,0.95
+peak,tiered-marginal,400,marginal,6.25,1.00,7.25,0.03,0.40,7.68,2900.00,3070.00,1728.63,1694.05,0.95

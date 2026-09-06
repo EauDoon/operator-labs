@@ -25,6 +25,7 @@ from .route import SENSITIVITY_PARAMETERS, Route, load_route, load_route_folder
 from .scenario import load_scenario, parse_scenario
 from .sensitivity import run_sensitivity
 from .stress import run_stress_grid
+from .workload import break_even_workloads, run_workload
 
 SCENARIO_HELP = "path to a fictional scenario JSON file"
 PARAMETER_HELP = "one of " + ", ".join(SENSITIVITY_PARAMETERS)
@@ -149,6 +150,16 @@ def build_parser() -> argparse.ArgumentParser:
     stress.add_argument("--parameter-b", required=True, help=PARAMETER_HELP)
     stress.add_argument("--values-b", required=True, help=VALUES_HELP)
     _add_output_options(stress)
+    workload = commands.add_parser("workload", help="re-evaluate routes under declared transaction volumes")
+    workload.add_argument("scenario")
+    workload.add_argument("--workloads", help="comma-separated declared workload ids (default: every declared workload)")
+    _add_output_options(workload)
+    break_even = commands.add_parser("break-even", help="explore where two routes cross across declared workloads")
+    break_even.add_argument("scenario")
+    break_even.add_argument("--left", required=True, help="first route id")
+    break_even.add_argument("--right", required=True, help="second route id")
+    break_even.add_argument("--workloads", help="comma-separated declared workload ids (default: every declared workload)")
+    _add_output_options(break_even, formats=FRONTIER_REPORT_FORMATS)
     pareto = commands.add_parser("pareto", help="show the explicit two-metric Pareto frontier")
     _add_scenario_argument(pareto)
     _add_output_options(pareto, formats=FRONTIER_REPORT_FORMATS)
@@ -190,6 +201,15 @@ def _load_routes_argument(value: str) -> list[Route]:
     if not path.is_dir():
         raise InputError(f"--routes is not a file or directory: {path}")
     return load_route_folder(path)
+
+
+def _parse_workload_ids(raw: str | None) -> list[str] | None:
+    if raw is None:
+        return None
+    chunks = raw.split(",")
+    if not all(chunk.strip() for chunk in chunks):
+        raise InputError("--workloads must be a comma-separated list of declared workload ids")
+    return [chunk.strip() for chunk in chunks]
 
 
 def _parse_values(raw: str, flag: str = "--values") -> list[Decimal]:
@@ -335,6 +355,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 _parse_values(args.values_a, "--values-a"),
                 _require_cli_text(args.parameter_b, "--parameter-b"),
                 _parse_values(args.values_b, "--values-b"),
+            )
+        elif args.command == "workload":
+            report = run_workload(scenario, _parse_workload_ids(getattr(args, "workloads", None)))
+        elif args.command == "break-even":
+            report = break_even_workloads(
+                scenario,
+                _require_cli_text(args.left, "--left"),
+                _require_cli_text(args.right, "--right"),
+                _parse_workload_ids(getattr(args, "workloads", None)),
             )
         elif args.command == "pareto":
             if not scenario.routes:

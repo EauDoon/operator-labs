@@ -23,6 +23,8 @@ corridorlab sensitivity examples/fictional-corridor/embedded-scenario.json --par
 corridorlab stress-grid examples/fictional-corridor/embedded-scenario.json --parameter-a fx_rate --values-a 1.7,1.8 --parameter-b fx_spread_bps --values-b 25,50
 corridorlab pareto examples/fictional-corridor/embedded-scenario.json --format markdown
 corridorlab batch examples/fictional-corridor/portfolio --format json
+corridorlab workload examples/fictional-tiered-workload/scenario.json --format markdown
+corridorlab break-even examples/fictional-tiered-workload/scenario.json --left tiered-marginal --right flat-fee --format markdown
 corridorlab-gui
 corridorlab-gui --smoke-test
 ```
@@ -78,6 +80,10 @@ chosen.
   time to a final state.
 - Pairwise break-even transaction volume for declared sender-currency costs.
 - One-parameter sensitivity analysis.
+- Declared tiered fee schedules with marginal or whole-band semantics, plus
+  period charges amortized over an explicitly declared denominator.
+- Declared workload (transaction-volume) scenarios and a break-even exploration
+  that never interpolates between declared volumes.
 - Bounded scenario portfolios, explicit two-parameter stress grids, and a Pareto frontier with no composite score.
 
 The default `compare` report has no ranking. A ranking is emitted only when a
@@ -86,6 +92,11 @@ scenario explicitly states an objective and at least one guardrail.
 ## Contracts and commands
 
 `schemas/scenario.schema.json` and `schemas/route.schema.json` document v1.
+`schemas/scenario.schema.v2.json` and `schemas/route.schema.v2.json` document the
+v2 contracts, which add declared tiered fee schedules, period charges, and
+workload scenarios. v1 parsing is unchanged: a v1 document is never
+reinterpreted, and a v2 contract cannot loosen a v1 constraint.
+
 The schemas provide portable structural checks. The runtime validator is
 authoritative for duplicate-key rejection, bounded decimal values, exact
 probability totals, field constraints, and calculation preconditions. It rejects
@@ -100,7 +111,13 @@ corridorlab sensitivity scenario.json --parameter fx_spread_bps --values 10,25,5
 corridorlab stress-grid scenario.json --parameter-a fx_rate --values-a 1.7,1.8 --parameter-b fx_spread_bps --values-b 25,50 [--format json|csv|markdown] [--output FILE]
 corridorlab pareto scenario.json [--format json|markdown] [--output FILE]
 corridorlab batch SCENARIO_DIRECTORY [--recursive] [--include-paths] [--format json|markdown] [--output FILE]
+corridorlab workload scenario.json [--workloads ID,ID] [--format json|csv|markdown] [--output FILE]
+corridorlab break-even scenario.json --left ROUTE_ID --right ROUTE_ID [--workloads ID,ID] [--format json|markdown] [--output FILE]
 ```
+
+`workload` and `break-even` require a `corridor-lab.scenario/v2` scenario that
+declares `workload_scenarios`. They re-evaluate every embedded route under each
+selected declared volume; Corridor Lab never derives a volume from data.
 
 `evaluate`, `sensitivity`, `stress-grid`, and `pareto` use the routes embedded
 in the scenario. `compare` uses only the route file or directory supplied with
@@ -115,14 +132,15 @@ determinations. It does not select a route unless the user supplies an explicit
 objective and guardrails, and even then it only orders the declared assumptions.
 
 See [the model](docs/MODEL.md), [assumptions](docs/ASSUMPTIONS.md),
-[limitations](docs/LIMITATIONS.md), [GUI usage](docs/GUI.md), and the
-[worked example](docs/WORKED_EXAMPLE.md).
+[limitations](docs/LIMITATIONS.md), [GUI usage](docs/GUI.md), the
+[worked example](docs/WORKED_EXAMPLE.md), and the
+[tiered fee and workload example](examples/fictional-tiered-workload/README.md).
 
 ## Repository map
 
 - `src/corridor_lab/` contains the calculation library, CLI, and optional GUI.
 - `CorridorLab.pyw` is the checkout double-click launcher.
-- `schemas/` contains the v1 structural contracts.
+- `schemas/` contains the v1 and v2 structural contracts.
 - `routes/templates/` and `examples/` contain only fictional inputs.
 - `tests/` contains deterministic model, safety, CLI, and GUI-controller tests.
 
