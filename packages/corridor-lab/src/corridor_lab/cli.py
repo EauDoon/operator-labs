@@ -15,6 +15,7 @@ from .canonical import (
     MAX_INPUT_BYTES,
     InputError,
     atomic_write_text,
+    load_json,
     parse_json_bytes,
     require_decimal_values,
 )
@@ -24,8 +25,11 @@ from .model import evaluate_route
 from .report import render_report
 from .route import SENSITIVITY_PARAMETERS, Route, load_route, load_route_folder
 from .scenario import load_scenario, parse_scenario
+from .diff import diff_scenario_files
+from .revisions import RevisionError, list_revisions, revision_path, save_revision
 from .sensitivity import run_sensitivity
 from .stress import run_stress_grid
+from .templates import TEMPLATE_KINDS, describe_all, template, template_ids, write_template
 from .workload import break_even_workloads, run_workload
 
 SCENARIO_HELP = "path to a fictional scenario JSON file"
@@ -127,6 +131,33 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="corridorlab", description="Compare fictional payment route scenarios.")
     commands = parser.add_subparsers(dest="command", required=True)
 
+    templates = commands.add_parser("templates", help="list, show, or create synthetic templates")
+    template_commands = templates.add_subparsers(dest="template_command", required=True)
+    list_templates = template_commands.add_parser("list", help="list the shipped synthetic templates")
+    list_templates.add_argument("--kind", choices=TEMPLATE_KINDS, help="restrict the listing to one template kind")
+    list_templates.add_argument("--format", choices=("human", "json"), default="human", help="output format (default: human)")
+    list_templates.add_argument("--output", help="write the listing to this UTF-8 path")
+    show_template = template_commands.add_parser("show", help="show one synthetic template")
+    show_template.add_argument("--template", required=True, help="template id")
+    show_template.add_argument("--output", help="write the description to this UTF-8 path")
+    create_template = template_commands.add_parser("create", help="write a synthetic template to a chosen path")
+    create_template.add_argument("--template", required=True, help="template id")
+    create_template.add_argument("--output", required=True, help="path for the new template file")
+
+    revision = commands.add_parser("revision", help="manage explicitly saved scenario revisions")
+    revision_commands = revision.add_subparsers(dest="revision_command", required=True)
+    revision_save = revision_commands.add_parser("save", help="validate a scenario and save it as the next revision")
+    revision_save.add_argument("scenario")
+    revision_save.add_argument("--folder", required=True, help="existing revision folder")
+    revision_list = revision_commands.add_parser("list", help="list the revisions in a folder")
+    revision_list.add_argument("--folder", required=True, help="existing revision folder")
+    _add_output_options(revision_list, formats=FRONTIER_REPORT_FORMATS)
+
+    scenario_diff = commands.add_parser("scenario-diff", help="compare two explicitly selected scenario files")
+    scenario_diff.add_argument("before")
+    scenario_diff.add_argument("after")
+    _add_output_options(scenario_diff)
+
     validate = commands.add_parser("validate", help="validate a synthetic scenario contract")
     _add_scenario_argument(validate)
 
@@ -221,6 +252,63 @@ def _parse_delays(raw: str | None) -> list[int] | None:
         except ValueError as exc:
             raise InputError("--delays must contain whole numbers of periods") from exc
     return parsed
+
+
+def _run_templates(args: argparse.Namespace) -> int:
+    if args.template_command == "list":
+        entries = describe_all(args.kind)
+        if args.format == "json":
+            _emit(_canonical({"templates": entries}), args.output)
+        else:
+            _emit(_template_listing_text(entries), args.output)
+        return 0
+    if args.template_command == "show":
+        _emit(_canonical(_template_text(args.template)), args.output)
+        return 0
+    path = write_template(args.template, _require_cli_text(args.output, "--output"))
+    sys.stdout.write(f"Template {args.template} written to {path}\n")
+    return 0
+
+
+def _canonical(value: dict[str, object]) -> str:
+    from .canonical import canonical_dumps
+
+    return canonical_dumps(value)
+
+
+def _template_listing_text(entries: list[dict[str, object]]) -> str:
+    lines = ["Corridor Lab templates", ""]
+    for entry in entries:
+        lines.append(f"- {entry['template_id']} [{entry['kind']}]: {entry['title']}")
+    lines.extend(["", "All template values are fictional. Use `templates show --template ID` for detail."])
+    return "\n".join(lines) + "\n"
+
+
+def _template_text(template_id: str) -> dict[str, object]:
+    from .templates import describe
+
+    return describe(template_id)
+
+
+def _run_revision(args: argparse.Namespace) -> int:
+    folder = Path(_require_cli_text(args.folder, "--folder"))
+    if args.revision_command == "list":
+        entries = list_revisions(folder)
+        output_format = resolve_report_format(getattr(args, "format", None), getattr(args, "output", None), FRONTIER_REPORT_FORMATS)
+        if output_format == "json":
+            _emit(_canonical({"revisions": entries}), args.output)
+        else:
+            lines = ["Corridor Lab revisions", ""]
+            lines.extend(f"- {item['name']} ({item['scenario_id']})" for item in entries)
+            _emit("\n".join(lines) + "\n" if entries else "No revisions in this folder.\n", args.output)
+        return 0
+    document = load_json(Path(_require_cli_text(args.scenario, "scenario")))
+    from .scenario import parse_scenario
+
+    parsed = parse_scenario(document)
+    target = save_revision(folder, document)
+    sys.stdout.write(f"Revision saved: {target} ({parsed.scenario_id})\n")
+    return 0
 
 
 def _parse_workload_ids(raw: str | None) -> list[str] | None:
@@ -344,6 +432,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             load_scenario(_require_cli_text(args.scenario, "scenario"))
             sys.stdout.write("valid\n")
             return 0
+        if args.command == "templates":
+            return _run_templates(args)
+        if args.command == "revision":
+            return _run_revision(args)
+        if args.command == "scenario-diff":
+            scenario_diff_format = resolve_report_format(
+                getattr(args, "format", None), getattr(args, "output", None), TABULAR_REPORT_FORMATS
+            )
+            report = diff_scenario_files(
+                _require_cli_text(args.before, "before"), _require_cli_text(args.after, "after")
+            )
+            _emit(render_report(report, scenario_diff_format), args.output)
+            return 0
         output_format = resolve_report_format(
             getattr(args, "format", None),
             getattr(args, "output", None),
@@ -396,6 +497,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise InputError(f"unsupported command: {args.command}")
         _emit(render_report(report, output_format), args.output)
         return 0
+    except RevisionError as exc:
+        _write_error(_failure_text(exc))
+        return 2
     except (InputError, OSError, ValueError, DecimalException) as exc:
         _write_error(_failure_text(exc))
         return 2

@@ -10,8 +10,11 @@ from pathlib import Path
 
 from .canonical import InputError, atomic_write_text, parse_json_bytes, read_bounded_bytes, require_decimal
 from .comparison import compare_routes, evaluate_scenario, pareto_frontier
+from .diff import diff_scenarios
 from .funding import run_funding
 from .model import evaluate_route
+from .revisions import RevisionError, list_revisions, save_revision
+from .templates import describe_all, template, template_ids, write_template
 from .report import render_report
 from .route import Route, load_route, load_route_folder
 from .scenario import Scenario, parse_scenario, parse_scenario_text
@@ -258,6 +261,68 @@ class CorridorGuiController:
             values_a = [require_decimal(chunk.strip(), "stress value") for chunk in chunks_a]
             values_b = [require_decimal(chunk.strip(), "stress value") for chunk in chunks_b]
             return self._success(run_stress_grid(scenario, parameter_a.strip(), values_a, parameter_b.strip(), values_b))
+        except (InputError, OSError, ValueError, DecimalException) as exc:
+            return self._failure(exc)
+
+    def template_ids(self, kind: str | None = None) -> tuple[str, ...]:
+        return template_ids(kind)
+
+    def template_summaries(self, kind: str | None = None) -> list[dict[str, object]]:
+        return [dict(item) for item in describe_all(kind)]
+
+    def load_template(self, template_id: str) -> ActionResult:
+        """Load a synthetic template into the draft without touching active state."""
+        try:
+            document = template(template_id)
+            # Round-trip through canonical JSON so the draft text is exactly
+            # what would be written to disk.
+            from .canonical import canonical_dumps
+
+            self.scenario_draft_text = canonical_dumps(document)
+            self.last_error = None
+            return ActionResult({}, None)
+        except (InputError, OSError, ValueError, DecimalException) as exc:
+            return self._failure(exc)
+
+    def write_template_file(self, template_id: str, path: str | Path) -> ActionResult:
+        try:
+            write_template(template_id, path)
+            self.last_error = None
+            return ActionResult({}, None)
+        except (InputError, OSError, ValueError, DecimalException) as exc:
+            return self._failure(exc)
+
+    def save_revision(self, folder: str | Path) -> ActionResult:
+        """Validate the active draft and save it as the next explicit revision."""
+        try:
+            from .canonical import parse_json_text
+
+            document = parse_json_text(self.scenario_draft_text)
+            target = save_revision(folder, document)
+            self.last_error = None
+            return ActionResult({"path": str(target)}, None)
+        except (RevisionError, InputError, OSError, ValueError, DecimalException) as exc:
+            return self._failure(exc)
+
+    def list_revisions(self, folder: str | Path) -> tuple[dict[str, object], ...]:
+        try:
+            entries = tuple(dict(item) for item in list_revisions(folder))
+            self.last_error = None
+            return entries
+        except (RevisionError, InputError, OSError, ValueError) as exc:
+            self._failure(exc)
+            return ()
+
+    def scenario_diff(self, before_path: str | Path, after_path: str | Path) -> ActionResult:
+        """Compare two explicitly selected scenario files."""
+        try:
+            from .canonical import load_json
+
+            before = load_json(before_path)
+            after = load_json(after_path)
+            return self._success(
+                diff_scenarios(before, after, before_label=str(before_path), after_label=str(after_path))
+            )
         except (InputError, OSError, ValueError, DecimalException) as exc:
             return self._failure(exc)
 

@@ -136,8 +136,44 @@ def decimal_text(value: Decimal) -> str:
 
 
 def canonical_dumps(value: Any) -> str:
-    """Return byte-stable JSON with a terminating LF."""
+    """Return byte-stable JSON with a terminating LF.
+
+    This stays strict: a ``Decimal`` reaching a report is a formatting bug, so it
+    raises rather than guessing a rendering.
+    """
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n"
+
+
+def canonical_dumps_decimal(value: Any) -> str:
+    """Canonical JSON for documents whose numbers were parsed as ``Decimal``.
+
+    Input documents are parsed with ``parse_int=Decimal`` and
+    ``parse_float=Decimal``, so a document read from disk cannot always be
+    re-serialized by :func:`canonical_dumps`. This helper renders those numbers
+    with the same normalization the rest of the package uses for declared
+    values.
+    """
+    return (
+        json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            default=_decimal_default,
+        )
+        + "\n"
+    )
+
+
+def _decimal_default(value: Any) -> object:
+    if not isinstance(value, Decimal):
+        raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+    # A JSON integer must round-trip as an integer: precision fields such as
+    # send_precision are integers in the declared contract and must not be
+    # rewritten as decimal strings.
+    if value == value.to_integral_value():
+        return int(value)
+    return decimal_text(value)
 
 
 def require_object(value: Any, path: str) -> dict[str, Any]:

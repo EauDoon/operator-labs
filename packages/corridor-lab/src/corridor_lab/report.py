@@ -39,6 +39,11 @@ def render_csv(report: dict[str, object]) -> str:
             [dict(item) for item in frontier],
             ["route_id", "expected_recipient_amount", "expected_sender_cost"],
         )
+    if report.get("report_version") == "corridor-lab.scenario-diff/v1":
+        return _csv_text(
+            [dict(row) for row in report.get("assumption_changes", [])],
+            ["path", "change", "before", "after"],
+        )
     if "rows" in report:
         rows = report["rows"]
         assert isinstance(rows, list)
@@ -404,6 +409,59 @@ def render_markdown(report: dict[str, object]) -> str:
                 ]
             )
         lines.extend(["", "This is an ordering comparison under declared assumptions, not a recommendation."])
+        return "\n".join(lines) + "\n"
+    if report.get("report_version") == "corridor-lab.scenario-diff/v1":
+        before = report.get("before", {})
+        after = report.get("after", {})
+        lines = [
+            "# Corridor Lab scenario difference",
+            "",
+            f"`{_cell(before.get('label', 'before'))}` (`{_cell(before.get('scenario_id', ''))}`, "
+            f"`{_cell(before.get('contract_version', ''))}`) versus "
+            f"`{_cell(after.get('label', 'after'))}` (`{_cell(after.get('scenario_id', ''))}`, "
+            f"`{_cell(after.get('contract_version', ''))}`).",
+            "",
+            "## Changed declared assumptions",
+            "",
+        ]
+        assumptions = report.get("assumption_changes", [])
+        if assumptions:
+            lines.extend(["| Assumption | Change | Before | After |", "| --- | --- | --- | --- |"])
+            for item in assumptions:
+                lines.append(
+                    "| "
+                    + " | ".join(_cell(item[name]) for name in ("path", "change", "before", "after"))
+                    + " |"
+                )
+        else:
+            lines.append("No declared assumption differs between the two documents.")
+        lines.extend(["", "## Changed modeled outputs", ""])
+        outputs = report.get("output_changes", [])
+        if outputs:
+            lines.extend(
+                ["| Route | Metric | Before | After | Delta |", "| --- | --- | ---: | ---: | ---: |"]
+            )
+            for item in outputs:
+                lines.append(
+                    "| "
+                    + " | ".join(
+                        _cell(item[name]) for name in ("route_id", "metric", "before", "after", "delta")
+                    )
+                    + " |"
+                )
+        else:
+            lines.append("No reported metric differs between the two documents.")
+        attribution = report.get("attribution", {})
+        lines.extend(["", "## Attribution", "", _cell(attribution.get("note", ""))])
+        if attribution.get("status") == "single_declared_change":
+            lines.append(f"The single changed assumption is `{_cell(attribution.get('changed_assumption', ''))}`.")
+        lines.extend(
+            [
+                "",
+                "This comparison orders declared assumptions and their modeled consequences. It is not a "
+                "recommendation, and it does not attribute an output delta across simultaneous input changes.",
+            ]
+        )
         return "\n".join(lines) + "\n"
     if report.get("report_version") == "corridor-lab.funding/v1":
         lines = [

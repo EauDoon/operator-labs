@@ -27,6 +27,10 @@ corridorlab workload examples/fictional-tiered-workload/scenario.json --format m
 corridorlab break-even examples/fictional-tiered-workload/scenario.json --left tiered-marginal --right flat-fee --format markdown
 corridorlab funding examples/fictional-funding/scenario.json --delays 0,1 --format markdown
 corridorlab evaluate examples/fictional-multi-leg/scenario.json --format markdown
+corridorlab templates list
+corridorlab templates create --template funding-shortfall --output my-scenario.json
+corridorlab revision save my-scenario.json --folder my-revisions/
+corridorlab scenario-diff my-revisions/a-r0001.json my-revisions/a-r0002.json --format markdown
 corridorlab-gui
 corridorlab-gui --smoke-test
 ```
@@ -93,6 +97,10 @@ chosen.
 - Bounded multi-leg route composition with explicit currency transitions,
   declared joint outcomes instead of assumed independence, and rejection of
   cycles and unsupported structures.
+- A library of synthetic templates, explicitly saved scenario revisions, and a
+  scenario-difference report that separates changed assumptions from changed
+  outputs and refuses to attribute an output delta across simultaneous input
+  changes.
 - Bounded scenario portfolios, explicit two-parameter stress grids, and a Pareto frontier with no composite score.
 
 The default `compare` report has no ranking. A ranking is emitted only when a
@@ -123,7 +131,16 @@ corridorlab batch SCENARIO_DIRECTORY [--recursive] [--include-paths] [--format j
 corridorlab workload scenario.json [--workloads ID,ID] [--format json|csv|markdown] [--output FILE]
 corridorlab break-even scenario.json --left ROUTE_ID --right ROUTE_ID [--workloads ID,ID] [--format json|markdown] [--output FILE]
 corridorlab funding scenario.json [--delays 0,1,2] [--format json|csv|markdown] [--output FILE]
+corridorlab templates list [--kind scenario|route] [--format human|json]
+corridorlab templates show --template ID
+corridorlab templates create --template ID --output FILE
+corridorlab revision save scenario.json --folder DIR
+corridorlab revision list --folder DIR [--format human|json]
+corridorlab scenario-diff BEFORE.json AFTER.json [--format json|csv|markdown] [--output FILE]
 ```
+
+`scenario-diff` compares two explicitly selected files. It never compares
+against a hidden previous state, because Corridor Lab never autosaves.
 
 `workload` and `break-even` require a `corridor-lab.scenario/v2` scenario that
 declares `workload_scenarios`. They re-evaluate every embedded route under each
@@ -156,6 +173,7 @@ the [funding example](examples/fictional-funding/README.md), and the
 - `CorridorLab.pyw` is the checkout double-click launcher.
 - `schemas/` contains the v1 and v2 structural contracts.
 - `routes/templates/` and `examples/` contain only fictional inputs.
+- `templates.py` ships the in-product synthetic template library.
 - `tests/` contains deterministic model, safety, CLI, and GUI-controller tests.
 
 ## Development

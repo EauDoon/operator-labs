@@ -29,6 +29,22 @@ that draft, **Validate and Use** replaces the active scenario only after strict
 validation succeeds, and **Save Scenario As...** is the only way it writes a
 scenario file. An invalid draft leaves the active scenario unchanged.
 
+## Synthetic templates, revisions, and scenario differences
+
+The **Synthetic templates** row loads a shipped fictional template into the
+editor draft. Loading a template never activates it and never writes a file; it
+becomes the active scenario only after **Validate and Use**. **Save Template
+As...** writes a template to a path you choose and refuses to replace an
+existing file.
+
+**Save Revision...** validates the current draft and writes it as the next
+numbered revision (for example `my-scenario-r0003.json`) into a folder you
+choose. An invalid draft is never stored as a revision. **Compare Two
+Scenarios...** asks for two scenario files and shows the changed declared
+assumptions, the changed modeled outputs, and an attribution statement. When
+exactly one assumption changed, the difference names it; when several changed,
+the report says so and does not apportion the output movement across them.
+
 Compare and Pareto Frontier use selected route files or a selected route folder
 when provided; otherwise they use routes embedded in the scenario. Evaluate
 Embedded, Sensitivity, and 2D Grid intentionally use only embedded routes. Use
