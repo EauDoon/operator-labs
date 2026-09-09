@@ -91,3 +91,36 @@ def coverage_diff(contract: Contract, baseline, candidate):
                           issues, mode="coverage-diff", redacted_values=tuple(canary.value for canary in contract.canaries))
     report["coverage_diff"] = {"fields": fields}
     return _privacy_checked(contract, report)
+
+
+MAX_MATRIX_CHECKS = 10000
+
+
+def _retention_entities(payload):
+    for ri, resource in enumerate(payload["resourceSpans"]):
+        rp = f"/resourceSpans/{ri}"
+        yield "resource", rp + "/resource", resource.get("resource", {})
+        for si, scope in enumerate(resource["scopeSpans"]):
+            for pi, span in enumerate(scope["spans"]):
+                sp = f"{rp}/scopeSpans/{si}/spans/{pi}"
+                yield "span", sp, span
+                for ei, event in enumerate(span.get("events", [])):
+                    yield "event", f"{sp}/events/{ei}", event
+
+
+def retention_matrix(contract: Contract, payload):
+    """Locate missing required attributes without including keys or attribute values."""
+    report = coverage_report(contract, payload)
+    checks = sum(field["entities"] for field in report["coverage"]["required_fields"])
+    if checks > MAX_MATRIX_CHECKS:
+        raise InputError("retention matrix exceeds the 10000 entity-requirement check limit")
+    fields = [{"id": f"required-{index:04d}", "scope": field.scope, "missing_paths": []}
+              for index, field in enumerate(contract.required_retained_fields, 1)]
+    for scope, path, entity in _retention_entities(payload):
+        keys = {attribute["key"] for attribute in entity.get("attributes", [])}
+        for index, field in enumerate(contract.required_retained_fields):
+            if field.scope == scope and field.key not in keys:
+                fields[index]["missing_paths"].append(path)
+    report["mode"] = "retention-matrix"
+    report["retention_matrix"] = {"entity_requirement_checks": checks, "fields": fields}
+    return _privacy_checked(contract, report)

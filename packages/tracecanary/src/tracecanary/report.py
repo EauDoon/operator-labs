@@ -11,7 +11,7 @@ from tracecanary.canonical import canonical_json
 
 
 Status = Literal["pass", "regression", "unresolved"]
-ReportMode = Literal["validate", "check", "diff", "batch", "demo", "starter", "coverage", "inspect-contract", "coverage-gate", "coverage-diff"]
+ReportMode = Literal["validate", "check", "diff", "batch", "demo", "starter", "coverage", "inspect-contract", "coverage-gate", "coverage-diff", "retention-matrix"]
 
 
 class ReportSummary(TypedDict):
@@ -43,6 +43,7 @@ class Report(TypedDict):
     inspection: NotRequired[dict[str, Any]]
     coverage_gate: NotRequired[dict[str, Any]]
     coverage_diff: NotRequired[dict[str, Any]]
+    retention_matrix: NotRequired[dict[str, Any]]
 
 
 class BatchItem(TypedDict):
@@ -139,6 +140,10 @@ def render_json(report: Report | BatchReport) -> str:
 def render_human(report: Report) -> str:
     headline = f"TraceCanary: {report['status'].upper()} ({report['summary']['total']} finding(s))"
     lines = [headline]
+    if "retention_matrix" in report:
+        for field in report["retention_matrix"]["fields"]:
+            lines.append(f"{field['id']} ({field['scope']}): {len(field['missing_paths'])} missing entity field(s)")
+            lines.extend(f"  {path}" for path in field["missing_paths"])
     if "coverage_diff" in report:
         for field in report["coverage_diff"]["fields"]:
             lines.append(f"{field['id']}: {field['baseline_present']}/{field['baseline_entities']} -> {field['candidate_present']}/{field['candidate_entities']}; rate delta {field['rate_delta']}")

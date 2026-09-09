@@ -78,3 +78,27 @@ class CoverageDiffTests(unittest.TestCase):
         empty = {"resourceSpans": []}
         self.assertEqual(coverage_diff(contract, empty, fixtures["safe-export.json"])["status"], "unresolved")
         self.assertEqual(coverage_diff(contract, fixtures["safe-export.json"], empty)["status"], "unresolved")
+
+
+class RetentionMatrixTests(unittest.TestCase):
+    def test_empty_attributes_and_nested_events_use_safe_pointers(self):
+        from tracecanary.inspection import retention_matrix
+        fixtures = bundle()
+        payload = fixtures["safe-export.json"]
+        extra = copy.deepcopy(payload["resourceSpans"][0]["scopeSpans"][0]["spans"][0])
+        extra.pop("attributes")
+        extra["events"][0].pop("attributes")
+        payload["resourceSpans"][0]["scopeSpans"][0]["spans"].append(extra)
+        report = retention_matrix(parse_contract(fixtures["contract.json"]), payload)
+        self.assertEqual(report["status"], "pass")
+        fields = report["retention_matrix"]["fields"]
+        self.assertEqual(fields[1]["missing_paths"], ["/resourceSpans/0/scopeSpans/0/spans/1"])
+        self.assertEqual(fields[2]["missing_paths"], ["/resourceSpans/0/scopeSpans/0/spans/1/events/0"])
+        self.assertNotIn("service.name", render_json(report) + render_human(report))
+
+    def test_check_budget_is_enforced_without_partial_output(self):
+        from unittest.mock import patch
+        from tracecanary.inspection import retention_matrix
+        fixtures = bundle()
+        with patch("tracecanary.inspection.MAX_MATRIX_CHECKS", 2), self.assertRaises(InputError):
+            retention_matrix(parse_contract(fixtures["contract.json"]), fixtures["safe-export.json"])

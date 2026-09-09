@@ -183,3 +183,8 @@ The desktop **Coverage** action uses the selected contract and input, preserves 
 
 `tracecanary coverage-diff --contract contract.json --baseline before.json --candidate after.json --format json`
 compares exact retained-field fractions and reports both sample denominators. A decrease is TC012 even when raw presence counts stay constant. Invalid baselines or empty required populations are unresolved. This opt-in command compares samples, not matched entity identities or causal effects; existing `diff` semantics remain unchanged.
+
+### Locate sparse retention
+
+`tracecanary retention-matrix --contract contract.json --input export.json --format json`
+shows missing entity locations by required-field ordinal and structural JSON pointer. It includes entities with absent attribute arrays, exposes no attribute keys or values, and rejects more than 10,000 entity-requirement checks instead of truncating. Matrix coverage is descriptive; use `coverage-gate` to enforce per-entity coverage.

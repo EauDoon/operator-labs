@@ -12,7 +12,7 @@ from tracecanary.canonical import InputError, load_json
 from tracecanary.checker import check_trace
 from tracecanary.comparison import diff_traces
 from tracecanary.coverage import coverage_report
-from tracecanary.inspection import inspect_contract, coverage_gate, coverage_diff
+from tracecanary.inspection import inspect_contract, coverage_gate, coverage_diff, retention_matrix
 from tracecanary.contract import Contract, ContractError, load_contract
 from tracecanary.fixture import write_bundle
 from tracecanary.output import protect_inputs, write_report
@@ -90,6 +90,10 @@ def build_parser() -> argparse.ArgumentParser:
     coverage.add_argument("--contract", required=True, type=_cli_path)
     coverage.add_argument("--input", required=True, type=_cli_path)
     coverage.add_argument("--format", choices=("human", "json"), default="human")
+    matrix = commands.add_parser("retention-matrix", help="locate missing retained fields by safe entity pointer")
+    matrix.add_argument("--contract", required=True, type=_cli_path)
+    matrix.add_argument("--input", required=True, type=_cli_path)
+    matrix.add_argument("--format", choices=("human", "json"), default="human")
     gate = commands.add_parser("coverage-gate", help="require an explicit per-entity retained-field ratio")
     gate.add_argument("--contract", required=True, type=_cli_path)
     gate.add_argument("--input", required=True, type=_cli_path)
@@ -117,7 +121,7 @@ def build_parser() -> argparse.ArgumentParser:
     batch.add_argument("--recursive", action="store_true", help="include *.json files in subdirectories")
     batch.add_argument("--include-paths", action="store_true", help="include input-relative POSIX paths in reports")
     batch.add_argument("--format", choices=("human", "json", "sarif", "junit"), default="json", help="report format (default: json)")
-    for command in (validate, check, diff, batch, coverage, inspect, gate, rate_diff):
+    for command in (validate, check, diff, batch, coverage, inspect, gate, rate_diff, matrix):
         command.add_argument("--output", type=_cli_path, help="write a UTF-8 report atomically; cannot replace inputs")
     fixture = commands.add_parser("fixture", help="write synthetic fixtures")
     fixture_commands = fixture.add_subparsers(dest="fixture_command", required=True, parser_class=_ArgumentParser)
@@ -144,6 +148,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             report = inspect_contract(contract)
         elif args.command == "coverage":
             report = coverage_report(contract, _load_trace(args.input, contract))
+        elif args.command == "retention-matrix":
+            report = retention_matrix(contract, _load_trace(args.input, contract))
         elif args.command == "coverage-gate":
             report = coverage_gate(contract, _load_trace(args.input, contract), args.minimum_ratio)
         elif args.command == "check":
