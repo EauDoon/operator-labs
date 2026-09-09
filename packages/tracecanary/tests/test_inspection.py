@@ -8,7 +8,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from tracecanary.contract import parse_contract
 from tracecanary.fixture import bundle
-from tracecanary.inspection import inspect_contract
+from tracecanary.inspection import inspect_contract, coverage_gate
+from tracecanary.canonical import InputError
 from tracecanary.report import render_json, render_human
 
 
@@ -29,3 +30,24 @@ class ContractInspectionTests(unittest.TestCase):
         report = inspect_contract(parse_contract(raw))
         self.assertEqual(report["status"], "regression")
         self.assertEqual(report["inspection"]["retention_conflicts"], ["required-0001"])
+
+
+class CoverageGateTests(unittest.TestCase):
+    def test_exact_half_threshold_and_existing_check_semantics(self):
+        fixtures = bundle()
+        payload = fixtures["safe-export.json"]
+        extra = copy.deepcopy(payload["resourceSpans"][0]["scopeSpans"][0]["spans"][0])
+        extra["attributes"] = []
+        payload["resourceSpans"][0]["scopeSpans"][0]["spans"].append(extra)
+        contract = parse_contract(fixtures["contract.json"])
+        self.assertEqual(coverage_gate(contract, payload, "0.5")["status"], "pass")
+        report = coverage_gate(contract, payload, "0.500001")
+        self.assertEqual(report["status"], "regression")
+        self.assertEqual(report["coverage_gate"]["fields"][1]["meets_minimum"], False)
+
+    def test_empty_populations_and_invalid_thresholds_fail_closed(self):
+        contract = parse_contract(bundle()["contract.json"])
+        self.assertEqual(coverage_gate(contract, {"resourceSpans": []}, "0")["status"], "unresolved")
+        for threshold in ("NaN", "1.1", "-0.1", "1e-10", "0.1234567", 0.5):
+            with self.assertRaises(InputError):
+                coverage_gate(contract, bundle()["safe-export.json"], threshold)

@@ -1,5 +1,9 @@
 """Value-free inspection of declared synthetic privacy checks and coverage."""
+from fractions import Fraction
+import re
+from .canonical import InputError
 from .contract import Contract
+from .coverage import coverage_report
 from .report import Violation, build_report, ensure_object_values_absent, ensure_values_absent
 
 
@@ -30,4 +34,30 @@ def inspect_contract(contract: Contract):
         "retention_conflicts": conflicts,
         "limits": {"max_input_bytes": contract.max_input_bytes, "max_nesting": contract.max_nesting,
                    "max_batch_files": contract.max_batch_files}}
+    return _privacy_checked(contract, report)
+
+
+def coverage_gate(contract: Contract, payload, minimum_ratio: str):
+    """Opt-in per-required-field ratio gate, layered on the unchanged privacy check."""
+    if not isinstance(minimum_ratio, str) or not re.fullmatch(r"(?:0(?:\.[0-9]{1,6})?|1(?:\.0{1,6})?)", minimum_ratio):
+        raise InputError("minimum ratio must be a decimal from 0 to 1 with at most six places")
+    threshold = Fraction(minimum_ratio)
+    base = coverage_report(contract, payload)
+    fields, extra = [], []
+    unresolved = not contract.required_retained_fields
+    for field in base["coverage"]["required_fields"]:
+        meets = None if not field["entities"] else Fraction(field["present"], field["entities"]) >= threshold
+        fields.append({**field, "meets_minimum": meets})
+        if meets is None:
+            unresolved = True
+        elif not meets:
+            extra.append(Violation("TC011", "", "required field coverage is below the explicitly requested ratio", label=field["id"]))
+    if unresolved:
+        extra.append(Violation("TC901", "", "coverage gate has no population for at least one requirement, or no requirements"))
+    issues = [Violation(**item) for item in base["violations"]] + extra
+    status = "unresolved" if unresolved else "regression" if issues else "pass"
+    report = build_report(contract.contract_version, status, issues, mode="coverage-gate",
+                          redacted_values=tuple(canary.value for canary in contract.canaries))
+    report["coverage"] = base["coverage"]
+    report["coverage_gate"] = {"minimum_ratio": minimum_ratio, "fields": fields}
     return _privacy_checked(contract, report)

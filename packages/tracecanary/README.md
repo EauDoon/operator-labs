@@ -160,6 +160,13 @@ Apache-2.0. See [LICENSE](LICENSE).
 
 ## Inspect coverage
 
+`tracecanary coverage-gate --contract contract.json --input export.json
+--minimum-ratio 0.95 --format json` adds an explicit per-required-field entity
+coverage gate. Decimal thresholds from 0 to 1 (at most six places) use exact
+fraction comparisons. Sparse presence yields `TC011` and exit 1; zero populations
+or no retention requirements are unresolved (exit 2), even at threshold zero.
+Existing privacy findings still apply. The default checker remains unchanged.
+
 `tracecanary inspect-contract contract.json --format json` inventories effective
 limits and check counts without exposing canary values or field keys. Required
 fields use stable ordinal IDs. Direct conflicts between required retention and

@@ -11,7 +11,7 @@ from tracecanary.canonical import canonical_json
 
 
 Status = Literal["pass", "regression", "unresolved"]
-ReportMode = Literal["validate", "check", "diff", "batch", "demo", "starter", "coverage", "inspect-contract"]
+ReportMode = Literal["validate", "check", "diff", "batch", "demo", "starter", "coverage", "inspect-contract", "coverage-gate"]
 
 
 class ReportSummary(TypedDict):
@@ -41,6 +41,7 @@ class Report(TypedDict):
     violations: list[ViolationDict]
     coverage: NotRequired[dict[str, Any]]
     inspection: NotRequired[dict[str, Any]]
+    coverage_gate: NotRequired[dict[str, Any]]
 
 
 class BatchItem(TypedDict):
@@ -137,6 +138,8 @@ def render_json(report: Report | BatchReport) -> str:
 def render_human(report: Report) -> str:
     headline = f"TraceCanary: {report['status'].upper()} ({report['summary']['total']} finding(s))"
     lines = [headline]
+    if "coverage_gate" in report:
+        lines.append(f"Explicit minimum retained-field ratio: {report['coverage_gate']['minimum_ratio']}.")
     if "inspection" in report:
         inspection = report["inspection"]
         lines.append(f"Contract checks: {inspection['canary_count']} canaries, {len(inspection['required_fields'])} retained fields.")
