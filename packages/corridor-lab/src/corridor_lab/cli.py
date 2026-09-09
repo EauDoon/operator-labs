@@ -25,6 +25,7 @@ from .route import SENSITIVITY_PARAMETERS, Route, load_route, load_route_folder
 from .scenario import load_scenario, parse_scenario
 from .sensitivity import run_sensitivity
 from .stress import run_stress_grid
+from .transaction_sweep import TRANSACTION_PARAMETERS, run_transaction_sweep
 
 SCENARIO_HELP = "path to a fictional scenario JSON file"
 PARAMETER_HELP = "one of " + ", ".join(SENSITIVITY_PARAMETERS)
@@ -142,6 +143,11 @@ def build_parser() -> argparse.ArgumentParser:
     sensitivity.add_argument("--parameter", required=True, help=PARAMETER_HELP)
     sensitivity.add_argument("--values", required=True, help=VALUES_HELP)
     _add_output_options(sensitivity)
+    sweep = commands.add_parser("transaction-sweep", help="vary a declared amount, deadline, or volume")
+    _add_scenario_argument(sweep)
+    sweep.add_argument("--parameter", required=True, choices=TRANSACTION_PARAMETERS)
+    sweep.add_argument("--values", required=True, help=VALUES_HELP)
+    _add_output_options(sweep)
     stress = commands.add_parser("stress-grid", help="run an explicit bounded two-parameter stress grid")
     _add_scenario_argument(stress)
     stress.add_argument("--parameter-a", required=True, help=PARAMETER_HELP)
@@ -328,6 +334,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 _require_cli_text(args.parameter, "--parameter"),
                 _parse_values(args.values, "--values"),
             )
+        elif args.command == "transaction-sweep":
+            report = run_transaction_sweep(scenario, args.parameter, _parse_values(args.values))
         elif args.command == "stress-grid":
             report = run_stress_grid(
                 scenario,

@@ -285,7 +285,10 @@ def render_markdown(report: dict[str, object]) -> str:
                 )
                 + " |"
             )
-        lines.extend(_sensitivity_explanation())
+        if report.get("report_version") == "corridor-lab.transaction-sweep/v1":
+            lines.extend(["", "Each row changes one declared transaction assumption. Route fees and recovery amounts remain fixed; invalid combinations fail closed. No forecast or recommendation is implied."])
+        else:
+            lines.extend(_sensitivity_explanation())
         return "\n".join(lines) + "\n"
     send_currency = _currency(report, "send_currency", "send currency")
     receive_currency = _currency(report, "receive_currency", "receive currency")
