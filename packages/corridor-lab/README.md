@@ -142,3 +142,7 @@ Licensed under [Apache-2.0](LICENSE).
 `corridorlab diff candidate.json --baseline baseline.json --format markdown` compares matching route IDs and lists added or removed routes. Deltas are candidate minus baseline. Currencies, precisions, and rounding must match. This is a descriptive comparison of all changed assumptions, with no inferred causal attribution or route recommendation. CSV contains matched-route metric deltas; JSON and Markdown also list route membership changes.
 
 Stress grids now evaluate declared objective guardrails at every cell. JSON and CSV expose pass/failure details; Markdown summarizes passing cells per route. These counts apply only to sampled assumptions and are not probabilities or implicit rankings. Scenarios without objectives retain unranked metric-only grids.
+
+## Start outside a checkout
+
+After installation, `corridorlab init --output fictional.json` creates a complete, deterministic synthetic scenario with two embedded routes. It refuses an existing file and requires an existing parent directory. Then run `corridorlab evaluate fictional.json`, `corridorlab transaction-sweep fictional.json --parameter volume_per_period --values 10,100,1000`, or open the file in the GUI. This starter does not fetch data or require repository fixtures.

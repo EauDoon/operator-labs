@@ -127,6 +127,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="corridorlab", description="Compare fictional payment route scenarios.")
     commands = parser.add_subparsers(dest="command", required=True)
 
+    starter = commands.add_parser("init", help="create a fictional scenario at a new file path")
+    starter.add_argument("--output", required=True, help="new scenario JSON file, never overwritten")
     validate = commands.add_parser("validate", help="validate a synthetic scenario contract")
     _add_scenario_argument(validate)
 
@@ -311,6 +313,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
+        if args.command == "init":
+            from .starter import write_starter
+            write_starter(Path(_require_cli_text(args.output, "--output")))
+            sys.stdout.write("fictional scenario created\n")
+            return 0
         if args.command == "validate":
             load_scenario(_require_cli_text(args.scenario, "scenario"))
             sys.stdout.write("valid\n")
