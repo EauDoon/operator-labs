@@ -6,6 +6,7 @@ from decimal import Decimal
 
 from .canonical import InputError, MAX_SENSITIVITY_ROWS, MAX_SENSITIVITY_VALUES, decimal_text, require_decimal_values
 from .model import evaluate_route
+from .comparison import _guardrail_status, _declared_objective
 from .scenario import Scenario
 
 
@@ -34,9 +35,15 @@ def run_stress_grid(
         for value_a in parsed_a:
             for value_b in parsed_b:
                 changed = route.changed_parameter(parameter_a, value_a).changed_parameter(parameter_b, value_b)
-                metrics = evaluate_route(changed, scenario.transaction).as_dict()
+                evaluation = evaluate_route(changed, scenario.transaction)
+                metrics = evaluation.as_dict()
+                guardrails = {}
+                if scenario.objective is not None:
+                    passes, failures = _guardrail_status(evaluation, scenario.objective)
+                    guardrails = {"guardrails_pass": passes, "failed_guardrails": failures}
                 rows.append(
                     {
+                        **guardrails,
                         "route_id": route.route_id,
                         "parameter_a": parameter_a,
                         "value_a": decimal_text(value_a),
@@ -47,7 +54,7 @@ def run_stress_grid(
                         "probability_by_deadline": metrics["probability_by_deadline"],
                     }
                 )
-    return {
+    report = {
         "report_version": "corridor-lab.stress-grid/v1",
         "scenario_id": scenario.scenario_id,
         "fictional": True,
@@ -55,3 +62,13 @@ def run_stress_grid(
         "parameter_b": parameter_b,
         "rows": rows,
     }
+
+    if scenario.objective is not None:
+        report["objective"] = _declared_objective(scenario.objective)
+        report["guardrail_summary"] = [
+            {"route_id": route.route_id,
+             "passing_cells": sum(row["guardrails_pass"] for row in rows if row["route_id"] == route.route_id),
+             "total_cells": len(parsed_a) * len(parsed_b)}
+            for route in sorted(scenario.routes, key=lambda item: item.route_id)
+        ]
+    return report

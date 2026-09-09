@@ -53,6 +53,8 @@ def render_csv(report: dict[str, object]) -> str:
                     "value_a",
                     "parameter_b",
                     "value_b",
+                    "guardrails_pass",
+                    "failed_guardrails",
                     "expected_recipient_amount",
                     "expected_sender_cost",
                     "probability_by_deadline",
@@ -269,6 +271,11 @@ def render_markdown(report: dict[str, object]) -> str:
                 lines.append(
                     "| " + " | ".join(_cell(row[name]) for name in ("route_id", "value_a", "value_b", "expected_recipient_amount", "expected_sender_cost", "probability_by_deadline")) + " |"
                 )
+            if "guardrail_summary" in report:
+                lines.extend(["", "### Declared guardrails across sampled cells", "", "| Route | Passing cells | Total cells |", "| --- | ---: | ---: |"])
+                for item in report["guardrail_summary"]:
+                    lines.append("| " + " | ".join(_cell(item[key]) for key in ("route_id", "passing_cells", "total_cells")) + " |")
+                lines.extend(["", "Counts describe only the explicit grid, not a probability of robustness. JSON and CSV retain cell-level failures."])
             lines.extend(["", "This is an explicit two-parameter stress grid. No composite score is calculated."])
             return "\n".join(lines) + "\n"
         lines.extend(
