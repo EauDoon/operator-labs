@@ -31,6 +31,8 @@ def _csv_text(rows: list[dict[str, object]], fields: list[str]) -> str:
 
 
 def render_csv(report: dict[str, object]) -> str:
+    if report.get("report_version") == "corridor-lab.analysis/v1":
+        return _csv_text(report["rows"], report["columns"])
     if report.get("report_version") == "corridor-lab.scenario-diff/v1":
         return _csv_text(report["rows"], ["route_id", "metric", "baseline", "candidate", "delta"])
     if report.get("report_version") == "corridor-lab.pareto/v1":
@@ -221,6 +223,14 @@ def _sensitivity_explanation() -> list[str]:
 def render_markdown(report: dict[str, object]) -> str:
     scenario_id = _cell(report.get("scenario_id", "ad-hoc"))
     lines = ["# Corridor Lab report", "", f"Synthetic scenario: `{scenario_id}`", ""]
+    if report.get("report_version") == "corridor-lab.analysis/v1":
+        columns = report["columns"]
+        lines.extend([_cell(report["analysis"]), "", _cell(report["scope"]), "",
+                      "| " + " | ".join(_cell(column) for column in columns) + " |",
+                      "| " + " | ".join("---" for _ in columns) + " |"])
+        for row in report["rows"]:
+            lines.append("| " + " | ".join(_cell(row.get(column, "")) for column in columns) + " |")
+        return "\n".join(lines) + "\n"
     if report.get("report_version") == "corridor-lab.scenario-diff/v1":
         lines.extend(["Deltas are candidate minus baseline, in the declared metric units. Changes may combine multiple assumptions.", "", "| Route | Metric | Baseline | Candidate | Delta |", "| --- | --- | ---: | ---: | ---: |"])
         for row in report["rows"]:

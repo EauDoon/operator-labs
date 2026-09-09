@@ -1,0 +1,126 @@
+"""Value-free inspection of declared synthetic privacy checks and coverage."""
+from fractions import Fraction
+import re
+from .canonical import InputError
+from .contract import Contract
+from .coverage import coverage_report
+from .report import Violation, build_report, ensure_object_values_absent, ensure_values_absent
+
+
+def _privacy_checked(contract: Contract, report):
+    values = tuple(canary.value for canary in contract.canaries)
+    ensure_object_values_absent(report, values)
+    ensure_values_absent(report, values)
+    return report
+
+
+def inspect_contract(contract: Contract):
+    """Inventory effective checks and find directly contradictory retention requirements."""
+    conflicts = []
+    for index, field in enumerate(contract.required_retained_fields, 1):
+        if field.key in contract.forbidden_attribute_keys or any(
+            field.key.startswith(prefix) for prefix in contract.forbidden_attribute_key_prefixes
+        ):
+            conflicts.append(f"required-{index:04d}")
+    violations = [Violation("TC010", "", "contract requires a field forbidden by its attribute rules")] if conflicts else []
+    report = build_report(contract.contract_version, "regression" if conflicts else "pass", violations,
+                          mode="inspect-contract", redacted_values=tuple(canary.value for canary in contract.canaries))
+    report["inspection"] = {"semantic_conventions_version": contract.semantic_conventions_version,
+        "canary_count": len(contract.canaries), "forbidden_key_count": len(contract.forbidden_attribute_keys),
+        "forbidden_key_prefix_count": len(contract.forbidden_attribute_key_prefixes),
+        "forbidden_path_prefix_count": len(contract.forbidden_path_prefixes),
+        "required_fields": [{"id": f"required-{index:04d}", "scope": field.scope}
+                            for index, field in enumerate(contract.required_retained_fields, 1)],
+        "retention_conflicts": conflicts,
+        "limits": {"max_input_bytes": contract.max_input_bytes, "max_nesting": contract.max_nesting,
+                   "max_batch_files": contract.max_batch_files}}
+    return _privacy_checked(contract, report)
+
+
+def coverage_gate(contract: Contract, payload, minimum_ratio: str):
+    """Opt-in per-required-field ratio gate, layered on the unchanged privacy check."""
+    if not isinstance(minimum_ratio, str) or not re.fullmatch(r"(?:0(?:\.[0-9]{1,6})?|1(?:\.0{1,6})?)", minimum_ratio):
+        raise InputError("minimum ratio must be a decimal from 0 to 1 with at most six places")
+    threshold = Fraction(minimum_ratio)
+    base = coverage_report(contract, payload)
+    fields, extra = [], []
+    unresolved = not contract.required_retained_fields
+    for field in base["coverage"]["required_fields"]:
+        meets = None if not field["entities"] else Fraction(field["present"], field["entities"]) >= threshold
+        fields.append({**field, "meets_minimum": meets})
+        if meets is None:
+            unresolved = True
+        elif not meets:
+            extra.append(Violation("TC011", "", "required field coverage is below the explicitly requested ratio", label=field["id"]))
+    if unresolved:
+        extra.append(Violation("TC901", "", "coverage gate has no population for at least one requirement, or no requirements"))
+    issues = [Violation(**item) for item in base["violations"]] + extra
+    status = "unresolved" if unresolved else "regression" if issues else "pass"
+    report = build_report(contract.contract_version, status, issues, mode="coverage-gate",
+                          redacted_values=tuple(canary.value for canary in contract.canaries))
+    report["coverage"] = base["coverage"]
+    report["coverage_gate"] = {"minimum_ratio": minimum_ratio, "fields": fields}
+    return _privacy_checked(contract, report)
+
+
+def coverage_diff(contract: Contract, baseline, candidate):
+    """Compare exact retained-field rates, with both population denominators visible."""
+    before = coverage_report(contract, baseline)
+    after = coverage_report(contract, candidate)
+    fields, issues = [], []
+    unresolved = before["status"] != "pass" or not contract.required_retained_fields
+    if before["status"] != "pass":
+        issues.append(Violation("TC900", "", "baseline does not satisfy the contract"))
+    else:
+        issues.extend(Violation(**item) for item in after["violations"])
+        for left, right in zip(before["coverage"]["required_fields"], after["coverage"]["required_fields"], strict=True):
+            delta = None
+            if not left["entities"] or not right["entities"]:
+                unresolved = True
+            else:
+                delta = Fraction(right["present"], right["entities"]) - Fraction(left["present"], left["entities"])
+                if delta < 0:
+                    issues.append(Violation("TC012", "", "required field coverage rate decreased", label=left["id"]))
+            fields.append({"id": left["id"], "scope": left["scope"],
+                           "baseline_present": left["present"], "baseline_entities": left["entities"],
+                           "candidate_present": right["present"], "candidate_entities": right["entities"],
+                           "rate_delta": str(delta) if delta is not None else None})
+    if unresolved:
+        issues.append(Violation("TC901", "", "coverage comparison has an invalid baseline, no requirements, or an empty population"))
+    report = build_report(contract.contract_version, "unresolved" if unresolved else "regression" if issues else "pass",
+                          issues, mode="coverage-diff", redacted_values=tuple(canary.value for canary in contract.canaries))
+    report["coverage_diff"] = {"fields": fields}
+    return _privacy_checked(contract, report)
+
+
+MAX_MATRIX_CHECKS = 10000
+
+
+def _retention_entities(payload):
+    for ri, resource in enumerate(payload["resourceSpans"]):
+        rp = f"/resourceSpans/{ri}"
+        yield "resource", rp + "/resource", resource.get("resource", {})
+        for si, scope in enumerate(resource["scopeSpans"]):
+            for pi, span in enumerate(scope["spans"]):
+                sp = f"{rp}/scopeSpans/{si}/spans/{pi}"
+                yield "span", sp, span
+                for ei, event in enumerate(span.get("events", [])):
+                    yield "event", f"{sp}/events/{ei}", event
+
+
+def retention_matrix(contract: Contract, payload):
+    """Locate missing required attributes without including keys or attribute values."""
+    report = coverage_report(contract, payload)
+    checks = sum(field["entities"] for field in report["coverage"]["required_fields"])
+    if checks > MAX_MATRIX_CHECKS:
+        raise InputError("retention matrix exceeds the 10000 entity-requirement check limit")
+    fields = [{"id": f"required-{index:04d}", "scope": field.scope, "missing_paths": []}
+              for index, field in enumerate(contract.required_retained_fields, 1)]
+    for scope, path, entity in _retention_entities(payload):
+        keys = {attribute["key"] for attribute in entity.get("attributes", [])}
+        for index, field in enumerate(contract.required_retained_fields):
+            if field.scope == scope and field.key not in keys:
+                fields[index]["missing_paths"].append(path)
+    report["mode"] = "retention-matrix"
+    report["retention_matrix"] = {"entity_requirement_checks": checks, "fields": fields}
+    return _privacy_checked(contract, report)

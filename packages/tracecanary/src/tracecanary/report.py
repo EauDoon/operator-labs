@@ -11,7 +11,7 @@ from tracecanary.canonical import canonical_json
 
 
 Status = Literal["pass", "regression", "unresolved"]
-ReportMode = Literal["validate", "check", "diff", "batch", "demo", "starter", "coverage"]
+ReportMode = Literal["validate", "check", "diff", "batch", "demo", "starter", "coverage", "inspect-contract", "coverage-gate", "coverage-diff", "retention-matrix"]
 
 
 class ReportSummary(TypedDict):
@@ -40,6 +40,10 @@ class Report(TypedDict):
     summary: ReportSummary
     violations: list[ViolationDict]
     coverage: NotRequired[dict[str, Any]]
+    inspection: NotRequired[dict[str, Any]]
+    coverage_gate: NotRequired[dict[str, Any]]
+    coverage_diff: NotRequired[dict[str, Any]]
+    retention_matrix: NotRequired[dict[str, Any]]
 
 
 class BatchItem(TypedDict):
@@ -54,6 +58,7 @@ class BatchReport(TypedDict):
     contract_version: str
     status: Status
     items: list[BatchItem]
+    coverage_summary: NotRequired[dict[str, Any]]
 
 
 @dataclass(frozen=True)
@@ -136,6 +141,19 @@ def render_json(report: Report | BatchReport) -> str:
 def render_human(report: Report) -> str:
     headline = f"TraceCanary: {report['status'].upper()} ({report['summary']['total']} finding(s))"
     lines = [headline]
+    if "retention_matrix" in report:
+        for field in report["retention_matrix"]["fields"]:
+            lines.append(f"{field['id']} ({field['scope']}): {len(field['missing_paths'])} missing entity field(s)")
+            lines.extend(f"  {path}" for path in field["missing_paths"])
+    if "coverage_diff" in report:
+        for field in report["coverage_diff"]["fields"]:
+            lines.append(f"{field['id']}: {field['baseline_present']}/{field['baseline_entities']} -> {field['candidate_present']}/{field['candidate_entities']}; rate delta {field['rate_delta']}")
+    if "coverage_gate" in report:
+        lines.append(f"Explicit minimum retained-field ratio: {report['coverage_gate']['minimum_ratio']}.")
+    if "inspection" in report:
+        inspection = report["inspection"]
+        lines.append(f"Contract checks: {inspection['canary_count']} canaries, {len(inspection['required_fields'])} retained fields.")
+        lines.append(f"Direct retention conflicts: {len(inspection['retention_conflicts'])}. No canary values or field keys are displayed.")
     for item in report["violations"]:
         detail = item["message"]
         if "label" in item or "category" in item:

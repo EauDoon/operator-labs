@@ -137,6 +137,38 @@ Licensed under [Apache-2.0](LICENSE).
 
 ## Transaction what-if analysis
 
+`corridorlab transaction-grid scenario.json --parameter-a deadline_hours --values-a
+1,2 --parameter-b volume_per_period --values-b 10,100 --format markdown` evaluates
+the explicit cross-product of two distinct transaction fields. It supports amount,
+deadline and volume, at most 64 values per axis and 512 route/cell rows. Every
+combination passes the existing transaction and route preconditions. Guardrail
+state is null without a declared objective. Routes and fixed recovery amounts do
+not scale implicitly when the send amount changes.
+
+`corridorlab break-even-check scenario.json --format markdown` re-evaluates
+sender costs at the floor and ceiling whole volumes around each positive
+continuous break-even point, clamped to at least one transaction. The cost delta
+is left route minus right route in sender currency. Equal sample volumes are
+reported honestly; parallel/nonpositive intersections keep their existing status.
+Derived samples must satisfy transaction bounds. This is a comparison, not a route selection.
+
+`corridorlab deadline-profile scenario.json --format markdown` shows exact
+successful-delivery and final-resolution cumulative probabilities at declared
+event times, zero, and the current deadline. Failure recovery contributes to
+resolution only. Values between event times are constant; no interpolation or
+forecast is implied. Reports are bounded to 512 rows.
+
+`corridorlab outcome-ledger scenario.json --format csv` breaks down each declared
+outcome's weighted recipient amount, failure loss, recovery, and resolution time.
+Contributions are unrounded Decimal values in explicitly labeled currencies and
+hours. Their totals reconcile to the existing model; fees and liquidity costs
+remain separate, so they are not counted twice in outcome losses.
+
+`corridorlab guardrail-headroom scenario.json --format markdown` reports the
+signed margin against each declared minimum probability or maximum tail-time
+guardrail. Zero meets the threshold; positive is headroom and negative is a
+shortfall. It requires an explicit objective and never infers missing guardrails.
+
 `corridorlab transaction-sweep scenario.json --parameter deadline_hours --values 1,2,8 --format markdown` varies `send_amount`, `deadline_hours`, or `volume_per_period` against embedded routes. Values use the same strict transaction validator and bounded row budget as other analyses. All route assumptions, including fixed recovery amounts, remain unchanged. Invalid combinations return exit 2.
 
 `corridorlab diff candidate.json --baseline baseline.json --format markdown` compares matching route IDs and lists added or removed routes. Deltas are candidate minus baseline. Currencies, precisions, and rounding must match. This is a descriptive comparison of all changed assumptions, with no inferred causal attribution or route recommendation. CSV contains matched-route metric deltas; JSON and Markdown also list route membership changes.

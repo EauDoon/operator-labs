@@ -41,10 +41,29 @@ jobs:
       - run: python -c "from pathlib import Path; import shutil; source=Path('.').resolve(); target=Path(r'${{ runner.temp }}') / 'tracecanary-source'; shutil.copytree(source, target, ignore=shutil.ignore_patterns('.git', 'build', '*.egg-info', '__pycache__', '*.pyc'))"
       - run: python -m pip install --disable-pip-version-check --no-deps "setuptools==83.0.0"
       - run: python -m pip wheel --no-deps --no-build-isolation --wheel-dir "${{ runner.temp }}/tracecanary-wheelhouse" "${{ runner.temp }}/tracecanary-source"
-      - run: python -m pip install --no-deps --force-reinstall "${{ runner.temp }}/tracecanary-wheelhouse/tracecanary-0.1.1-py3-none-any.whl"
+      - run: python -m pip install --no-deps --force-reinstall "${{ runner.temp }}/tracecanary-wheelhouse/tracecanary-0.2.0-py3-none-any.whl"
       - run: tracecanary check --contract "${{ runner.temp }}/tracecanary-source/fixtures/v1/contract.json" --input "${{ runner.temp }}/tracecanary-source/fixtures/v1/safe-export.json" --format json
         working-directory: ${{ runner.temp }}
       - run: python -c "import json, subprocess, sys; from pathlib import Path; root=Path(r'${{ runner.temp }}'); bad=root/'malformed-export.json'; bad.write_text(json.dumps({'spans':[]}), encoding='utf-8'); completed=subprocess.run(['tracecanary','check','--contract',str(root/'tracecanary-source'/'fixtures'/'v1'/'contract.json'),'--input',str(bad),'--format','json'], cwd=str(root)); sys.exit(0 if completed.returncode==2 else 1)"
         working-directory: ${{ runner.temp }}
       - run: tracecanary-gui --smoke-test
         working-directory: ${{ runner.temp }}
+      - name: Exercise installed coverage workflows
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        run: |
+          $contract = Join-Path $env:RUNNER_TEMP "tracecanary-source/fixtures/v1/contract.json"
+          $safe = Join-Path $env:RUNNER_TEMP "tracecanary-source/fixtures/v1/safe-export.json"
+          tracecanary inspect-contract $contract --format json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          tracecanary retention-matrix --contract $contract --input $safe --format json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          tracecanary coverage-gate --contract $contract --input $safe --minimum-ratio 1 --format json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          tracecanary coverage-diff --contract $contract --baseline $safe --candidate $safe --format json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $corpus = Join-Path $env:RUNNER_TEMP "tracecanary-coverage-corpus"
+          New-Item -ItemType Directory -Force -Path $corpus | Out-Null
+          Copy-Item -LiteralPath $safe -Destination (Join-Path $corpus "safe.json")
+          tracecanary coverage-batch --contract $contract --input-dir $corpus --format json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

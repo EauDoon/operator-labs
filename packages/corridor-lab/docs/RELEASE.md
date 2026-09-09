@@ -1,8 +1,8 @@
 # Corridor Lab release notes
 
-## v0.1.1 preparation
+## v0.2.0 preparation
 
-Version 0.1.1 pins the setuptools build backend and adds bounded batch portfolios, explicit two-parameter stress grids, and a Pareto frontier that keeps expected recipient amount and expected sender cost separate.
+Version 0.2.0 adds signed guardrail headroom, a weighted outcome ledger, deadline/resolution profiles, whole-volume break-even checks, and bounded transaction grids. Existing route evaluation and ranking semantics remain unchanged.
 
 The portable Windows GUI workflow is `.github/workflows/portable-windows.yml`.
 It builds the windowed `CorridorLab.pyw` launcher with pinned tools, writes a

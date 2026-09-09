@@ -26,7 +26,8 @@ from .scenario import load_scenario, parse_scenario
 from .sensitivity import run_sensitivity
 from .stress import run_stress_grid
 from .scenario_diff import diff_scenarios
-from .transaction_sweep import TRANSACTION_PARAMETERS, run_transaction_sweep
+from .transaction_sweep import TRANSACTION_PARAMETERS, run_transaction_sweep, run_transaction_grid
+from .analysis import guardrail_headroom, outcome_ledger, deadline_profile, break_even_check
 
 SCENARIO_HELP = "path to a fictional scenario JSON file"
 PARAMETER_HELP = "one of " + ", ".join(SENSITIVITY_PARAMETERS)
@@ -131,6 +132,18 @@ def build_parser() -> argparse.ArgumentParser:
     starter.add_argument("--output", required=True, help="new scenario JSON file, never overwritten")
     validate = commands.add_parser("validate", help="validate a synthetic scenario contract")
     _add_scenario_argument(validate)
+    headroom = commands.add_parser("guardrail-headroom", help="inspect margins against declared guardrails")
+    _add_scenario_argument(headroom)
+    _add_output_options(headroom)
+    ledger = commands.add_parser("outcome-ledger", help="inspect probability-weighted outcome contributions")
+    _add_scenario_argument(ledger)
+    _add_output_options(ledger)
+    profile = commands.add_parser("deadline-profile", help="show exact success and resolution probabilities over time")
+    _add_scenario_argument(profile)
+    _add_output_options(profile)
+    crossing = commands.add_parser("break-even-check", help="verify whole-volume costs near declared break-even points")
+    _add_scenario_argument(crossing)
+    _add_output_options(crossing)
 
     diff = commands.add_parser("diff", help="compare two fictional scenario evaluations")
     _add_scenario_argument(diff)
@@ -155,6 +168,12 @@ def build_parser() -> argparse.ArgumentParser:
     sweep.add_argument("--parameter", required=True, choices=TRANSACTION_PARAMETERS)
     sweep.add_argument("--values", required=True, help=VALUES_HELP)
     _add_output_options(sweep)
+    transaction_grid = commands.add_parser("transaction-grid", help="vary two transaction parameters together")
+    _add_scenario_argument(transaction_grid)
+    for axis in ("a", "b"):
+        transaction_grid.add_argument(f"--parameter-{axis}", required=True, choices=TRANSACTION_PARAMETERS)
+        transaction_grid.add_argument(f"--values-{axis}", required=True, help=VALUES_HELP)
+    _add_output_options(transaction_grid)
     stress = commands.add_parser("stress-grid", help="run an explicit bounded two-parameter stress grid")
     _add_scenario_argument(stress)
     stress.add_argument("--parameter-a", required=True, help=PARAMETER_HELP)
@@ -353,7 +372,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         scenario = load_scenario(_require_cli_text(args.scenario, "scenario"))
         report: dict[str, object]
-        if args.command == "diff":
+        if args.command == "guardrail-headroom":
+            report = guardrail_headroom(scenario)
+        elif args.command == "outcome-ledger":
+            report = outcome_ledger(scenario)
+        elif args.command == "deadline-profile":
+            report = deadline_profile(scenario)
+        elif args.command == "break-even-check":
+            report = break_even_check(scenario)
+        elif args.command == "diff":
             report = diff_scenarios(load_scenario(_require_cli_text(args.baseline, "--baseline")), scenario)
         elif args.command == "evaluate":
             report = evaluate_scenario(scenario)
@@ -367,6 +394,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         elif args.command == "transaction-sweep":
             report = run_transaction_sweep(scenario, args.parameter, _parse_values(args.values))
+        elif args.command == "transaction-grid":
+            report = run_transaction_grid(scenario, args.parameter_a, _parse_values(args.values_a),
+                                          args.parameter_b, _parse_values(args.values_b))
         elif args.command == "stress-grid":
             report = run_stress_grid(
                 scenario,

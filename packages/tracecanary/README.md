@@ -10,7 +10,7 @@ TraceCanary uses only the Python standard library at runtime. It has no network 
 
 ## Scope
 
-Supported in v0.1.1:
+Supported in v0.2.0:
 
 - OTLP/HTTP JSON traces with `resourceSpans`.
 - Exact synthetic-canary detection anywhere in a supported payload.
@@ -20,7 +20,7 @@ Supported in v0.1.1:
 - Stable JSON and human-readable reports.
 - Bounded directory checks with deterministic JSON, SARIF, and JUnit output.
 
-Not supported in v0.1.1:
+Not supported in v0.2.0:
 
 - Protobuf, logs, metrics, collector execution, or redaction.
 - Generic secret or PII discovery.
@@ -160,8 +160,36 @@ Apache-2.0. See [LICENSE](LICENSE).
 
 ## Inspect coverage
 
+`tracecanary coverage-gate --contract contract.json --input export.json
+--minimum-ratio 0.95 --format json` adds an explicit per-required-field entity
+coverage gate. Decimal thresholds from 0 to 1 (at most six places) use exact
+fraction comparisons. Sparse presence yields `TC011` and exit 1; zero populations
+or no retention requirements are unresolved (exit 2), even at threshold zero.
+Existing privacy findings still apply. The default checker remains unchanged.
+
+`tracecanary inspect-contract contract.json --format json` inventories effective
+limits and check counts without exposing canary values or field keys. Required
+fields use stable ordinal IDs. Direct conflicts between required retention and
+forbidden attribute keys/prefixes produce `TC010` and exit 1. This conservative
+inspection does not prove the absence of every possible contract contradiction.
+
 `tracecanary coverage --contract contract.json --input export.json --format json` runs the same privacy check and adds entity counts, attribute counts by scope, and required-field presence counts. Required IDs refer to the one-based order of `required_retained_fields` in the contract, without copying field keys into coverage metadata. Human output explains the counts. The existing checker requires presence somewhere in a scope; coverage reveals sparse presence across entities without changing that contract rule. Empty exports show zero counts, never implied coverage. Coverage is descriptive, not a completeness or compliance claim.
 
 SARIF findings now retain redacted JSON-pointer locations in result properties and percent-encode artifact URI path characters. JUnit failures and errors include stable finding codes and pointers; `--include-paths` populates each test case file attribute. XML-invalid filename controls are replaced. Default artifacts use anonymous item IDs and contain no file paths. All emitted text remains subject to the protected-value check.
 
 The desktop **Coverage** action uses the selected contract and input, preserves pass/regression/unresolved status, and shows the same value-free counts in Human and JSON views. Use **Save Report** for an explicit export. Missing selections give inline guidance; unreadable inputs show unresolved without disclosing input contents.
+
+### Compare population coverage
+
+`tracecanary coverage-diff --contract contract.json --baseline before.json --candidate after.json --format json`
+compares exact retained-field fractions and reports both sample denominators. A decrease is TC012 even when raw presence counts stay constant. Invalid baselines or empty required populations are unresolved. This opt-in command compares samples, not matched entity identities or causal effects; existing `diff` semantics remain unchanged.
+
+### Locate sparse retention
+
+`tracecanary retention-matrix --contract contract.json --input export.json --format json`
+shows missing entity locations by required-field ordinal and structural JSON pointer. It includes entities with absent attribute arrays, exposes no attribute keys or values, and rejects more than 10,000 entity-requirement checks instead of truncating. Matrix coverage is descriptive; use `coverage-gate` to enforce per-entity coverage.
+
+### Aggregate bounded batch coverage
+
+`tracecanary coverage-batch --contract contract.json --input-dir exports --format json`
+uses the same strict file, nesting, symlink and file-count bounds as `batch`. Each valid export includes normal privacy findings plus coverage. The aggregate sums presence counts and entity denominators, rather than averaging percentages. Invalid items are unresolved and explicitly excluded from aggregate denominators; an empty denominator has a null ratio. Counts describe the supplied files and may double-count repeated entities across exports. Paths remain opt-in. Human and JSON formats are supported; no production telemetry or collection is enabled.

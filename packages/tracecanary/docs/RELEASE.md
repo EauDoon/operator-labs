@@ -1,8 +1,8 @@
 # TraceCanary release notes
 
-## v0.1.1 preparation
+## v0.2.0 preparation
 
-The package version, pinned setuptools build backend, and deterministic batch report formats are the v0.1.1 release boundary. A release build must run from a clean checkout on Windows and Ubuntu with Python 3.11 or newer.
+Version 0.2.0 adds value-free contract inspection, exact coverage gates and comparisons, missing-retention matrices, and weighted batch coverage. Existing check and diff semantics remain unchanged. A release build must run from a clean checkout on Windows and Ubuntu with Python 3.11 or newer.
 
 The portable Windows GUI artifact is built by
 `.github/workflows/portable-windows.yml`. The workflow installs the exact
