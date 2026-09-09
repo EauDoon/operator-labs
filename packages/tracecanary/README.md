@@ -153,3 +153,7 @@ Apache-2.0. See [LICENSE](LICENSE).
 ## Explicit report files
 
 `validate`, `check`, `diff`, and `batch` accept `--output FILE`. Reports are fully rendered and privacy-checked before atomic UTF-8 replacement; stdout stays empty on successful file output. Outputs cannot alias inputs, and batch output must be outside the scanned directory. The parent directory must already exist. Exit codes retain their usual meaning, including regression reports written with exit 1.
+
+## Compare many exports to a baseline
+
+`tracecanary batch --contract contract.json --baseline baseline.json --input-dir candidates --format junit --output regression.xml` checks every candidate against one passing synthetic baseline. Baseline input is validated before candidates; a failing baseline returns unresolved. Each candidate retains privacy and retained-field checks, and malformed candidates do not hide other results. A batch containing any unresolved item returns 2; otherwise any regression returns 1. The same size, nesting, count, redaction, and path-opt-in rules apply.

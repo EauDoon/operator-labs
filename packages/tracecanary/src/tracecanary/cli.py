@@ -94,6 +94,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=_cli_path,
         help="directory of OTLP/HTTP JSON trace exports (bounded by contract limits.max_batch_files, default 256)",
     )
+    batch.add_argument("--baseline", type=_cli_path, help="compare every candidate with this passing synthetic baseline")
     batch.add_argument("--recursive", action="store_true", help="include *.json files in subdirectories")
     batch.add_argument("--include-paths", action="store_true", help="include input-relative POSIX paths in reports")
     batch.add_argument("--format", choices=("human", "json", "sarif", "junit"), default="json", help="report format (default: json)")
@@ -127,7 +128,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             _print(report, args.format, args.output)
             return _status_exit(report["status"])
         else:
-            batch_report = _run_batch(contract, args.input_dir, args.recursive, args.include_paths)
+            baseline = _load_trace(args.baseline, contract) if args.baseline is not None else None
+            batch_report = _run_batch(contract, args.input_dir, args.recursive, args.include_paths, baseline)
             _print_batch(
                 batch_report,
                 args.format,
@@ -155,7 +157,9 @@ def _load_trace(path: Path, contract: Contract) -> dict[str, Any]:
     return payload
 
 
-def _run_batch(contract: Contract, input_dir: Path, recursive: bool, include_paths: bool) -> BatchReport:
+def _run_batch(contract: Contract, input_dir: Path, recursive: bool, include_paths: bool, baseline: dict[str, Any] | None = None) -> BatchReport:
+    if baseline is not None and check_trace(contract, baseline)["status"] != "pass":
+        raise InputError("batch baseline does not satisfy the contract")
     try:
         if not input_dir.is_dir():
             raise InputError("--input-dir must be a directory")
@@ -186,7 +190,8 @@ def _run_batch(contract: Contract, input_dir: Path, recursive: bool, include_pat
         item_id = f"item-{index:04d}"
         relative = path.relative_to(root).as_posix()
         try:
-            report = check_trace(contract, _load_trace(path, contract), mode="batch")
+            payload = _load_trace(path, contract)
+            report = check_trace(contract, payload, mode="batch") if baseline is None else diff_traces(contract, baseline, payload)
         except UnsafeReportError:
             raise
         except (InputError, OtlpError, ValueError):
