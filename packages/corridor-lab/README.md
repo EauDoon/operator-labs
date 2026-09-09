@@ -137,6 +137,11 @@ Licensed under [Apache-2.0](LICENSE).
 
 ## Transaction what-if analysis
 
+`corridorlab guardrail-headroom scenario.json --format markdown` reports the
+signed margin against each declared minimum probability or maximum tail-time
+guardrail. Zero meets the threshold; positive is headroom and negative is a
+shortfall. It requires an explicit objective and never infers missing guardrails.
+
 `corridorlab transaction-sweep scenario.json --parameter deadline_hours --values 1,2,8 --format markdown` varies `send_amount`, `deadline_hours`, or `volume_per_period` against embedded routes. Values use the same strict transaction validator and bounded row budget as other analyses. All route assumptions, including fixed recovery amounts, remain unchanged. Invalid combinations return exit 2.
 
 `corridorlab diff candidate.json --baseline baseline.json --format markdown` compares matching route IDs and lists added or removed routes. Deltas are candidate minus baseline. Currencies, precisions, and rounding must match. This is a descriptive comparison of all changed assumptions, with no inferred causal attribution or route recommendation. CSV contains matched-route metric deltas; JSON and Markdown also list route membership changes.

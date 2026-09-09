@@ -27,6 +27,7 @@ from .sensitivity import run_sensitivity
 from .stress import run_stress_grid
 from .scenario_diff import diff_scenarios
 from .transaction_sweep import TRANSACTION_PARAMETERS, run_transaction_sweep
+from .analysis import guardrail_headroom
 
 SCENARIO_HELP = "path to a fictional scenario JSON file"
 PARAMETER_HELP = "one of " + ", ".join(SENSITIVITY_PARAMETERS)
@@ -131,6 +132,9 @@ def build_parser() -> argparse.ArgumentParser:
     starter.add_argument("--output", required=True, help="new scenario JSON file, never overwritten")
     validate = commands.add_parser("validate", help="validate a synthetic scenario contract")
     _add_scenario_argument(validate)
+    headroom = commands.add_parser("guardrail-headroom", help="inspect margins against declared guardrails")
+    _add_scenario_argument(headroom)
+    _add_output_options(headroom)
 
     diff = commands.add_parser("diff", help="compare two fictional scenario evaluations")
     _add_scenario_argument(diff)
@@ -353,7 +357,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         scenario = load_scenario(_require_cli_text(args.scenario, "scenario"))
         report: dict[str, object]
-        if args.command == "diff":
+        if args.command == "guardrail-headroom":
+            report = guardrail_headroom(scenario)
+        elif args.command == "diff":
             report = diff_scenarios(load_scenario(_require_cli_text(args.baseline, "--baseline")), scenario)
         elif args.command == "evaluate":
             report = evaluate_scenario(scenario)
