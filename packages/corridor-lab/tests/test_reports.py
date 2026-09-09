@@ -4,6 +4,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from helpers import route, scenario
+
 from corridor_lab.canonical import atomic_write_text
 from corridor_lab.comparison import evaluate_scenario
 from corridor_lab.report import render_report

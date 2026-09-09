@@ -1,6 +1,7 @@
 import unittest
 
 from helpers import route, scenario
+
 from corridor_lab.comparison import compare_routes
 from corridor_lab.model import evaluate_route
 from corridor_lab.route import parse_route

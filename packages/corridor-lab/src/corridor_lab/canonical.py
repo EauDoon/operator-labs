@@ -7,10 +7,9 @@ import os
 import re
 import tempfile
 from contextlib import AbstractContextManager
-from decimal import Context, Decimal, DecimalException, ROUND_HALF_EVEN, localcontext
+from decimal import ROUND_HALF_EVEN, Context, Decimal, DecimalException, localcontext
 from pathlib import Path
 from typing import Any
-
 
 MAX_INPUT_BYTES = 1_000_000
 MAX_NESTING = 64

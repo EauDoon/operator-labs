@@ -8,20 +8,19 @@ from pathlib import Path
 from typing import Any
 
 from .canonical import (
+    MAX_ROUTES,
     InputError,
     load_json,
     parse_json_text,
     require_bool,
     require_decimal,
-    require_integer,
     require_identifier,
+    require_integer,
     require_keys,
     require_object,
     require_string,
-    MAX_ROUTES,
 )
 from .route import Route, parse_route
-
 
 SCENARIO_CONTRACT_VERSION = "corridor-lab.scenario/v1"
 ROUNDING_NAMES = {"ROUND_HALF_UP", "ROUND_HALF_EVEN", "ROUND_DOWN", "ROUND_UP"}
@@ -85,7 +84,7 @@ def _parse_transaction(value: Any) -> Transaction:
         receive_currency=require_identifier(item["receive_currency"], f"{path}.receive_currency", maximum=16),
         receive_precision=require_integer(item["receive_precision"], f"{path}.receive_precision", minimum=0, maximum=6),
         rounding=rounding,
-        deadline_hours=require_decimal(item["deadline_hours"], f"{path}.deadline_hours", minimum=Decimal("0")),
+        deadline_hours=require_decimal(item["deadline_hours"], f"{path}.deadline_hours", minimum=Decimal(0)),
         volume_per_period=require_decimal(item["volume_per_period"], f"{path}.volume_per_period", positive=True),
     )
 
@@ -112,14 +111,14 @@ def _parse_objective(value: Any) -> Objective:
         minimum = require_decimal(
             guardrails["minimum_probability_by_deadline"],
             f"{path}.guardrails.minimum_probability_by_deadline",
-            minimum=Decimal("0"),
-            maximum=Decimal("1"),
+            minimum=Decimal(0),
+            maximum=Decimal(1),
         )
     if "maximum_tail_hours" in guardrails:
         maximum = require_decimal(
             guardrails["maximum_tail_hours"],
             f"{path}.guardrails.maximum_tail_hours",
-            minimum=Decimal("0"),
+            minimum=Decimal(0),
         )
     return Objective(metric, minimum, maximum)
 

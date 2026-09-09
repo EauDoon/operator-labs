@@ -2,6 +2,7 @@ import unittest
 from decimal import Decimal
 
 from helpers import route, scenario
+
 from corridor_lab.canonical import InputError
 from corridor_lab.report import render_report
 from corridor_lab.scenario import parse_scenario
@@ -12,16 +13,16 @@ from corridor_lab.stress import run_stress_grid
 class SensitivityTests(unittest.TestCase):
     def test_higher_spread_cannot_improve_recipient_amount(self):
         parsed = parse_scenario(scenario(routes=[route()]))
-        report = run_sensitivity(parsed, "fx_spread_bps", [Decimal("0"), Decimal("100")])
+        report = run_sensitivity(parsed, "fx_spread_bps", [Decimal(0), Decimal(100)])
         self.assertEqual(report["rows"][0]["expected_recipient_amount"], "156.80")
         self.assertEqual(report["rows"][1]["expected_recipient_amount"], "155.23")
 
     def test_unsupported_parameter_fails(self):
         parsed = parse_scenario(scenario(routes=[route()]))
         with self.assertRaisesRegex(Exception, "choose from fx_rate, fixed_fee_send, percent_fee_bps, fx_spread_bps"):
-            run_sensitivity(parsed, "liquidity.prefunding_amount_send", [Decimal("1")])
+            run_sensitivity(parsed, "liquidity.prefunding_amount_send", [Decimal(1)])
         with self.assertRaisesRegex(Exception, "parameter must not be empty"):
-            run_sensitivity(parsed, "  ", [Decimal("1")])
+            run_sensitivity(parsed, "  ", [Decimal(1)])
 
     def test_two_parameter_grid_is_bounded_and_deterministic(self):
         parsed = parse_scenario(scenario(routes=[route()]))
@@ -30,7 +31,7 @@ class SensitivityTests(unittest.TestCase):
             "fx_rate",
             [Decimal("1.9"), Decimal("2.0")],
             "fx_spread_bps",
-            [Decimal("0"), Decimal("100")],
+            [Decimal(0), Decimal(100)],
         )
         self.assertEqual(len(report["rows"]), 4)
         self.assertEqual(report["rows"][0]["parameter_a"], "fx_rate")
@@ -61,14 +62,14 @@ class SensitivityTests(unittest.TestCase):
     def test_duplicate_sensitivity_and_stress_values_are_rejected(self):
         parsed = parse_scenario(scenario(routes=[route()]))
         with self.assertRaisesRegex(InputError, "sensitivity must not contain duplicate values"):
-            run_sensitivity(parsed, "fx_spread_bps", [Decimal("10"), Decimal("10.0")])
+            run_sensitivity(parsed, "fx_spread_bps", [Decimal(10), Decimal("10.0")])
         with self.assertRaisesRegex(InputError, "stress grid parameter-a must not contain duplicate values"):
             run_stress_grid(
                 parsed,
                 "fx_rate",
                 [Decimal("1.7"), Decimal("1.70")],
                 "fx_spread_bps",
-                [Decimal("25"), Decimal("50")],
+                [Decimal(25), Decimal(50)],
             )
         with self.assertRaisesRegex(InputError, "stress grid parameter-b must not contain duplicate values"):
             run_stress_grid(
@@ -76,5 +77,5 @@ class SensitivityTests(unittest.TestCase):
                 "fx_rate",
                 [Decimal("1.7"), Decimal("1.8")],
                 "fx_spread_bps",
-                [Decimal("25"), Decimal("25")],
+                [Decimal(25), Decimal(25)],
             )

@@ -6,9 +6,9 @@ import argparse
 import os
 import stat as stat_module
 import sys
+from collections.abc import Mapping, Sequence
 from decimal import Decimal, DecimalException
 from pathlib import Path
-from typing import Mapping, Sequence
 
 from .canonical import (
     MAX_BATCH_SCENARIOS,
