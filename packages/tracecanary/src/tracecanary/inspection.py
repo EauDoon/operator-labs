@@ -61,3 +61,33 @@ def coverage_gate(contract: Contract, payload, minimum_ratio: str):
     report["coverage"] = base["coverage"]
     report["coverage_gate"] = {"minimum_ratio": minimum_ratio, "fields": fields}
     return _privacy_checked(contract, report)
+
+
+def coverage_diff(contract: Contract, baseline, candidate):
+    """Compare exact retained-field rates, with both population denominators visible."""
+    before = coverage_report(contract, baseline)
+    after = coverage_report(contract, candidate)
+    fields, issues = [], []
+    unresolved = before["status"] != "pass" or not contract.required_retained_fields
+    if before["status"] != "pass":
+        issues.append(Violation("TC900", "", "baseline does not satisfy the contract"))
+    else:
+        issues.extend(Violation(**item) for item in after["violations"])
+        for left, right in zip(before["coverage"]["required_fields"], after["coverage"]["required_fields"], strict=True):
+            delta = None
+            if not left["entities"] or not right["entities"]:
+                unresolved = True
+            else:
+                delta = Fraction(right["present"], right["entities"]) - Fraction(left["present"], left["entities"])
+                if delta < 0:
+                    issues.append(Violation("TC012", "", "required field coverage rate decreased", label=left["id"]))
+            fields.append({"id": left["id"], "scope": left["scope"],
+                           "baseline_present": left["present"], "baseline_entities": left["entities"],
+                           "candidate_present": right["present"], "candidate_entities": right["entities"],
+                           "rate_delta": str(delta) if delta is not None else None})
+    if unresolved:
+        issues.append(Violation("TC901", "", "coverage comparison has an invalid baseline, no requirements, or an empty population"))
+    report = build_report(contract.contract_version, "unresolved" if unresolved else "regression" if issues else "pass",
+                          issues, mode="coverage-diff", redacted_values=tuple(canary.value for canary in contract.canaries))
+    report["coverage_diff"] = {"fields": fields}
+    return _privacy_checked(contract, report)

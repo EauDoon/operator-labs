@@ -12,7 +12,7 @@ from tracecanary.canonical import InputError, load_json
 from tracecanary.checker import check_trace
 from tracecanary.comparison import diff_traces
 from tracecanary.coverage import coverage_report
-from tracecanary.inspection import inspect_contract, coverage_gate
+from tracecanary.inspection import inspect_contract, coverage_gate, coverage_diff
 from tracecanary.contract import Contract, ContractError, load_contract
 from tracecanary.fixture import write_bundle
 from tracecanary.output import protect_inputs, write_report
@@ -95,6 +95,11 @@ def build_parser() -> argparse.ArgumentParser:
     gate.add_argument("--input", required=True, type=_cli_path)
     gate.add_argument("--minimum-ratio", required=True)
     gate.add_argument("--format", choices=("human", "json"), default="human")
+    rate_diff = commands.add_parser("coverage-diff", help="compare exact retained-field rates across populations")
+    rate_diff.add_argument("--contract", required=True, type=_cli_path)
+    rate_diff.add_argument("--baseline", required=True, type=_cli_path)
+    rate_diff.add_argument("--candidate", required=True, type=_cli_path)
+    rate_diff.add_argument("--format", choices=("human", "json"), default="human")
     diff = commands.add_parser("diff", help="compare a baseline and a candidate OTLP trace export")
     diff.add_argument("--contract", required=True, type=_cli_path, help="TraceCanary contract JSON file")
     diff.add_argument("--baseline", required=True, type=_cli_path, help="baseline OTLP/HTTP JSON trace export")
@@ -112,7 +117,7 @@ def build_parser() -> argparse.ArgumentParser:
     batch.add_argument("--recursive", action="store_true", help="include *.json files in subdirectories")
     batch.add_argument("--include-paths", action="store_true", help="include input-relative POSIX paths in reports")
     batch.add_argument("--format", choices=("human", "json", "sarif", "junit"), default="json", help="report format (default: json)")
-    for command in (validate, check, diff, batch, coverage, inspect, gate):
+    for command in (validate, check, diff, batch, coverage, inspect, gate, rate_diff):
         command.add_argument("--output", type=_cli_path, help="write a UTF-8 report atomically; cannot replace inputs")
     fixture = commands.add_parser("fixture", help="write synthetic fixtures")
     fixture_commands = fixture.add_subparsers(dest="fixture_command", required=True, parser_class=_ArgumentParser)
@@ -143,6 +148,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             report = coverage_gate(contract, _load_trace(args.input, contract), args.minimum_ratio)
         elif args.command == "check":
             report = check_trace(contract, _load_trace(args.input, contract), mode="check")
+        elif args.command == "coverage-diff":
+            report = coverage_diff(contract, _load_trace(args.baseline, contract), _load_trace(args.candidate, contract))
         elif args.command == "diff":
             report = diff_traces(contract, _load_trace(args.baseline, contract), _load_trace(args.candidate, contract))
             _print(report, args.format, args.output)

@@ -51,3 +51,30 @@ class CoverageGateTests(unittest.TestCase):
         for threshold in ("NaN", "1.1", "-0.1", "1e-10", "0.1234567", 0.5):
             with self.assertRaises(InputError):
                 coverage_gate(contract, bundle()["safe-export.json"], threshold)
+
+
+class CoverageDiffTests(unittest.TestCase):
+    def test_rate_drop_despite_unchanged_raw_count(self):
+        from tracecanary.inspection import coverage_diff
+        from tracecanary.comparison import diff_traces
+        fixtures = bundle()
+        before = fixtures["safe-export.json"]
+        after = copy.deepcopy(before)
+        span = copy.deepcopy(after["resourceSpans"][0]["scopeSpans"][0]["spans"][0])
+        span["attributes"] = []
+        after["resourceSpans"][0]["scopeSpans"][0]["spans"].append(span)
+        contract = parse_contract(fixtures["contract.json"])
+        self.assertEqual(diff_traces(contract, before, after)["status"], "pass")
+        report = coverage_diff(contract, before, after)
+        self.assertEqual(report["status"], "regression")
+        self.assertEqual(report["coverage_diff"]["fields"][1]["rate_delta"], "-1/2")
+        after["resourceSpans"][0]["scopeSpans"][0]["spans"][1]["attributes"] = copy.deepcopy(before["resourceSpans"][0]["scopeSpans"][0]["spans"][0]["attributes"])
+        self.assertEqual(coverage_diff(contract, before, after)["status"], "pass")
+
+    def test_empty_and_invalid_baseline_are_unresolved(self):
+        from tracecanary.inspection import coverage_diff
+        fixtures = bundle()
+        contract = parse_contract(fixtures["contract.json"])
+        empty = {"resourceSpans": []}
+        self.assertEqual(coverage_diff(contract, empty, fixtures["safe-export.json"])["status"], "unresolved")
+        self.assertEqual(coverage_diff(contract, fixtures["safe-export.json"], empty)["status"], "unresolved")

@@ -178,3 +178,8 @@ inspection does not prove the absence of every possible contract contradiction.
 SARIF findings now retain redacted JSON-pointer locations in result properties and percent-encode artifact URI path characters. JUnit failures and errors include stable finding codes and pointers; `--include-paths` populates each test case file attribute. XML-invalid filename controls are replaced. Default artifacts use anonymous item IDs and contain no file paths. All emitted text remains subject to the protected-value check.
 
 The desktop **Coverage** action uses the selected contract and input, preserves pass/regression/unresolved status, and shows the same value-free counts in Human and JSON views. Use **Save Report** for an explicit export. Missing selections give inline guidance; unreadable inputs show unresolved without disclosing input contents.
+
+### Compare population coverage
+
+`tracecanary coverage-diff --contract contract.json --baseline before.json --candidate after.json --format json`
+compares exact retained-field fractions and reports both sample denominators. A decrease is TC012 even when raw presence counts stay constant. Invalid baselines or empty required populations are unresolved. This opt-in command compares samples, not matched entity identities or causal effects; existing `diff` semantics remain unchanged.
