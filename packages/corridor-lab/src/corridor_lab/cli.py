@@ -25,6 +25,8 @@ from .route import SENSITIVITY_PARAMETERS, Route, load_route, load_route_folder
 from .scenario import load_scenario, parse_scenario
 from .sensitivity import run_sensitivity
 from .stress import run_stress_grid
+from .scenario_diff import diff_scenarios
+from .transaction_sweep import TRANSACTION_PARAMETERS, run_transaction_sweep
 
 SCENARIO_HELP = "path to a fictional scenario JSON file"
 PARAMETER_HELP = "one of " + ", ".join(SENSITIVITY_PARAMETERS)
@@ -125,9 +127,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="corridorlab", description="Compare fictional payment route scenarios.")
     commands = parser.add_subparsers(dest="command", required=True)
 
+    starter = commands.add_parser("init", help="create a fictional scenario at a new file path")
+    starter.add_argument("--output", required=True, help="new scenario JSON file, never overwritten")
     validate = commands.add_parser("validate", help="validate a synthetic scenario contract")
     _add_scenario_argument(validate)
 
+    diff = commands.add_parser("diff", help="compare two fictional scenario evaluations")
+    _add_scenario_argument(diff)
+    diff.add_argument("--baseline", required=True, help="baseline fictional scenario JSON")
+    _add_output_options(diff)
     evaluate = commands.add_parser("evaluate", help="evaluate routes embedded in a scenario")
     _add_scenario_argument(evaluate)
     _add_output_options(evaluate)
@@ -142,6 +150,11 @@ def build_parser() -> argparse.ArgumentParser:
     sensitivity.add_argument("--parameter", required=True, help=PARAMETER_HELP)
     sensitivity.add_argument("--values", required=True, help=VALUES_HELP)
     _add_output_options(sensitivity)
+    sweep = commands.add_parser("transaction-sweep", help="vary a declared amount, deadline, or volume")
+    _add_scenario_argument(sweep)
+    sweep.add_argument("--parameter", required=True, choices=TRANSACTION_PARAMETERS)
+    sweep.add_argument("--values", required=True, help=VALUES_HELP)
+    _add_output_options(sweep)
     stress = commands.add_parser("stress-grid", help="run an explicit bounded two-parameter stress grid")
     _add_scenario_argument(stress)
     stress.add_argument("--parameter-a", required=True, help=PARAMETER_HELP)
@@ -197,6 +210,22 @@ def _parse_values(raw: str, flag: str = "--values") -> list[Decimal]:
     if not all(chunk.strip() for chunk in chunks):
         raise InputError(f"{flag} must be a comma-separated list of decimals")
     return require_decimal_values([chunk.strip() for chunk in chunks], flag)
+
+
+def _protect_report_inputs(args: argparse.Namespace) -> None:
+    if not getattr(args, "output", None):
+        return
+    target = Path(_require_cli_text(args.output, "--output"))
+    resolved = target.resolve()
+    for name in ("scenario", "baseline", "routes", "input_dir"):
+        raw = getattr(args, name, None)
+        if raw is None:
+            continue
+        source = Path(raw)
+        if resolved == source.resolve() or (target.exists() and source.exists() and os.path.samefile(target, source)):
+            raise InputError("report output must not replace an input")
+        if source.is_dir() and resolved.is_relative_to(source.resolve()):
+            raise InputError("report output must be outside input directories")
 
 
 def _emit(text: str, output: str | None) -> None:
@@ -300,10 +329,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
+        if args.command == "init":
+            from .starter import write_starter
+            write_starter(Path(_require_cli_text(args.output, "--output")))
+            sys.stdout.write("fictional scenario created\n")
+            return 0
         if args.command == "validate":
             load_scenario(_require_cli_text(args.scenario, "scenario"))
             sys.stdout.write("valid\n")
             return 0
+        _protect_report_inputs(args)
         output_format = resolve_report_format(
             getattr(args, "format", None),
             getattr(args, "output", None),
@@ -318,7 +353,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         scenario = load_scenario(_require_cli_text(args.scenario, "scenario"))
         report: dict[str, object]
-        if args.command == "evaluate":
+        if args.command == "diff":
+            report = diff_scenarios(load_scenario(_require_cli_text(args.baseline, "--baseline")), scenario)
+        elif args.command == "evaluate":
             report = evaluate_scenario(scenario)
         elif args.command == "compare":
             report = compare_routes(scenario.transaction, _load_routes_argument(args.routes), scenario.objective, scenario.scenario_id)
@@ -328,6 +365,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 _require_cli_text(args.parameter, "--parameter"),
                 _parse_values(args.values, "--values"),
             )
+        elif args.command == "transaction-sweep":
+            report = run_transaction_sweep(scenario, args.parameter, _parse_values(args.values))
         elif args.command == "stress-grid":
             report = run_stress_grid(
                 scenario,

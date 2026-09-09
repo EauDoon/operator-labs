@@ -140,6 +140,7 @@ class TraceCanaryWindow:
         controls.grid(row=6, column=0, columnspan=3, sticky="w", pady=(10, 8))
         self._ttk.Button(controls, text="Validate", command=self._validate).grid(row=0, column=0, padx=(0, 6))
         self._ttk.Button(controls, text="Check", command=self._check).grid(row=0, column=1, padx=(0, 6))
+        self._ttk.Button(controls, text="Coverage", command=self._coverage).grid(row=1, column=1, padx=(0, 6), pady=(6, 0))
         self._ttk.Button(controls, text="Diff", command=self._diff).grid(row=0, column=2, padx=(0, 6))
         self._ttk.Button(controls, text="Run Built-in Demo", command=self._demo).grid(row=0, column=3)
         self._ttk.Button(controls, text="Create Synthetic Starter Files", command=self._create_starter).grid(row=0, column=4, padx=(6, 0))
@@ -176,6 +177,9 @@ class TraceCanaryWindow:
 
     def _check(self) -> None:
         self._apply(self._controller.check(self._contract.get(), self._input.get()))
+
+    def _coverage(self) -> None:
+        self._apply(self._controller.coverage(self._contract.get(), self._input.get()))
 
     def _diff(self) -> None:
         self._apply(self._controller.diff(self._contract.get(), self._baseline.get(), self._candidate.get()))

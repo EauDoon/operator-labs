@@ -149,3 +149,19 @@ The GitHub Actions workflow runs the suite on Windows and Linux, installs the lo
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
+
+## Explicit report files
+
+`validate`, `check`, `diff`, and `batch` accept `--output FILE`. Reports are fully rendered and privacy-checked before atomic UTF-8 replacement; stdout stays empty on successful file output. Outputs cannot alias inputs, and batch output must be outside the scanned directory. The parent directory must already exist. Exit codes retain their usual meaning, including regression reports written with exit 1.
+
+## Compare many exports to a baseline
+
+`tracecanary batch --contract contract.json --baseline baseline.json --input-dir candidates --format junit --output regression.xml` checks every candidate against one passing synthetic baseline. Baseline input is validated before candidates; a failing baseline returns unresolved. Each candidate retains privacy and retained-field checks, and malformed candidates do not hide other results. A batch containing any unresolved item returns 2; otherwise any regression returns 1. The same size, nesting, count, redaction, and path-opt-in rules apply.
+
+## Inspect coverage
+
+`tracecanary coverage --contract contract.json --input export.json --format json` runs the same privacy check and adds entity counts, attribute counts by scope, and required-field presence counts. Required IDs refer to the one-based order of `required_retained_fields` in the contract, without copying field keys into coverage metadata. Human output explains the counts. The existing checker requires presence somewhere in a scope; coverage reveals sparse presence across entities without changing that contract rule. Empty exports show zero counts, never implied coverage. Coverage is descriptive, not a completeness or compliance claim.
+
+SARIF findings now retain redacted JSON-pointer locations in result properties and percent-encode artifact URI path characters. JUnit failures and errors include stable finding codes and pointers; `--include-paths` populates each test case file attribute. XML-invalid filename controls are replaced. Default artifacts use anonymous item IDs and contain no file paths. All emitted text remains subject to the protected-value check.
+
+The desktop **Coverage** action uses the selected contract and input, preserves pass/regression/unresolved status, and shows the same value-free counts in Human and JSON views. Use **Save Report** for an explicit export. Missing selections give inline guidance; unreadable inputs show unresolved without disclosing input contents.
