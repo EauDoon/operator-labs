@@ -11,7 +11,7 @@ from tracecanary.canonical import canonical_json
 
 
 Status = Literal["pass", "regression", "unresolved"]
-ReportMode = Literal["validate", "check", "diff", "batch", "demo", "starter", "coverage"]
+ReportMode = Literal["validate", "check", "diff", "batch", "demo", "starter", "coverage", "inspect-contract"]
 
 
 class ReportSummary(TypedDict):
@@ -40,6 +40,7 @@ class Report(TypedDict):
     summary: ReportSummary
     violations: list[ViolationDict]
     coverage: NotRequired[dict[str, Any]]
+    inspection: NotRequired[dict[str, Any]]
 
 
 class BatchItem(TypedDict):
@@ -136,6 +137,10 @@ def render_json(report: Report | BatchReport) -> str:
 def render_human(report: Report) -> str:
     headline = f"TraceCanary: {report['status'].upper()} ({report['summary']['total']} finding(s))"
     lines = [headline]
+    if "inspection" in report:
+        inspection = report["inspection"]
+        lines.append(f"Contract checks: {inspection['canary_count']} canaries, {len(inspection['required_fields'])} retained fields.")
+        lines.append(f"Direct retention conflicts: {len(inspection['retention_conflicts'])}. No canary values or field keys are displayed.")
     for item in report["violations"]:
         detail = item["message"]
         if "label" in item or "category" in item:

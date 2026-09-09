@@ -160,6 +160,12 @@ Apache-2.0. See [LICENSE](LICENSE).
 
 ## Inspect coverage
 
+`tracecanary inspect-contract contract.json --format json` inventories effective
+limits and check counts without exposing canary values or field keys. Required
+fields use stable ordinal IDs. Direct conflicts between required retention and
+forbidden attribute keys/prefixes produce `TC010` and exit 1. This conservative
+inspection does not prove the absence of every possible contract contradiction.
+
 `tracecanary coverage --contract contract.json --input export.json --format json` runs the same privacy check and adds entity counts, attribute counts by scope, and required-field presence counts. Required IDs refer to the one-based order of `required_retained_fields` in the contract, without copying field keys into coverage metadata. Human output explains the counts. The existing checker requires presence somewhere in a scope; coverage reveals sparse presence across entities without changing that contract rule. Empty exports show zero counts, never implied coverage. Coverage is descriptive, not a completeness or compliance claim.
 
 SARIF findings now retain redacted JSON-pointer locations in result properties and percent-encode artifact URI path characters. JUnit failures and errors include stable finding codes and pointers; `--include-paths` populates each test case file attribute. XML-invalid filename controls are replaced. Default artifacts use anonymous item IDs and contain no file paths. All emitted text remains subject to the protected-value check.
