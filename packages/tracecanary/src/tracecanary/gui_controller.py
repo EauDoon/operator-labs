@@ -10,6 +10,7 @@ from typing import Any
 from tracecanary.canonical import InputError, load_json
 from tracecanary.checker import check_trace
 from tracecanary.comparison import diff_traces
+from tracecanary.coverage import coverage_report
 from tracecanary.contract import Contract, ContractError, load_contract, parse_contract
 from tracecanary.fixture import bundle, write_bundle
 from tracecanary.otlp import OtlpError, validate_trace
@@ -67,6 +68,20 @@ class TraceCanaryController:
         if guidance is not None:
             return guidance
         return self._run("check", lambda: self._check(Path(contract_path), Path(input_path)))
+
+    def coverage(self, contract_path: str | Path, input_path: str | Path) -> GuiResult:
+        guidance = self._require(
+            "coverage",
+            (contract_path, GUI001, "Select a contract JSON file before inspecting coverage."),
+            (input_path, GUI002, "Select an OTLP trace JSON input before inspecting coverage."),
+        )
+        if guidance is not None:
+            return guidance
+        return self._run("coverage", lambda: self._coverage(Path(contract_path), Path(input_path)))
+
+    def _coverage(self, contract_path: Path, input_path: Path) -> Report:
+        contract = load_contract(contract_path)
+        return coverage_report(contract, self._load_trace(input_path, contract))
 
     def diff(self, contract_path: str | Path, baseline_path: str | Path, candidate_path: str | Path) -> GuiResult:
         guidance = self._require(
