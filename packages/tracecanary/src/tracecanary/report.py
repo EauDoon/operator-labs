@@ -10,7 +10,7 @@ from tracecanary.canonical import canonical_json
 
 
 Status = Literal["pass", "regression", "unresolved"]
-ReportMode = Literal["validate", "check", "diff", "batch", "demo", "starter"]
+ReportMode = Literal["validate", "check", "diff", "batch", "demo", "starter", "coverage"]
 
 
 class ReportSummary(TypedDict):
@@ -38,6 +38,7 @@ class Report(TypedDict):
     status: Status
     summary: ReportSummary
     violations: list[ViolationDict]
+    coverage: NotRequired[dict[str, Any]]
 
 
 class BatchItem(TypedDict):
@@ -142,6 +143,13 @@ def render_human(report: Report) -> str:
             detail += f" [key={item.get('key', '')}; scope={item.get('scope', '')}]"
         location = f" at {item['path']}" if item["path"] else ""
         lines.append(f"- {item['code']} {detail}{location}")
+    if "coverage" in report:
+        coverage = report["coverage"]
+        lines.append("Coverage counts describe this export only; a passing check is not proof of complete telemetry.")
+        for scope, count in coverage["entities"].items():
+            lines.append(f"- {scope}: {count} entities, {coverage['attributes'][scope]} attributes")
+        for field in coverage["required_fields"]:
+            lines.append(f"- {field['id']} ({field['scope']}): present on {field['present']} of {field['entities']} entities")
     return "\n".join(lines) + "\n"
 
 

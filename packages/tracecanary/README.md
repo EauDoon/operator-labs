@@ -157,3 +157,7 @@ Apache-2.0. See [LICENSE](LICENSE).
 ## Compare many exports to a baseline
 
 `tracecanary batch --contract contract.json --baseline baseline.json --input-dir candidates --format junit --output regression.xml` checks every candidate against one passing synthetic baseline. Baseline input is validated before candidates; a failing baseline returns unresolved. Each candidate retains privacy and retained-field checks, and malformed candidates do not hide other results. A batch containing any unresolved item returns 2; otherwise any regression returns 1. The same size, nesting, count, redaction, and path-opt-in rules apply.
+
+## Inspect coverage
+
+`tracecanary coverage --contract contract.json --input export.json --format json` runs the same privacy check and adds entity counts, attribute counts by scope, and required-field presence counts. Required IDs refer to the one-based order of `required_retained_fields` in the contract, without copying field keys into coverage metadata. Human output explains the counts. The existing checker requires presence somewhere in a scope; coverage reveals sparse presence across entities without changing that contract rule. Empty exports show zero counts, never implied coverage. Coverage is descriptive, not a completeness or compliance claim.

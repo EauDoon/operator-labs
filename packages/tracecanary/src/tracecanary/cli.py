@@ -11,6 +11,7 @@ from typing import Any
 from tracecanary.canonical import InputError, load_json
 from tracecanary.checker import check_trace
 from tracecanary.comparison import diff_traces
+from tracecanary.coverage import coverage_report
 from tracecanary.contract import Contract, ContractError, load_contract
 from tracecanary.fixture import write_bundle
 from tracecanary.output import protect_inputs, write_report
@@ -81,6 +82,10 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument("--contract", required=True, type=_cli_path, help="TraceCanary contract JSON file")
     check.add_argument("--input", required=True, type=_cli_path, help="OTLP/HTTP JSON trace export")
     check.add_argument("--format", choices=("human", "json"), default="human", help="report format (default: human)")
+    coverage = commands.add_parser("coverage", help="show value-free entity and required-field coverage")
+    coverage.add_argument("--contract", required=True, type=_cli_path)
+    coverage.add_argument("--input", required=True, type=_cli_path)
+    coverage.add_argument("--format", choices=("human", "json"), default="human")
     diff = commands.add_parser("diff", help="compare a baseline and a candidate OTLP trace export")
     diff.add_argument("--contract", required=True, type=_cli_path, help="TraceCanary contract JSON file")
     diff.add_argument("--baseline", required=True, type=_cli_path, help="baseline OTLP/HTTP JSON trace export")
@@ -98,7 +103,7 @@ def build_parser() -> argparse.ArgumentParser:
     batch.add_argument("--recursive", action="store_true", help="include *.json files in subdirectories")
     batch.add_argument("--include-paths", action="store_true", help="include input-relative POSIX paths in reports")
     batch.add_argument("--format", choices=("human", "json", "sarif", "junit"), default="json", help="report format (default: json)")
-    for command in (validate, check, diff, batch):
+    for command in (validate, check, diff, batch, coverage):
         command.add_argument("--output", type=_cli_path, help="write a UTF-8 report atomically; cannot replace inputs")
     fixture = commands.add_parser("fixture", help="write synthetic fixtures")
     fixture_commands = fixture.add_subparsers(dest="fixture_command", required=True, parser_class=_ArgumentParser)
@@ -121,7 +126,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             ensure_values_absent(report, tuple(canary.value for canary in contract.canaries))
             _print(report, args.format, args.output)
             return EXIT_PASS
-        if args.command == "check":
+        if args.command == "coverage":
+            report = coverage_report(contract, _load_trace(args.input, contract))
+        elif args.command == "check":
             report = check_trace(contract, _load_trace(args.input, contract), mode="check")
         elif args.command == "diff":
             report = diff_traces(contract, _load_trace(args.baseline, contract), _load_trace(args.candidate, contract))
