@@ -25,6 +25,7 @@ from .route import SENSITIVITY_PARAMETERS, Route, load_route, load_route_folder
 from .scenario import load_scenario, parse_scenario
 from .sensitivity import run_sensitivity
 from .stress import run_stress_grid
+from .scenario_diff import diff_scenarios
 from .transaction_sweep import TRANSACTION_PARAMETERS, run_transaction_sweep
 
 SCENARIO_HELP = "path to a fictional scenario JSON file"
@@ -129,6 +130,10 @@ def build_parser() -> argparse.ArgumentParser:
     validate = commands.add_parser("validate", help="validate a synthetic scenario contract")
     _add_scenario_argument(validate)
 
+    diff = commands.add_parser("diff", help="compare two fictional scenario evaluations")
+    _add_scenario_argument(diff)
+    diff.add_argument("--baseline", required=True, help="baseline fictional scenario JSON")
+    _add_output_options(diff)
     evaluate = commands.add_parser("evaluate", help="evaluate routes embedded in a scenario")
     _add_scenario_argument(evaluate)
     _add_output_options(evaluate)
@@ -324,7 +329,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         scenario = load_scenario(_require_cli_text(args.scenario, "scenario"))
         report: dict[str, object]
-        if args.command == "evaluate":
+        if args.command == "diff":
+            report = diff_scenarios(load_scenario(_require_cli_text(args.baseline, "--baseline")), scenario)
+        elif args.command == "evaluate":
             report = evaluate_scenario(scenario)
         elif args.command == "compare":
             report = compare_routes(scenario.transaction, _load_routes_argument(args.routes), scenario.objective, scenario.scenario_id)
