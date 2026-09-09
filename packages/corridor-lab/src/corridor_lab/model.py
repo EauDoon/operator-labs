@@ -9,9 +9,8 @@ from .canonical import InputError, decimal_text, local_decimal_context
 from .route import Route
 from .scenario import Transaction
 
-
-BPS_DENOMINATOR = Decimal("10000")
-DAYS_PER_YEAR = Decimal("365")
+BPS_DENOMINATOR = Decimal(10000)
+DAYS_PER_YEAR = Decimal(365)
 
 
 @dataclass(frozen=True)
@@ -84,7 +83,7 @@ def money_text(value: Decimal, precision: int, rounding: str) -> str:
 
 def _quantile_time(route: Route, threshold: Decimal) -> Decimal:
     with local_decimal_context():
-        cumulative = Decimal("0")
+        cumulative = Decimal(0)
         ordered = sorted(route.outcomes, key=lambda outcome: (outcome.resolution_hours, outcome.outcome_id))
         for outcome in ordered:
             cumulative += outcome.probability
@@ -111,10 +110,10 @@ def evaluate_route(route: Route, transaction: Transaction) -> RouteEvaluation:
             gross_recipient = amount_converted * route.fx_rate
             fx_spread_cost = gross_recipient * route.fx_spread_bps / BPS_DENOMINATOR
             recipient_amount = gross_recipient - fx_spread_cost
-            effective_fx_rate = route.fx_rate * (Decimal("1") - route.fx_spread_bps / BPS_DENOMINATOR)
+            effective_fx_rate = route.fx_rate * (Decimal(1) - route.fx_spread_bps / BPS_DENOMINATOR)
 
             success_probability = sum(
-                (outcome.probability for outcome in route.outcomes if outcome.completion == "success"), Decimal("0")
+                (outcome.probability for outcome in route.outcomes if outcome.completion == "success"), Decimal(0)
             )
             probability_by_deadline = sum(
                 (
@@ -122,7 +121,7 @@ def evaluate_route(route: Route, transaction: Transaction) -> RouteEvaluation:
                     for outcome in route.outcomes
                     if outcome.completion == "success" and outcome.delay_hours <= transaction.deadline_hours
                 ),
-                Decimal("0"),
+                Decimal(0),
             )
             for outcome in route.outcomes:
                 if outcome.recovery_amount_send > transaction.send_amount:
@@ -133,7 +132,7 @@ def evaluate_route(route: Route, transaction: Transaction) -> RouteEvaluation:
                     for outcome in route.outcomes
                     if outcome.completion == "failure"
                 ),
-                Decimal("0"),
+                Decimal(0),
             )
             expected_recovery = sum(
                 (
@@ -141,7 +140,7 @@ def evaluate_route(route: Route, transaction: Transaction) -> RouteEvaluation:
                     for outcome in route.outcomes
                     if outcome.completion == "failure"
                 ),
-                Decimal("0"),
+                Decimal(0),
             )
             liquidity_numerator = (
                 route.liquidity.prefunding_amount_send
@@ -152,7 +151,7 @@ def evaluate_route(route: Route, transaction: Transaction) -> RouteEvaluation:
             )
             liquidity_carry = liquidity_numerator / transaction.volume_per_period
             expected_time = sum(
-                (outcome.probability * outcome.resolution_hours for outcome in route.outcomes), Decimal("0")
+                (outcome.probability * outcome.resolution_hours for outcome in route.outcomes), Decimal(0)
             )
             return RouteEvaluation(
                 route=route,

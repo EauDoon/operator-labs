@@ -2,6 +2,7 @@ import unittest
 from decimal import getcontext, setcontext
 
 from helpers import route, scenario
+
 from corridor_lab.model import evaluate_route
 from corridor_lab.route import parse_route
 from corridor_lab.scenario import parse_scenario

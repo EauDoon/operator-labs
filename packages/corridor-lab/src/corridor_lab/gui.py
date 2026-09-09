@@ -8,10 +8,9 @@ from __future__ import annotations
 
 import argparse
 import sys
-from typing import Sequence
+from collections.abc import Sequence
 
 from .gui_controller import ActionResult, CorridorGuiController
-
 
 STARTUP_FAILURE_MESSAGE = "Corridor Lab could not open its desktop interface. Install or enable Tcl/Tk, then try again."
 

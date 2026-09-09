@@ -2,7 +2,8 @@ import unittest
 from decimal import getcontext, setcontext
 
 from helpers import route, scenario
-from corridor_lab.canonical import InputError, MAX_ROUTE_PAIRS
+
+from corridor_lab.canonical import MAX_ROUTE_PAIRS, InputError
 from corridor_lab.comparison import compare_routes, evaluate_scenario
 from corridor_lab.model import evaluate_route
 from corridor_lab.route import parse_route

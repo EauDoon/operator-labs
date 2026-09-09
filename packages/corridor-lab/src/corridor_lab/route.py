@@ -16,20 +16,19 @@ from .canonical import (
     InputError,
     decimal_text,
     load_json,
+    local_decimal_context,
     parse_json_bytes,
     require_bool,
     require_decimal,
-    require_keys,
-    local_decimal_context,
-    require_object,
     require_identifier,
+    require_keys,
+    require_object,
     require_string,
 )
 from .outcomes import Outcome
 
-
 ROUTE_CONTRACT_VERSION = "corridor-lab.route/v1"
-MAX_BPS = Decimal("10000")
+MAX_BPS = Decimal(10000)
 SENSITIVITY_PARAMETERS = ("fx_rate", "fixed_fee_send", "percent_fee_bps", "fx_spread_bps")
 
 
@@ -80,9 +79,9 @@ def _parse_liquidity(value: Any, path: str) -> Liquidity:
         path,
     )
     return Liquidity(
-        prefunding_amount_send=require_decimal(item["prefunding_amount_send"], f"{path}.prefunding_amount_send", minimum=Decimal("0")),
-        annual_cost_of_capital_bps=require_decimal(item["annual_cost_of_capital_bps"], f"{path}.annual_cost_of_capital_bps", minimum=Decimal("0"), maximum=MAX_BPS),
-        holding_days=require_decimal(item["holding_days"], f"{path}.holding_days", minimum=Decimal("0")),
+        prefunding_amount_send=require_decimal(item["prefunding_amount_send"], f"{path}.prefunding_amount_send", minimum=Decimal(0)),
+        annual_cost_of_capital_bps=require_decimal(item["annual_cost_of_capital_bps"], f"{path}.annual_cost_of_capital_bps", minimum=Decimal(0), maximum=MAX_BPS),
+        holding_days=require_decimal(item["holding_days"], f"{path}.holding_days", minimum=Decimal(0)),
     )
 
 
@@ -117,10 +116,10 @@ def _parse_outcomes(value: Any, path: str) -> tuple[Outcome, ...]:
         if completion not in {"success", "failure"}:
             raise InputError(f"{location}.completion must be success or failure")
         recovery_amount = require_decimal(
-            item["recovery_amount_send"], f"{location}.recovery_amount_send", minimum=Decimal("0")
+            item["recovery_amount_send"], f"{location}.recovery_amount_send", minimum=Decimal(0)
         )
         recovery_delay = require_decimal(
-            item["recovery_delay_hours"], f"{location}.recovery_delay_hours", minimum=Decimal("0")
+            item["recovery_delay_hours"], f"{location}.recovery_delay_hours", minimum=Decimal(0)
         )
         if completion == "success" and (recovery_amount != 0 or recovery_delay != 0):
             raise InputError(f"{location} success outcome cannot include recovery fields")
@@ -129,14 +128,14 @@ def _parse_outcomes(value: Any, path: str) -> tuple[Outcome, ...]:
                 outcome_id=outcome_id,
                 probability=require_decimal(item["probability"], f"{location}.probability", positive=True),
                 completion=completion,
-                delay_hours=require_decimal(item["delay_hours"], f"{location}.delay_hours", minimum=Decimal("0")),
+                delay_hours=require_decimal(item["delay_hours"], f"{location}.delay_hours", minimum=Decimal(0)),
                 recovery_amount_send=recovery_amount,
                 recovery_delay_hours=recovery_delay,
             )
         )
     with local_decimal_context():
-        total = sum((outcome.probability for outcome in parsed), Decimal("0"))
-    if total != Decimal("1"):
+        total = sum((outcome.probability for outcome in parsed), Decimal(0))
+    if total != Decimal(1):
         raise InputError(f"{path} probabilities must sum exactly to 1, got {decimal_text(total)}")
     return tuple(parsed)
 
@@ -170,9 +169,9 @@ def parse_route(value: Any, path: str = "route") -> Route:
         label=require_string(item["label"], f"{path}.label"),
         fictional=fictional,
         fx_rate=require_decimal(item["fx_rate"], f"{path}.fx_rate", positive=True),
-        fixed_fee_send=require_decimal(item["fixed_fee_send"], f"{path}.fixed_fee_send", minimum=Decimal("0")),
-        percent_fee_bps=require_decimal(item["percent_fee_bps"], f"{path}.percent_fee_bps", minimum=Decimal("0"), maximum=MAX_BPS),
-        fx_spread_bps=require_decimal(item["fx_spread_bps"], f"{path}.fx_spread_bps", minimum=Decimal("0"), maximum=MAX_BPS),
+        fixed_fee_send=require_decimal(item["fixed_fee_send"], f"{path}.fixed_fee_send", minimum=Decimal(0)),
+        percent_fee_bps=require_decimal(item["percent_fee_bps"], f"{path}.percent_fee_bps", minimum=Decimal(0), maximum=MAX_BPS),
+        fx_spread_bps=require_decimal(item["fx_spread_bps"], f"{path}.fx_spread_bps", minimum=Decimal(0), maximum=MAX_BPS),
         liquidity=_parse_liquidity(item["liquidity"], f"{path}.liquidity"),
         outcomes=_parse_outcomes(item["outcomes"], f"{path}.outcomes"),
     )

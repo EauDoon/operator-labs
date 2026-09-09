@@ -1,4 +1,3 @@
-import copy
 import json
 import os
 import tempfile
@@ -10,7 +9,13 @@ from pathlib import Path
 from unittest.mock import patch
 
 from helpers import route, scenario
-from corridor_lab.canonical import InputError, MAX_INPUT_BYTES, load_json, parse_json_text
+
+from corridor_lab.canonical import (
+    MAX_INPUT_BYTES,
+    InputError,
+    load_json,
+    parse_json_text,
+)
 from corridor_lab.cli import (
     DEFAULT_REPORT_FORMAT,
     FRONTIER_REPORT_FORMATS,

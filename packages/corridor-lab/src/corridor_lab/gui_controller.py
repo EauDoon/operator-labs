@@ -8,7 +8,13 @@ from dataclasses import dataclass
 from decimal import Decimal, DecimalException
 from pathlib import Path
 
-from .canonical import InputError, atomic_write_text, parse_json_bytes, read_bounded_bytes, require_decimal
+from .canonical import (
+    InputError,
+    atomic_write_text,
+    parse_json_bytes,
+    read_bounded_bytes,
+    require_decimal,
+)
 from .comparison import compare_routes, evaluate_scenario, pareto_frontier
 from .model import evaluate_route
 from .report import render_report
@@ -17,7 +23,6 @@ from .scenario import Scenario, parse_scenario, parse_scenario_text
 from .sensitivity import run_sensitivity
 from .stress import run_stress_grid
 from .transaction_sweep import run_transaction_sweep
-
 
 BUILTIN_DEMO_SCENARIO = {
     "contract_version": "corridor-lab.scenario/v1",

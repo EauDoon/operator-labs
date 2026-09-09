@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from decimal import Decimal, DecimalException
+from collections.abc import Iterable
+from decimal import DecimalException
 from itertools import combinations
-from typing import Iterable
 
-from .canonical import InputError, MAX_ROUTE_PAIRS, decimal_text, local_decimal_context
+from .canonical import MAX_ROUTE_PAIRS, InputError, decimal_text, local_decimal_context
 from .model import RouteEvaluation, evaluate_route
 from .route import Route
 from .scenario import Objective, Scenario, Transaction
