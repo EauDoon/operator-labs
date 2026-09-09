@@ -3,7 +3,7 @@ import unittest
 from decimal import Decimal, localcontext
 
 from helpers import route, scenario
-from corridor_lab.analysis import guardrail_headroom
+from corridor_lab.analysis import guardrail_headroom, outcome_ledger
 from corridor_lab.canonical import InputError
 from corridor_lab.scenario import parse_scenario
 from corridor_lab.report import render_report
@@ -28,3 +28,19 @@ class HeadroomTests(unittest.TestCase):
     def test_missing_objective_does_not_infer_guardrails(self):
         with self.assertRaises(InputError):
             guardrail_headroom(parse_scenario(scenario([route()])))
+
+
+class LedgerTests(unittest.TestCase):
+    def test_contributions_reconcile_against_independent_decimal_oracle(self):
+        report = outcome_ledger(parse_scenario(scenario([route()])))
+        rows = report["rows"]
+        self.assertEqual(sum(Decimal(row["expected_recipient_receive"]) for row in rows),
+                         (Decimal(100) - Decimal(1) - Decimal(1)) * 2 * Decimal("0.99") * Decimal("0.8"))
+        self.assertEqual(sum(Decimal(row["expected_failure_loss_send"]) for row in rows), Decimal(10))
+        self.assertEqual(sum(Decimal(row["expected_recovery_send"]) for row in rows), Decimal(10))
+        self.assertEqual(sum(Decimal(row["expected_resolution_hours"]) for row in rows), Decimal("2.6"))
+        self.assertEqual([row["outcome_id"] for row in rows], ["failure", "success"])
+
+    def test_ledger_requires_embedded_routes(self):
+        with self.assertRaises(InputError):
+            outcome_ledger(parse_scenario(scenario()))

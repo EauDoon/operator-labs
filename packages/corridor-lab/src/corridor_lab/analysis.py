@@ -1,4 +1,5 @@
 """Transparent inspection of declared fictional scenarios, with no recommendations."""
+from decimal import Decimal
 from .canonical import MAX_SENSITIVITY_ROWS, InputError, decimal_text, local_decimal_context
 from .model import evaluate_route
 from .scenario import Scenario
@@ -41,3 +42,28 @@ def guardrail_headroom(scenario: Scenario) -> dict:
     return _table(scenario, "guardrail-headroom",
                   ["route_id", "guardrail", "observed", "threshold", "headroom", "unit", "passes"], rows,
                   "Nonnegative headroom meets the declared guardrail; no route recommendation.")
+
+
+def outcome_ledger(scenario: Scenario) -> dict:
+    """Show each declared outcome's contribution to current model expectations."""
+    if sum(len(route.outcomes) for route in scenario.routes) > MAX_SENSITIVITY_ROWS:
+        raise InputError("outcome ledger exceeds the row budget")
+    rows = []
+    with local_decimal_context():
+        for evaluation in _evaluations(scenario):
+            for outcome in sorted(evaluation.route.outcomes, key=lambda item: item.outcome_id):
+                success = outcome.completion == "success"
+                probability = outcome.probability
+                rows.append({"route_id": evaluation.route.route_id, "outcome_id": outcome.outcome_id,
+                    "completion": outcome.completion, "probability": decimal_text(probability),
+                    "resolution_hours": decimal_text(outcome.resolution_hours),
+                    "send_currency": scenario.transaction.send_currency,
+                    "receive_currency": scenario.transaction.receive_currency,
+                    "expected_recipient_receive": decimal_text(probability * (evaluation.recipient_amount if success else Decimal(0))),
+                    "expected_failure_loss_send": decimal_text(probability * (Decimal(0) if success else scenario.transaction.send_amount - outcome.recovery_amount_send)),
+                    "expected_recovery_send": decimal_text(probability * (Decimal(0) if success else outcome.recovery_amount_send)),
+                    "expected_resolution_hours": decimal_text(probability * outcome.resolution_hours)})
+    return _table(scenario, "outcome-ledger", ["route_id", "outcome_id", "completion", "probability",
+        "resolution_hours", "send_currency", "receive_currency", "expected_recipient_receive",
+        "expected_failure_loss_send", "expected_recovery_send", "expected_resolution_hours"], rows,
+        "Unrounded weighted contributions reconcile to model expectations. Fees and liquidity carry are separate sender costs.")

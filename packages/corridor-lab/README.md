@@ -137,6 +137,12 @@ Licensed under [Apache-2.0](LICENSE).
 
 ## Transaction what-if analysis
 
+`corridorlab outcome-ledger scenario.json --format csv` breaks down each declared
+outcome's weighted recipient amount, failure loss, recovery, and resolution time.
+Contributions are unrounded Decimal values in explicitly labeled currencies and
+hours. Their totals reconcile to the existing model; fees and liquidity costs
+remain separate, so they are not counted twice in outcome losses.
+
 `corridorlab guardrail-headroom scenario.json --format markdown` reports the
 signed margin against each declared minimum probability or maximum tail-time
 guardrail. Zero meets the threshold; positive is headroom and negative is a
