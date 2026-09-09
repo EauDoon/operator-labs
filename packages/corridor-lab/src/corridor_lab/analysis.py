@@ -1,8 +1,10 @@
 """Transparent inspection of declared fictional scenarios, with no recommendations."""
-from decimal import Decimal
+from decimal import Decimal, ROUND_FLOOR, ROUND_CEILING
+from itertools import combinations
 from .canonical import MAX_SENSITIVITY_ROWS, InputError, decimal_text, local_decimal_context
 from .model import evaluate_route
-from .scenario import Scenario
+from .scenario import Scenario, _parse_transaction
+from .comparison import _break_even, _declared_transaction
 
 
 def _evaluations(scenario: Scenario):
@@ -91,3 +93,31 @@ def deadline_profile(scenario: Scenario) -> dict:
     return _table(scenario, "deadline-profile", ["route_id", "hours", "successful_by_time",
         "resolved_by_time", "unresolved_probability", "declared_deadline"], rows,
         "Exact cumulative probabilities under declared outcomes. Failure recovery is resolution, not successful delivery.")
+
+
+def break_even_check(scenario: Scenario) -> dict:
+    """Re-evaluate whole transaction volumes next to each positive continuous crossover."""
+    count = len(scenario.routes)
+    if count < 2 or count * (count - 1) // 2 > MAX_SENSITIVITY_ROWS:
+        raise InputError("break-even check requires 2 or more routes within the pair row budget")
+    rows = []
+    with local_decimal_context():
+        for left, right in combinations(_evaluations(scenario), 2):
+            row = _break_even(left, right)
+            row["send_currency"] = scenario.transaction.send_currency
+            if row["status"] == "computed":
+                volume = Decimal(row["volume_transactions_per_period"])
+                for name, rounding in (("lower", ROUND_FLOOR), ("upper", ROUND_CEILING)):
+                    whole = max(Decimal(1), volume.to_integral_value(rounding=rounding))
+                    raw = _declared_transaction(scenario.transaction)
+                    raw["volume_per_period"] = decimal_text(whole)
+                    transaction = _parse_transaction(raw)
+                    delta = (evaluate_route(left.route, transaction).expected_sender_cost
+                             - evaluate_route(right.route, transaction).expected_sender_cost)
+                    row[f"{name}_volume"] = decimal_text(whole)
+                    row[f"{name}_cost_delta_send"] = decimal_text(delta)
+            rows.append(row)
+    return _table(scenario, "break-even-check", ["left_route_id", "right_route_id", "status",
+        "send_currency", "volume_transactions_per_period", "lower_volume", "lower_cost_delta_send",
+        "upper_volume", "upper_cost_delta_send"], rows,
+        "Costs are left minus right, unrounded sender currency. Floor/ceiling volumes are at least one and may coincide; no recommendation.")

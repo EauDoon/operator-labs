@@ -3,7 +3,7 @@ import unittest
 from decimal import Decimal, localcontext
 
 from helpers import route, scenario
-from corridor_lab.analysis import guardrail_headroom, outcome_ledger, deadline_profile
+from corridor_lab.analysis import guardrail_headroom, outcome_ledger, deadline_profile, break_even_check
 from corridor_lab.canonical import InputError
 from corridor_lab.scenario import parse_scenario
 from corridor_lab.report import render_report
@@ -62,3 +62,21 @@ class DeadlineTests(unittest.TestCase):
         first = deadline_profile(parse_scenario(scenario([raw])))["rows"][0]
         self.assertEqual(first["successful_by_time"], "0.8")
         self.assertEqual(first["resolved_by_time"], "1")
+
+
+class BreakEvenTests(unittest.TestCase):
+    def test_nearest_integer_volumes_recompute_cost_difference(self):
+        left, right = route("left"), route("right")
+        right["fixed_fee_send"] = "5"
+        right["liquidity"]["prefunding_amount_send"] = "0"
+        row = break_even_check(parse_scenario(scenario([right, left])))["rows"][0]
+        # Costs are 12 + 10/V and 16, so the independent intersection is 2.5.
+        self.assertEqual(row["volume_transactions_per_period"], "2.5")
+        self.assertEqual((row["lower_volume"], row["upper_volume"]), ("2", "3"))
+        self.assertEqual(Decimal(row["lower_cost_delta_send"]), Decimal(1))
+        self.assertLess(Decimal(row["upper_cost_delta_send"]), Decimal(0))
+
+    def test_parallel_cost_curves_do_not_claim_a_crossover(self):
+        row = break_even_check(parse_scenario(scenario([route("left"), route("right")])))["rows"][0]
+        self.assertEqual(row["status"], "no_finite_break_even")
+        self.assertNotIn("lower_volume", row)

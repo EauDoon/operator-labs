@@ -137,6 +137,13 @@ Licensed under [Apache-2.0](LICENSE).
 
 ## Transaction what-if analysis
 
+`corridorlab break-even-check scenario.json --format markdown` re-evaluates
+sender costs at the floor and ceiling whole volumes around each positive
+continuous break-even point, clamped to at least one transaction. The cost delta
+is left route minus right route in sender currency. Equal sample volumes are
+reported honestly; parallel/nonpositive intersections keep their existing status.
+Derived samples must satisfy transaction bounds. This is a comparison, not a route selection.
+
 `corridorlab deadline-profile scenario.json --format markdown` shows exact
 successful-delivery and final-resolution cumulative probabilities at declared
 event times, zero, and the current deadline. Failure recovery contributes to

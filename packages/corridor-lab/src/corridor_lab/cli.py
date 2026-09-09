@@ -27,7 +27,7 @@ from .sensitivity import run_sensitivity
 from .stress import run_stress_grid
 from .scenario_diff import diff_scenarios
 from .transaction_sweep import TRANSACTION_PARAMETERS, run_transaction_sweep
-from .analysis import guardrail_headroom, outcome_ledger, deadline_profile
+from .analysis import guardrail_headroom, outcome_ledger, deadline_profile, break_even_check
 
 SCENARIO_HELP = "path to a fictional scenario JSON file"
 PARAMETER_HELP = "one of " + ", ".join(SENSITIVITY_PARAMETERS)
@@ -141,6 +141,9 @@ def build_parser() -> argparse.ArgumentParser:
     profile = commands.add_parser("deadline-profile", help="show exact success and resolution probabilities over time")
     _add_scenario_argument(profile)
     _add_output_options(profile)
+    crossing = commands.add_parser("break-even-check", help="verify whole-volume costs near declared break-even points")
+    _add_scenario_argument(crossing)
+    _add_output_options(crossing)
 
     diff = commands.add_parser("diff", help="compare two fictional scenario evaluations")
     _add_scenario_argument(diff)
@@ -369,6 +372,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             report = outcome_ledger(scenario)
         elif args.command == "deadline-profile":
             report = deadline_profile(scenario)
+        elif args.command == "break-even-check":
+            report = break_even_check(scenario)
         elif args.command == "diff":
             report = diff_scenarios(load_scenario(_require_cli_text(args.baseline, "--baseline")), scenario)
         elif args.command == "evaluate":
