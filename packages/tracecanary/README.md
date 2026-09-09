@@ -149,3 +149,7 @@ The GitHub Actions workflow runs the suite on Windows and Linux, installs the lo
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
+
+## Explicit report files
+
+`validate`, `check`, `diff`, and `batch` accept `--output FILE`. Reports are fully rendered and privacy-checked before atomic UTF-8 replacement; stdout stays empty on successful file output. Outputs cannot alias inputs, and batch output must be outside the scanned directory. The parent directory must already exist. Exit codes retain their usual meaning, including regression reports written with exit 1.
