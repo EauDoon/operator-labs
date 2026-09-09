@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import xml.etree.ElementTree as ET
+from urllib.parse import quote
 from typing import Any, Literal, NotRequired, TypedDict
 
 from tracecanary.canonical import canonical_json
@@ -192,8 +193,9 @@ def render_sarif(batch: BatchReport) -> str:
                 "level": "error" if item.get("status") in {"regression", "unresolved"} else "warning",
                 "message": {"text": str(violation.get("message", "TraceCanary finding"))},
                 "ruleId": str(violation.get("code", "TC000")),
-                "locations": [{"physicalLocation": {"artifactLocation": {"uri": str(location)}}}],
+                "locations": [{"physicalLocation": {"artifactLocation": {"uri": quote(str(location), safe="/")}}}],
             }
+            result["properties"] = {"jsonPointer": str(violation.get("path", "")), "itemId": item.get("id", "item")}
             results.append(result)
     payload = {
         "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
@@ -211,11 +213,19 @@ def render_junit(batch: BatchReport) -> str:
     suite = ET.Element("testsuite", name="TraceCanary", tests=str(len(items)), failures=str(failures), errors=str(errors))
     for item in items:
         case = ET.SubElement(suite, "testcase", name=str(item.get("id", "item")))
+        if "path" in item:
+            case.set("file", _xml_text(str(item["path"])))
+        details = "\n".join(f"{v.get('code', 'TC000')}: {v.get('message', '')} at {v.get('path', '')}" for v in item.get("report", {}).get("violations", []))
         status = item.get("status")
         if status == "regression":
             failure = ET.SubElement(case, "failure", type="regression")
-            failure.text = "TraceCanary regression"
+            failure.text = _xml_text(details or "TraceCanary regression")
         elif status == "unresolved":
             error = ET.SubElement(case, "error", type="unresolved")
-            error.text = "TraceCanary input unresolved"
+            error.text = _xml_text(details or "TraceCanary input unresolved")
     return ET.tostring(suite, encoding="unicode", short_empty_elements=True) + "\n"
+
+
+def _xml_text(value: str) -> str:
+    """Replace characters XML 1.0 cannot represent, including filename controls."""
+    return "".join(character if character in "\t\n\r" or 0x20 <= ord(character) <= 0xD7FF or 0xE000 <= ord(character) <= 0xFFFD or 0x10000 <= ord(character) <= 0x10FFFF else "\ufffd" for character in value)
