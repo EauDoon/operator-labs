@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from fractions import Fraction
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -121,7 +122,13 @@ def build_parser() -> argparse.ArgumentParser:
     batch.add_argument("--recursive", action="store_true", help="include *.json files in subdirectories")
     batch.add_argument("--include-paths", action="store_true", help="include input-relative POSIX paths in reports")
     batch.add_argument("--format", choices=("human", "json", "sarif", "junit"), default="json", help="report format (default: json)")
-    for command in (validate, check, diff, batch, coverage, inspect, gate, rate_diff, matrix):
+    batch_coverage = commands.add_parser("coverage-batch", help="aggregate coverage counts across a bounded directory")
+    batch_coverage.add_argument("--contract", required=True, type=_cli_path)
+    batch_coverage.add_argument("--input-dir", required=True, type=_cli_path)
+    batch_coverage.add_argument("--recursive", action="store_true")
+    batch_coverage.add_argument("--include-paths", action="store_true")
+    batch_coverage.add_argument("--format", choices=("human", "json"), default="json")
+    for command in (validate, check, diff, batch, coverage, inspect, gate, rate_diff, matrix, batch_coverage):
         command.add_argument("--output", type=_cli_path, help="write a UTF-8 report atomically; cannot replace inputs")
     fixture = commands.add_parser("fixture", help="write synthetic fixtures")
     fixture_commands = fixture.add_subparsers(dest="fixture_command", required=True, parser_class=_ArgumentParser)
@@ -161,8 +168,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             _print(report, args.format, args.output)
             return _status_exit(report["status"])
         else:
-            baseline = _load_trace(args.baseline, contract) if args.baseline is not None else None
-            batch_report = _run_batch(contract, args.input_dir, args.recursive, args.include_paths, baseline)
+            baseline = _load_trace(args.baseline, contract) if getattr(args, "baseline", None) is not None else None
+            batch_report = _run_batch(contract, args.input_dir, args.recursive, args.include_paths, baseline, coverage=args.command == "coverage-batch")
             _print_batch(
                 batch_report,
                 args.format,
@@ -190,7 +197,9 @@ def _load_trace(path: Path, contract: Contract) -> dict[str, Any]:
     return payload
 
 
-def _run_batch(contract: Contract, input_dir: Path, recursive: bool, include_paths: bool, baseline: dict[str, Any] | None = None) -> BatchReport:
+def _run_batch(contract: Contract, input_dir: Path, recursive: bool, include_paths: bool, baseline: dict[str, Any] | None = None, *, coverage: bool = False) -> BatchReport:
+    if coverage and baseline is not None:
+        raise InputError("batch coverage does not accept a baseline")
     if baseline is not None and check_trace(contract, baseline)["status"] != "pass":
         raise InputError("batch baseline does not satisfy the contract")
     try:
@@ -224,7 +233,7 @@ def _run_batch(contract: Contract, input_dir: Path, recursive: bool, include_pat
         relative = path.relative_to(root).as_posix()
         try:
             payload = _load_trace(path, contract)
-            report = check_trace(contract, payload, mode="batch") if baseline is None else diff_traces(contract, baseline, payload)
+            report = coverage_report(contract, payload) if coverage else check_trace(contract, payload, mode="batch") if baseline is None else diff_traces(contract, baseline, payload)
         except UnsafeReportError:
             raise
         except (InputError, OtlpError, ValueError):
@@ -241,6 +250,17 @@ def _run_batch(contract: Contract, input_dir: Path, recursive: bool, include_pat
     statuses = {item["status"] for item in items}
     status: Status = "unresolved" if "unresolved" in statuses else "regression" if "regression" in statuses else "pass"
     batch_report: BatchReport = {"batch_version": "tracecanary.batch/v1", "contract_version": contract.contract_version, "status": status, "items": items}
+    if coverage:
+        valid = [item["report"]["coverage"] for item in items if "coverage" in item["report"]]
+        fields = []
+        for index, field in enumerate(contract.required_retained_fields):
+            present = sum(item["required_fields"][index]["present"] for item in valid)
+            entities = sum(item["required_fields"][index]["entities"] for item in valid)
+            fields.append({"id": f"required-{index + 1:04d}", "scope": field.scope,
+                           "present": present, "entities": entities,
+                           "ratio": str(Fraction(present, entities)) if entities else None})
+        batch_report["coverage_summary"] = {"validated_items": len(valid), "unresolved_items": len(items) - len(valid),
+                                             "required_fields": fields}
     ensure_object_values_absent(
         batch_report,
         tuple(canary.value for canary in contract.canaries),
@@ -269,6 +289,10 @@ def _print_batch(report: BatchReport, output_format: str, redacted_values: tuple
     else:
         lines = [f"TraceCanary batch: {report['status'].upper()} ({len(report['items'])} file(s))"]
         lines.extend(f"- {item['id']}: {item['status']}" for item in report["items"])
+        if "coverage_summary" in report:
+            summary = report["coverage_summary"]
+            lines.append(f"Coverage: {summary['validated_items']} validated item(s); {summary['unresolved_items']} unresolved item(s) excluded.")
+            lines.extend(f"{field['id']}: {field['present']}/{field['entities']} ({field['ratio']})" for field in summary["required_fields"])
         output = "\n".join(lines) + "\n"
     ensure_text_values_absent(output, redacted_values)
     _emit(output, output_path)

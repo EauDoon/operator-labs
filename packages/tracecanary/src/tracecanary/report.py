@@ -58,6 +58,7 @@ class BatchReport(TypedDict):
     contract_version: str
     status: Status
     items: list[BatchItem]
+    coverage_summary: NotRequired[dict[str, Any]]
 
 
 @dataclass(frozen=True)

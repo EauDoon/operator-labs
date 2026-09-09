@@ -73,7 +73,7 @@ jobs:
           } finally {
             Pop-Location
           }
-          $wheel = Get-ChildItem -Path $wheelDir -Filter "corridor_lab-0.1.1-*.whl" | Select-Object -First 1
+          $wheel = Get-ChildItem -Path $wheelDir -Filter "corridor_lab-0.2.0-*.whl" | Select-Object -First 1
           if ($null -eq $wheel) { throw "Expected local Corridor Lab wheel was not built." }
           Add-Content -Path $env:GITHUB_ENV -Value "CORRIDOR_LAB_WHEEL=$($wheel.FullName)"
       - name: Verify exact wheel in an isolated environment outside checkout
@@ -95,6 +95,14 @@ jobs:
             $cliPath = if ($isWindowsRunner) { Join-Path $scriptRoot "corridorlab.exe" } else { Join-Path $scriptRoot "corridorlab" }
             $guiPath = if ($isWindowsRunner) { Join-Path $scriptRoot "corridorlab-gui.exe" } else { Join-Path $scriptRoot "corridorlab-gui" }
             & $cliPath validate scenario.json
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            & $cliPath init --output analysis-scenario.json
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            foreach ($command in @('guardrail-headroom', 'outcome-ledger', 'deadline-profile', 'break-even-check')) {
+              & $cliPath $command analysis-scenario.json --format json
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            }
+            & $cliPath transaction-grid analysis-scenario.json --parameter-a deadline_hours --values-a 1,24 --parameter-b volume_per_period --values-b 1,100 --format json
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             & $guiPath --smoke-test
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -10,7 +10,7 @@ TraceCanary uses only the Python standard library at runtime. It has no network 
 
 ## Scope
 
-Supported in v0.1.1:
+Supported in v0.2.0:
 
 - OTLP/HTTP JSON traces with `resourceSpans`.
 - Exact synthetic-canary detection anywhere in a supported payload.
@@ -20,7 +20,7 @@ Supported in v0.1.1:
 - Stable JSON and human-readable reports.
 - Bounded directory checks with deterministic JSON, SARIF, and JUnit output.
 
-Not supported in v0.1.1:
+Not supported in v0.2.0:
 
 - Protobuf, logs, metrics, collector execution, or redaction.
 - Generic secret or PII discovery.
@@ -188,3 +188,8 @@ compares exact retained-field fractions and reports both sample denominators. A 
 
 `tracecanary retention-matrix --contract contract.json --input export.json --format json`
 shows missing entity locations by required-field ordinal and structural JSON pointer. It includes entities with absent attribute arrays, exposes no attribute keys or values, and rejects more than 10,000 entity-requirement checks instead of truncating. Matrix coverage is descriptive; use `coverage-gate` to enforce per-entity coverage.
+
+### Aggregate bounded batch coverage
+
+`tracecanary coverage-batch --contract contract.json --input-dir exports --format json`
+uses the same strict file, nesting, symlink and file-count bounds as `batch`. Each valid export includes normal privacy findings plus coverage. The aggregate sums presence counts and entity denominators, rather than averaging percentages. Invalid items are unresolved and explicitly excluded from aggregate denominators; an empty denominator has a null ratio. Counts describe the supplied files and may double-count repeated entities across exports. Paths remain opt-in. Human and JSON formats are supported; no production telemetry or collection is enabled.

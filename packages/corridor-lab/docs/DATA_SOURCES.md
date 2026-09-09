@@ -1,6 +1,6 @@
 # Data sources
 
-Version 0.1.1 ships with no external datasets and makes no network requests.
+Version 0.2.0 ships with no external datasets and makes no network requests.
 All bundled values are fictional.
 
 The following official sources are bounded conceptual references for the terms

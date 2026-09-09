@@ -2,6 +2,6 @@
 
 from .scenario import ScenarioError, load_scenario
 
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 
 __all__ = ["ScenarioError", "load_scenario"]

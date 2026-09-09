@@ -102,3 +102,38 @@ class RetentionMatrixTests(unittest.TestCase):
         fixtures = bundle()
         with patch("tracecanary.inspection.MAX_MATRIX_CHECKS", 2), self.assertRaises(InputError):
             retention_matrix(parse_contract(fixtures["contract.json"]), fixtures["safe-export.json"])
+
+
+class BatchCoverageTests(unittest.TestCase):
+    def test_aggregate_weights_entities_and_accounts_for_invalid_files(self):
+        import json
+        import tempfile
+        from tracecanary.cli import _run_batch
+        fixtures = bundle()
+        first = fixtures["safe-export.json"]
+        second = copy.deepcopy(first)
+        span = copy.deepcopy(second["resourceSpans"][0]["scopeSpans"][0]["spans"][0])
+        span["attributes"] = []
+        second["resourceSpans"][0]["scopeSpans"][0]["spans"].extend([copy.deepcopy(span), span])
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "a.json").write_text(json.dumps(first))
+            (root / "b.json").write_text(json.dumps(second))
+            (root / "c.json").write_text("invalid")
+            report = _run_batch(parse_contract(fixtures["contract.json"]), root, False, False, coverage=True)
+        self.assertEqual(report["status"], "unresolved")
+        summary = report["coverage_summary"]
+        self.assertEqual((summary["validated_items"], summary["unresolved_items"]), (2, 1))
+        field = summary["required_fields"][1]
+        self.assertEqual((field["present"], field["entities"], field["ratio"]), (2, 4, "1/2"))
+        self.assertTrue(all("path" not in item for item in report["items"]))
+
+    def test_empty_population_has_no_invented_ratio(self):
+        import json
+        import tempfile
+        from tracecanary.cli import _run_batch
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "a.json").write_text(json.dumps({"resourceSpans": []}))
+            report = _run_batch(parse_contract(bundle()["contract.json"]), root, False, False, coverage=True)
+        self.assertTrue(all(field["ratio"] is None for field in report["coverage_summary"]["required_fields"]))
