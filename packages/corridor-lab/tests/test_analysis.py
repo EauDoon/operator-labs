@@ -7,6 +7,7 @@ from corridor_lab.analysis import guardrail_headroom, outcome_ledger, deadline_p
 from corridor_lab.canonical import InputError
 from corridor_lab.scenario import parse_scenario
 from corridor_lab.report import render_report
+from corridor_lab.transaction_sweep import run_transaction_grid
 
 
 class HeadroomTests(unittest.TestCase):
@@ -80,3 +81,24 @@ class BreakEvenTests(unittest.TestCase):
         row = break_even_check(parse_scenario(scenario([route("left"), route("right")])))["rows"][0]
         self.assertEqual(row["status"], "no_finite_break_even")
         self.assertNotIn("lower_volume", row)
+
+
+class TransactionGridTests(unittest.TestCase):
+    def test_combined_deadline_and_volume_changes_keep_units_separate(self):
+        source = parse_scenario(scenario([route()]))
+        report = run_transaction_grid(source, "deadline_hours", [Decimal(1), Decimal(2)],
+                                      "volume_per_period", [Decimal(1), Decimal(100)])
+        self.assertEqual([row["probability_by_deadline"] for row in report["rows"]], ["0", "0", "0.8", "0.8"])
+        self.assertEqual([row["expected_sender_cost"] for row in report["rows"]], ["22.00", "12.10", "22.00", "12.10"])
+        self.assertTrue(all(row["guardrails_pass"] is None for row in report["rows"]))
+        self.assertEqual(source.transaction.deadline_hours, Decimal(3))
+        for output_format in ("json", "csv", "markdown"):
+            self.assertIn("volume_per_period", render_report(report, output_format))
+
+    def test_invalid_axes_values_and_row_budget_are_rejected(self):
+        source = parse_scenario(scenario([route()]))
+        for a, va, b, vb in [("deadline_hours", [Decimal(1)], "deadline_hours", [Decimal(2)]),
+                            ("send_amount", [Decimal(0)], "deadline_hours", [Decimal(1)]),
+                            ("deadline_hours", [Decimal(1)] * 64, "volume_per_period", [Decimal(1)] * 64)]:
+            with self.assertRaises(InputError):
+                run_transaction_grid(source, a, va, b, vb)

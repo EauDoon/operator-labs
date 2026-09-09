@@ -26,7 +26,7 @@ from .scenario import load_scenario, parse_scenario
 from .sensitivity import run_sensitivity
 from .stress import run_stress_grid
 from .scenario_diff import diff_scenarios
-from .transaction_sweep import TRANSACTION_PARAMETERS, run_transaction_sweep
+from .transaction_sweep import TRANSACTION_PARAMETERS, run_transaction_sweep, run_transaction_grid
 from .analysis import guardrail_headroom, outcome_ledger, deadline_profile, break_even_check
 
 SCENARIO_HELP = "path to a fictional scenario JSON file"
@@ -168,6 +168,12 @@ def build_parser() -> argparse.ArgumentParser:
     sweep.add_argument("--parameter", required=True, choices=TRANSACTION_PARAMETERS)
     sweep.add_argument("--values", required=True, help=VALUES_HELP)
     _add_output_options(sweep)
+    transaction_grid = commands.add_parser("transaction-grid", help="vary two transaction parameters together")
+    _add_scenario_argument(transaction_grid)
+    for axis in ("a", "b"):
+        transaction_grid.add_argument(f"--parameter-{axis}", required=True, choices=TRANSACTION_PARAMETERS)
+        transaction_grid.add_argument(f"--values-{axis}", required=True, help=VALUES_HELP)
+    _add_output_options(transaction_grid)
     stress = commands.add_parser("stress-grid", help="run an explicit bounded two-parameter stress grid")
     _add_scenario_argument(stress)
     stress.add_argument("--parameter-a", required=True, help=PARAMETER_HELP)
@@ -388,6 +394,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         elif args.command == "transaction-sweep":
             report = run_transaction_sweep(scenario, args.parameter, _parse_values(args.values))
+        elif args.command == "transaction-grid":
+            report = run_transaction_grid(scenario, args.parameter_a, _parse_values(args.values_a),
+                                          args.parameter_b, _parse_values(args.values_b))
         elif args.command == "stress-grid":
             report = run_stress_grid(
                 scenario,

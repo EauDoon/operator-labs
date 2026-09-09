@@ -137,6 +137,14 @@ Licensed under [Apache-2.0](LICENSE).
 
 ## Transaction what-if analysis
 
+`corridorlab transaction-grid scenario.json --parameter-a deadline_hours --values-a
+1,2 --parameter-b volume_per_period --values-b 10,100 --format markdown` evaluates
+the explicit cross-product of two distinct transaction fields. It supports amount,
+deadline and volume, at most 64 values per axis and 512 route/cell rows. Every
+combination passes the existing transaction and route preconditions. Guardrail
+state is null without a declared objective. Routes and fixed recovery amounts do
+not scale implicitly when the send amount changes.
+
 `corridorlab break-even-check scenario.json --format markdown` re-evaluates
 sender costs at the floor and ceiling whole volumes around each positive
 continuous break-even point, clamped to at least one transaction. The cost delta
