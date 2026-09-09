@@ -146,3 +146,5 @@ Stress grids now evaluate declared objective guardrails at every cell. JSON and 
 ## Start outside a checkout
 
 After installation, `corridorlab init --output fictional.json` creates a complete, deterministic synthetic scenario with two embedded routes. It refuses an existing file and requires an existing parent directory. Then run `corridorlab evaluate fictional.json`, `corridorlab transaction-sweep fictional.json --parameter volume_per_period --values 10,100,1000`, or open the file in the GUI. This starter does not fetch data or require repository fixtures.
+
+Report output paths cannot replace a scenario, baseline, or route input, including aliases. Reports from route-folder comparison or batch evaluation must be written outside the corresponding input directory so subsequent runs cannot ingest their own outputs.

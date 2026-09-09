@@ -212,6 +212,22 @@ def _parse_values(raw: str, flag: str = "--values") -> list[Decimal]:
     return require_decimal_values([chunk.strip() for chunk in chunks], flag)
 
 
+def _protect_report_inputs(args: argparse.Namespace) -> None:
+    if not getattr(args, "output", None):
+        return
+    target = Path(_require_cli_text(args.output, "--output"))
+    resolved = target.resolve()
+    for name in ("scenario", "baseline", "routes", "input_dir"):
+        raw = getattr(args, name, None)
+        if raw is None:
+            continue
+        source = Path(raw)
+        if resolved == source.resolve() or (target.exists() and source.exists() and os.path.samefile(target, source)):
+            raise InputError("report output must not replace an input")
+        if source.is_dir() and resolved.is_relative_to(source.resolve()):
+            raise InputError("report output must be outside input directories")
+
+
 def _emit(text: str, output: str | None) -> None:
     if output is None:
         sys.stdout.write(text)
@@ -322,6 +338,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             load_scenario(_require_cli_text(args.scenario, "scenario"))
             sys.stdout.write("valid\n")
             return 0
+        _protect_report_inputs(args)
         output_format = resolve_report_format(
             getattr(args, "format", None),
             getattr(args, "output", None),
