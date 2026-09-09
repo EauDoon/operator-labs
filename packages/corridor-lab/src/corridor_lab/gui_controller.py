@@ -16,6 +16,7 @@ from .route import Route, load_route, load_route_folder
 from .scenario import Scenario, parse_scenario, parse_scenario_text
 from .sensitivity import run_sensitivity
 from .stress import run_stress_grid
+from .transaction_sweep import run_transaction_sweep
 
 
 BUILTIN_DEMO_SCENARIO = {
@@ -226,6 +227,16 @@ class CorridorGuiController:
                 raise InputError("sensitivity values must be comma-separated decimals")
             values: list[Decimal] = [require_decimal(chunk.strip(), "sensitivity value") for chunk in chunks]
             return self._success(run_sensitivity(scenario, parameter.strip(), values))
+        except (InputError, OSError, ValueError, DecimalException) as exc:
+            return self._failure(exc)
+
+    def transaction_sweep(self, parameter: str, values_text: str) -> ActionResult:
+        try:
+            chunks = values_text.split(",")
+            if not all(chunk.strip() for chunk in chunks):
+                raise InputError("transaction values must be comma-separated decimals")
+            values = [require_decimal(chunk.strip(), "transaction value") for chunk in chunks]
+            return self._success(run_transaction_sweep(self._require_scenario(), parameter.strip(), values))
         except (InputError, OSError, ValueError, DecimalException) as exc:
             return self._failure(exc)
 

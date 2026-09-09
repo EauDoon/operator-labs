@@ -44,3 +44,7 @@ controller check that opens no window:
 ```text
 corridorlab-gui --smoke-test
 ```
+
+## Transaction sweeps
+
+Choose a transaction field from the read-only selector, enter comma-separated decimal values, and select **Sweep Transaction**. It uses embedded routes and previews a bounded what-if report in all three formats. The active scenario stays unchanged, including after an invalid sweep. Save Report explicitly exports the current result.

@@ -1,6 +1,5 @@
 """Bounded what-if analysis of declared transaction assumptions."""
 
-from dataclasses import replace
 from decimal import Decimal
 
 from .canonical import InputError, MAX_SENSITIVITY_ROWS, MAX_SENSITIVITY_VALUES, decimal_text, require_decimal_values

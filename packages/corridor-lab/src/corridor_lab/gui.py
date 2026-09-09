@@ -78,6 +78,8 @@ def run_smoke_test() -> int:
     stress_grid = controller.stress_grid("fx_rate", "1.7,1.8", "fx_spread_bps", "25,50")
     if stress_grid.error is not None:
         return 1
+    if controller.transaction_sweep("deadline_hours", "1,2,8").error is not None:
+        return 1
     pareto = controller.pareto()
     if pareto.error is not None or controller.render_last_report("markdown") is None:
         return 1
@@ -101,6 +103,8 @@ def launch_gui() -> int:
             self.routes_var = tk.StringVar(value=self.controller.routes_source)
             self.parameter_var = tk.StringVar(value="fx_spread_bps")
             self.values_var = tk.StringVar(value="10,25,50,100")
+            self.transaction_parameter_var = tk.StringVar(value="deadline_hours")
+            self.transaction_values_var = tk.StringVar(value="1,2,8")
             self.parameter_b_var = tk.StringVar(value="fx_rate")
             self.values_b_var = tk.StringVar(value="1.7,1.8")
             self.status_var = tk.StringVar(value="Load the built-in fictional demo or select your own fictional inputs.")
@@ -163,6 +167,11 @@ def launch_gui() -> int:
             format_box.bind("<<ComboboxSelected>>", lambda _event: self._refresh_preview())
             ttk_module.Button(actions, text="Save Report...", command=self._save_report).grid(row=0, column=13, padx=(12, 0))
             ttk_module.Button(actions, text="Explain Report", command=self._explain_report).grid(row=0, column=14, padx=(6, 0))
+            ttk_module.Label(actions, text="Transaction sweep").grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 0))
+            ttk_module.Combobox(actions, textvariable=self.transaction_parameter_var, values=("send_amount", "deadline_hours", "volume_per_period"), state="readonly", width=20).grid(row=1, column=2, columnspan=2, pady=(8, 0))
+            ttk_module.Entry(actions, textvariable=self.transaction_values_var, width=18).grid(row=1, column=4, pady=(8, 0))
+            ttk_module.Button(actions, text="Sweep Transaction", command=self._transaction_sweep).grid(row=1, column=5, columnspan=2, pady=(8, 0))
+
 
             self.preview = scrolledtext_module.ScrolledText(frame, wrap="word", height=24, font=("TkFixedFont", 10))
             self.preview.grid(row=6, column=0, columnspan=3, sticky="nsew")
@@ -364,6 +373,9 @@ def launch_gui() -> int:
                 ),
                 "Two-parameter stress grid calculated without a composite score.",
             )
+
+        def _transaction_sweep(self) -> None:
+            self._complete(self.controller.transaction_sweep(self.transaction_parameter_var.get(), self.transaction_values_var.get()), "Transaction sweep complete using embedded routes.")
 
         def _sensitivity(self) -> None:
             self._complete(
