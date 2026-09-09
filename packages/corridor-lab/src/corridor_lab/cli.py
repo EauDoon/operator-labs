@@ -27,7 +27,7 @@ from .sensitivity import run_sensitivity
 from .stress import run_stress_grid
 from .scenario_diff import diff_scenarios
 from .transaction_sweep import TRANSACTION_PARAMETERS, run_transaction_sweep
-from .analysis import guardrail_headroom, outcome_ledger
+from .analysis import guardrail_headroom, outcome_ledger, deadline_profile
 
 SCENARIO_HELP = "path to a fictional scenario JSON file"
 PARAMETER_HELP = "one of " + ", ".join(SENSITIVITY_PARAMETERS)
@@ -138,6 +138,9 @@ def build_parser() -> argparse.ArgumentParser:
     ledger = commands.add_parser("outcome-ledger", help="inspect probability-weighted outcome contributions")
     _add_scenario_argument(ledger)
     _add_output_options(ledger)
+    profile = commands.add_parser("deadline-profile", help="show exact success and resolution probabilities over time")
+    _add_scenario_argument(profile)
+    _add_output_options(profile)
 
     diff = commands.add_parser("diff", help="compare two fictional scenario evaluations")
     _add_scenario_argument(diff)
@@ -364,6 +367,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             report = guardrail_headroom(scenario)
         elif args.command == "outcome-ledger":
             report = outcome_ledger(scenario)
+        elif args.command == "deadline-profile":
+            report = deadline_profile(scenario)
         elif args.command == "diff":
             report = diff_scenarios(load_scenario(_require_cli_text(args.baseline, "--baseline")), scenario)
         elif args.command == "evaluate":

@@ -137,6 +137,12 @@ Licensed under [Apache-2.0](LICENSE).
 
 ## Transaction what-if analysis
 
+`corridorlab deadline-profile scenario.json --format markdown` shows exact
+successful-delivery and final-resolution cumulative probabilities at declared
+event times, zero, and the current deadline. Failure recovery contributes to
+resolution only. Values between event times are constant; no interpolation or
+forecast is implied. Reports are bounded to 512 rows.
+
 `corridorlab outcome-ledger scenario.json --format csv` breaks down each declared
 outcome's weighted recipient amount, failure loss, recovery, and resolution time.
 Contributions are unrounded Decimal values in explicitly labeled currencies and

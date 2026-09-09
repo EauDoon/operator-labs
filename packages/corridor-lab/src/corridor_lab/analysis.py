@@ -67,3 +67,27 @@ def outcome_ledger(scenario: Scenario) -> dict:
         "resolution_hours", "send_currency", "receive_currency", "expected_recipient_receive",
         "expected_failure_loss_send", "expected_recovery_send", "expected_resolution_hours"], rows,
         "Unrounded weighted contributions reconcile to model expectations. Fees and liquidity carry are separate sender costs.")
+
+
+def deadline_profile(scenario: Scenario) -> dict:
+    """Exact step probabilities at declared event times, including the deadline."""
+    rows = []
+    with local_decimal_context():
+        for evaluation in _evaluations(scenario):
+            outcomes = evaluation.route.outcomes
+            times = sorted({Decimal(0), scenario.transaction.deadline_hours,
+                            *(outcome.resolution_hours for outcome in outcomes)})
+            if len(rows) + len(times) > MAX_SENSITIVITY_ROWS:
+                raise InputError("deadline profile exceeds the row budget")
+            for hours in times:
+                successful = sum((outcome.probability for outcome in outcomes
+                                  if outcome.completion == "success" and outcome.delay_hours <= hours), Decimal(0))
+                resolved = sum((outcome.probability for outcome in outcomes
+                                if outcome.resolution_hours <= hours), Decimal(0))
+                rows.append({"route_id": evaluation.route.route_id, "hours": decimal_text(hours),
+                    "successful_by_time": decimal_text(successful), "resolved_by_time": decimal_text(resolved),
+                    "unresolved_probability": decimal_text(1 - resolved),
+                    "declared_deadline": hours == scenario.transaction.deadline_hours})
+    return _table(scenario, "deadline-profile", ["route_id", "hours", "successful_by_time",
+        "resolved_by_time", "unresolved_probability", "declared_deadline"], rows,
+        "Exact cumulative probabilities under declared outcomes. Failure recovery is resolution, not successful delivery.")

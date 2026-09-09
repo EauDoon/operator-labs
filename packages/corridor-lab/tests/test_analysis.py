@@ -3,7 +3,7 @@ import unittest
 from decimal import Decimal, localcontext
 
 from helpers import route, scenario
-from corridor_lab.analysis import guardrail_headroom, outcome_ledger
+from corridor_lab.analysis import guardrail_headroom, outcome_ledger, deadline_profile
 from corridor_lab.canonical import InputError
 from corridor_lab.scenario import parse_scenario
 from corridor_lab.report import render_report
@@ -44,3 +44,21 @@ class LedgerTests(unittest.TestCase):
     def test_ledger_requires_embedded_routes(self):
         with self.assertRaises(InputError):
             outcome_ledger(parse_scenario(scenario()))
+
+
+class DeadlineTests(unittest.TestCase):
+    def test_success_and_final_resolution_are_distinct_cdfs(self):
+        rows = deadline_profile(parse_scenario(scenario([route()])))["rows"]
+        self.assertEqual([row["hours"] for row in rows], ["0", "2", "3", "5"])
+        self.assertEqual([row["successful_by_time"] for row in rows], ["0", "0.8", "0.8", "0.8"])
+        self.assertEqual([row["resolved_by_time"] for row in rows], ["0", "0.8", "0.8", "1"])
+        self.assertEqual([row["unresolved_probability"] for row in rows], ["1", "0.2", "0.2", "0"])
+        self.assertTrue(rows[2]["declared_deadline"])
+
+    def test_simultaneous_outcomes_and_zero_time(self):
+        raw = route()
+        for outcome in raw["outcomes"]:
+            outcome.update(delay_hours="0", recovery_delay_hours="0")
+        first = deadline_profile(parse_scenario(scenario([raw])))["rows"][0]
+        self.assertEqual(first["successful_by_time"], "0.8")
+        self.assertEqual(first["resolved_by_time"], "1")
