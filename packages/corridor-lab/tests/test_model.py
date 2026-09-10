@@ -1,7 +1,7 @@
 import unittest
 from decimal import getcontext, setcontext
 
-from corridor_lab.common import InputError
+from corridor_lab.canonical import InputError
 from corridor_lab.model import evaluate_route
 from corridor_lab.route import parse_route
 from corridor_lab.scenario import parse_scenario
