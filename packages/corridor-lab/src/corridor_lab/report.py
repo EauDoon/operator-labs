@@ -77,7 +77,7 @@ def render_csv(report: dict[str, object]) -> str:
         )
     routes = report.get("routes")
     if not isinstance(routes, list):
-        raise ValueError("report has no tabular rows")
+        raise TypeError("report has no tabular rows")
     rows: list[dict[str, object]] = []
     for route in routes:
         item = dict(route)

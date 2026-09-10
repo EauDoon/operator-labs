@@ -130,9 +130,8 @@ class ScenarioTests(unittest.TestCase):
 
     def test_cli_maps_decimal_exception_to_exit_two(self):
         stderr = StringIO()
-        with patch("corridor_lab.cli.load_scenario", side_effect=InvalidOperation):
-            with redirect_stderr(stderr):
-                result = main(["validate", "fictional.json"])
+        with patch("corridor_lab.cli.load_scenario", side_effect=InvalidOperation), redirect_stderr(stderr):
+            result = main(["validate", "fictional.json"])
         self.assertEqual(result, 2)
         self.assertEqual(stderr.getvalue(), "error: InvalidOperation\n")
 
@@ -144,9 +143,8 @@ class ScenarioTests(unittest.TestCase):
                 raise InputError("decimal calculation failed") from exc
 
         stderr = StringIO()
-        with patch("corridor_lab.cli.load_scenario", side_effect=boom):
-            with redirect_stderr(stderr):
-                result = main(["validate", "fictional.json"])
+        with patch("corridor_lab.cli.load_scenario", side_effect=boom), redirect_stderr(stderr):
+            result = main(["validate", "fictional.json"])
         self.assertEqual(result, 2)
         self.assertEqual(stderr.getvalue(), "error: decimal calculation failed: division impossible\n")
 
@@ -244,15 +242,13 @@ class ScenarioTests(unittest.TestCase):
                 result = main(["evaluate", str(path), "--format", "json", "--output", str(markdown_output)])
             self.assertEqual(result, 0)
             self.assertTrue(markdown_output.read_text(encoding="utf-8").startswith("{"))
-            with patch.dict(os.environ, {REPORT_FORMAT_ENV: "csv"}):
-                with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
-                    result = main(["evaluate", str(path), "--output", str(csv_output)])
+            with patch.dict(os.environ, {REPORT_FORMAT_ENV: "csv"}), redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+                result = main(["evaluate", str(path), "--output", str(csv_output)])
             self.assertEqual(result, 0)
             self.assertTrue(csv_output.read_text(encoding="utf-8").startswith("route_id,"))
             stdout = StringIO()
-            with patch.dict(os.environ, {REPORT_FORMAT_ENV: "markdown"}):
-                with redirect_stdout(stdout), redirect_stderr(StringIO()):
-                    result = main(["evaluate", str(path)])
+            with patch.dict(os.environ, {REPORT_FORMAT_ENV: "markdown"}), redirect_stdout(stdout), redirect_stderr(StringIO()):
+                result = main(["evaluate", str(path)])
             self.assertEqual(result, 0)
             self.assertTrue(stdout.getvalue().startswith("# Corridor Lab report"))
             stderr = StringIO()
@@ -261,9 +257,8 @@ class ScenarioTests(unittest.TestCase):
             self.assertEqual(result, 2)
             self.assertIn("--output suffix implies csv, which is not supported", stderr.getvalue())
             stderr = StringIO()
-            with patch.dict(os.environ, {REPORT_FORMAT_ENV: "yaml"}):
-                with redirect_stdout(StringIO()), redirect_stderr(stderr):
-                    result = main(["evaluate", str(path)])
+            with patch.dict(os.environ, {REPORT_FORMAT_ENV: "yaml"}), redirect_stdout(StringIO()), redirect_stderr(stderr):
+                result = main(["evaluate", str(path)])
             self.assertEqual(result, 2)
             self.assertIn("CORRIDOR_LAB_FORMAT=yaml is not supported", stderr.getvalue())
 
