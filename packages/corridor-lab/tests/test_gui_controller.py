@@ -198,9 +198,9 @@ class GuiControllerTests(unittest.TestCase):
                 replacement.write_text(json.dumps(route("replacement-route")), encoding="utf-8")
                 original_reader = route_module._read_scanned_route
 
-                def swap_before_open(*args):
-                    replacement.replace(inside)
-                    return original_reader(*args)
+                def swap_before_open(*args, _replacement=replacement, _inside=inside, _original_reader=original_reader):
+                    _replacement.replace(_inside)
+                    return _original_reader(*args)
 
                 with patch.object(route_module, "_read_scanned_route", side_effect=swap_before_open):
                     if caller == "cli":
