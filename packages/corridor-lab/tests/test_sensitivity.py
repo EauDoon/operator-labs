@@ -1,13 +1,12 @@
 import unittest
 from decimal import Decimal
 
-from helpers import route, scenario
-
 from corridor_lab.canonical import InputError
 from corridor_lab.report import render_report
 from corridor_lab.scenario import parse_scenario
 from corridor_lab.sensitivity import run_sensitivity
 from corridor_lab.stress import run_stress_grid
+from helpers import route, scenario
 
 
 class SensitivityTests(unittest.TestCase):

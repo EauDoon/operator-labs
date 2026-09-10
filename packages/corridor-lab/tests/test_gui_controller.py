@@ -6,13 +6,12 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
-from helpers import route, scenario
-
 import corridor_lab.route as route_module
 from corridor_lab.canonical import MAX_INPUT_BYTES, MAX_ROUTES, InputError
 from corridor_lab.gui import run_smoke_test
 from corridor_lab.gui_controller import CorridorGuiController
 from corridor_lab.scenario import parse_scenario
+from helpers import route, scenario
 
 
 class GuiControllerTests(unittest.TestCase):

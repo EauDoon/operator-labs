@@ -11,8 +11,8 @@ from .canonical import (
     decimal_text,
     require_decimal_values,
 )
+from .comparison import _declared_objective, _guardrail_status
 from .model import evaluate_route
-from .comparison import _guardrail_status, _declared_objective
 from .scenario import Scenario
 
 

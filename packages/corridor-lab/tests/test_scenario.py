@@ -8,8 +8,6 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
-from helpers import route, scenario
-
 from corridor_lab.canonical import (
     MAX_INPUT_BYTES,
     InputError,
@@ -26,6 +24,7 @@ from corridor_lab.cli import (
     resolve_report_format,
 )
 from corridor_lab.scenario import ScenarioError, parse_scenario, parse_scenario_text
+from helpers import route, scenario
 
 
 class ScenarioTests(unittest.TestCase):

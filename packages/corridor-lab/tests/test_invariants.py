@@ -1,11 +1,10 @@
 import unittest
 
-from helpers import route, scenario
-
 from corridor_lab.comparison import compare_routes
 from corridor_lab.model import evaluate_route
 from corridor_lab.route import parse_route
 from corridor_lab.scenario import parse_scenario
+from helpers import route, scenario
 
 
 class InvariantTests(unittest.TestCase):

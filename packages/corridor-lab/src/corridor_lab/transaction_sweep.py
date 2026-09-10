@@ -3,9 +3,15 @@
 from decimal import Decimal
 from itertools import product
 
-from .canonical import InputError, MAX_SENSITIVITY_ROWS, MAX_SENSITIVITY_VALUES, decimal_text, require_decimal_values
-from .comparison import _declared_transaction, _guardrail_status
 from .analysis import _table
+from .canonical import (
+    MAX_SENSITIVITY_ROWS,
+    MAX_SENSITIVITY_VALUES,
+    InputError,
+    decimal_text,
+    require_decimal_values,
+)
+from .comparison import _declared_transaction, _guardrail_status
 from .model import evaluate_route
 from .scenario import Scenario, _parse_transaction
 

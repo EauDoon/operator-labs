@@ -1,10 +1,16 @@
 """Transparent inspection of declared fictional scenarios, with no recommendations."""
-from decimal import Decimal, ROUND_FLOOR, ROUND_CEILING
+from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
 from itertools import combinations
-from .canonical import MAX_SENSITIVITY_ROWS, InputError, decimal_text, local_decimal_context
+
+from .canonical import (
+    MAX_SENSITIVITY_ROWS,
+    InputError,
+    decimal_text,
+    local_decimal_context,
+)
+from .comparison import _break_even, _declared_transaction
 from .model import evaluate_route
 from .scenario import Scenario, _parse_transaction
-from .comparison import _break_even, _declared_transaction
 
 
 def _evaluations(scenario: Scenario):
