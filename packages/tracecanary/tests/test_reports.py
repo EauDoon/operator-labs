@@ -219,9 +219,8 @@ class ReportTests(unittest.TestCase):
                         "--format",
                         output_format,
                     ]
-                    with self.subTest(marker=repr(marker), output_format=output_format):
-                        with patch.object(Path, "glob", return_value=[input_path]), patch.object(Path, "relative_to", return_value=relative):
-                            self._assert_cli_fails_silently(command)
+                    with self.subTest(marker=repr(marker), output_format=output_format), patch.object(Path, "glob", return_value=[input_path]), patch.object(Path, "relative_to", return_value=relative):
+                        self._assert_cli_fails_silently(command)
 
     def test_batch_object_guard_checks_nested_keys_and_values_before_serialization(self) -> None:
         markers = ('canary"quote', "canary\\backslash", "canary\x1fcontrol")
