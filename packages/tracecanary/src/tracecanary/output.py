@@ -2,6 +2,7 @@
 import os
 import tempfile
 from pathlib import Path
+
 from .canonical import InputError
 
 MAX_REPORT_BYTES = 32 * 1024 * 1024

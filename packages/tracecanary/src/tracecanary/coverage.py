@@ -1,6 +1,7 @@
 """Value-free visibility into the synthetic export actually inspected."""
 from collections import Counter
 from typing import Any
+
 from .checker import check_trace
 from .contract import Contract
 from .otlp import iter_attributes, validate_trace

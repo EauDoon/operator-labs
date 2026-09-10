@@ -1,10 +1,11 @@
 import contextlib
 import io
+import sys
 import tempfile
 import unittest
-from unittest.mock import patch
 from pathlib import Path
-import sys
+from unittest.mock import patch
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from tracecanary.cli import main
 from tracecanary.output import write_report

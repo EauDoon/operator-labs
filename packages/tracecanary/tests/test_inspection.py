@@ -6,11 +6,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from tracecanary.canonical import InputError
 from tracecanary.contract import parse_contract
 from tracecanary.fixture import bundle
-from tracecanary.inspection import inspect_contract, coverage_gate
-from tracecanary.canonical import InputError
-from tracecanary.report import render_json, render_human
+from tracecanary.inspection import coverage_gate, inspect_contract
+from tracecanary.report import render_human, render_json
 
 
 class ContractInspectionTests(unittest.TestCase):
@@ -55,8 +55,8 @@ class CoverageGateTests(unittest.TestCase):
 
 class CoverageDiffTests(unittest.TestCase):
     def test_rate_drop_despite_unchanged_raw_count(self):
-        from tracecanary.inspection import coverage_diff
         from tracecanary.comparison import diff_traces
+        from tracecanary.inspection import coverage_diff
         fixtures = bundle()
         before = fixtures["safe-export.json"]
         after = copy.deepcopy(before)
@@ -98,6 +98,7 @@ class RetentionMatrixTests(unittest.TestCase):
 
     def test_check_budget_is_enforced_without_partial_output(self):
         from unittest.mock import patch
+
         from tracecanary.inspection import retention_matrix
         fixtures = bundle()
         with patch("tracecanary.inspection.MAX_MATRIX_CHECKS", 2), self.assertRaises(InputError):
@@ -108,6 +109,7 @@ class BatchCoverageTests(unittest.TestCase):
     def test_aggregate_weights_entities_and_accounts_for_invalid_files(self):
         import json
         import tempfile
+
         from tracecanary.cli import _run_batch
         fixtures = bundle()
         first = fixtures["safe-export.json"]
@@ -131,6 +133,7 @@ class BatchCoverageTests(unittest.TestCase):
     def test_empty_population_has_no_invented_ratio(self):
         import json
         import tempfile
+
         from tracecanary.cli import _run_batch
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

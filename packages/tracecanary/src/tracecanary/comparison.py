@@ -7,7 +7,13 @@ from typing import Any
 
 from tracecanary.contract import Contract
 from tracecanary.otlp import iter_attributes
-from tracecanary.report import Report, Violation, ViolationDict, build_report, ensure_values_absent
+from tracecanary.report import (
+    Report,
+    Violation,
+    ViolationDict,
+    build_report,
+    ensure_values_absent,
+)
 
 
 def diff_traces(contract: Contract, baseline: dict[str, Any], candidate: dict[str, Any]) -> Report:
