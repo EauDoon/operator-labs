@@ -174,10 +174,10 @@ class GuiControllerTests(unittest.TestCase):
                 name = inside.name
                 path = str(inside)
 
-                def is_file(self, *, follow_symlinks=True):
+                def is_file(self, *, follow_symlinks=True):  # noqa: ARG002
                     return True
 
-                def stat(self, *, follow_symlinks=True):
+                def stat(self, *, follow_symlinks=True):  # noqa: ARG002
                     return cached
 
             with patch.object(route_module.os, "scandir") as scandir:
