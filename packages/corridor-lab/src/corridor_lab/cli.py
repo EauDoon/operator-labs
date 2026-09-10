@@ -10,6 +10,12 @@ from collections.abc import Mapping, Sequence
 from decimal import Decimal, DecimalException
 from pathlib import Path
 
+from .analysis import (
+    break_even_check,
+    deadline_profile,
+    guardrail_headroom,
+    outcome_ledger,
+)
 from .canonical import (
     MAX_BATCH_SCENARIOS,
     MAX_INPUT_BYTES,
@@ -23,11 +29,14 @@ from .model import evaluate_route
 from .report import render_report
 from .route import SENSITIVITY_PARAMETERS, Route, load_route, load_route_folder
 from .scenario import load_scenario, parse_scenario
+from .scenario_diff import diff_scenarios
 from .sensitivity import run_sensitivity
 from .stress import run_stress_grid
-from .scenario_diff import diff_scenarios
-from .transaction_sweep import TRANSACTION_PARAMETERS, run_transaction_sweep, run_transaction_grid
-from .analysis import guardrail_headroom, outcome_ledger, deadline_profile, break_even_check
+from .transaction_sweep import (
+    TRANSACTION_PARAMETERS,
+    run_transaction_grid,
+    run_transaction_sweep,
+)
 
 SCENARIO_HELP = "path to a fictional scenario JSON file"
 PARAMETER_HELP = "one of " + ", ".join(SENSITIVITY_PARAMETERS)

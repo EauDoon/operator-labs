@@ -1,9 +1,8 @@
 import unittest
 
-from helpers import route
-
 from corridor_lab.route import parse_route
 from corridor_lab.scenario import ScenarioError
+from helpers import route
 
 
 class RouteTests(unittest.TestCase):

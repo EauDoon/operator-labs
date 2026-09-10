@@ -1,5 +1,6 @@
 """Create one self-contained fictional scenario without overwriting files."""
 from pathlib import Path
+
 from .canonical import canonical_dumps
 from .gui_controller import BUILTIN_DEMO_SCENARIO
 from .scenario import parse_scenario

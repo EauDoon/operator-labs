@@ -1,9 +1,11 @@
 import unittest
-from helpers import route, scenario
-from corridor_lab.scenario import parse_scenario
-from corridor_lab.scenario_diff import diff_scenarios
+
 from corridor_lab.canonical import InputError
 from corridor_lab.report import render_report
+from corridor_lab.scenario import parse_scenario
+from corridor_lab.scenario_diff import diff_scenarios
+from helpers import route, scenario
+
 
 class ScenarioDiffTests(unittest.TestCase):
     def test_changed_fees_and_route_membership(self):

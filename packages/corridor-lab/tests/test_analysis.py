@@ -2,12 +2,17 @@
 import unittest
 from decimal import Decimal, localcontext
 
-from helpers import route, scenario
-from corridor_lab.analysis import guardrail_headroom, outcome_ledger, deadline_profile, break_even_check
+from corridor_lab.analysis import (
+    break_even_check,
+    deadline_profile,
+    guardrail_headroom,
+    outcome_ledger,
+)
 from corridor_lab.canonical import InputError
-from corridor_lab.scenario import parse_scenario
 from corridor_lab.report import render_report
+from corridor_lab.scenario import parse_scenario
 from corridor_lab.transaction_sweep import run_transaction_grid
+from helpers import route, scenario
 
 
 class HeadroomTests(unittest.TestCase):

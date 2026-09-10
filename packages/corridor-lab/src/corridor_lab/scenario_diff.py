@@ -1,5 +1,6 @@
 """Compare deterministic metric changes between two fictional scenarios."""
 from decimal import Decimal
+
 from .canonical import InputError, decimal_text, local_decimal_context
 from .comparison import evaluate_scenario
 from .scenario import Scenario

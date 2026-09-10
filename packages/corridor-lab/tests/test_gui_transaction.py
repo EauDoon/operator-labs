@@ -1,6 +1,7 @@
 import unittest
-from helpers import scenario
+
 from corridor_lab.gui_controller import CorridorGuiController
+
 
 class GuiTransactionTests(unittest.TestCase):
     def test_demo_sweep_and_invalid_draft_preserve_state(self):

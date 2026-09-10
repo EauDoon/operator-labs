@@ -1,10 +1,11 @@
 import tempfile
 import unittest
 from pathlib import Path
-from helpers import scenario
-from corridor_lab.starter import write_starter
-from corridor_lab.scenario import load_scenario
+
 from corridor_lab.comparison import evaluate_scenario
+from corridor_lab.scenario import load_scenario
+from corridor_lab.starter import write_starter
+
 
 class StarterTests(unittest.TestCase):
     def test_self_contained_reproducible_and_no_clobber(self):
