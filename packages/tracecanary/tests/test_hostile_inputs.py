@@ -190,9 +190,8 @@ class HostileInputTests(unittest.TestCase):
         marker = "TCANARY_OSERROR_PATH_7b22"
         error = io.StringIO()
         output = io.StringIO()
-        with patch("tracecanary.cli.load_contract", side_effect=OSError("cannot stat " + marker)):
-            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
-                status = main(["validate", "contract.json"])
+        with patch("tracecanary.cli.load_contract", side_effect=OSError("cannot stat " + marker)), contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
+            status = main(["validate", "contract.json"])
         self.assertEqual(status, EXIT_UNRESOLVED)
         self.assertEqual(output.getvalue(), "")
         self.assertIn("could not be accessed", error.getvalue())
@@ -209,9 +208,8 @@ class HostileInputTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "parser-deep.json"
             path.write_text("[]", encoding="utf-8")
-            with patch("tracecanary.canonical.json.loads", side_effect=RecursionError):
-                with self.assertRaisesRegex(InputError, "nesting"):
-                    load_json(path, max_bytes=4_096, max_depth=2_000)
+            with patch("tracecanary.canonical.json.loads", side_effect=RecursionError), self.assertRaisesRegex(InputError, "nesting"):
+                load_json(path, max_bytes=4_096, max_depth=2_000)
 
     def test_configured_nesting_limit_returns_exit_two(self) -> None:
         contract_data = {
