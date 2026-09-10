@@ -17,8 +17,12 @@ from tracecanary.cli import EXIT_PASS, EXIT_REGRESSION, EXIT_UNRESOLVED, main
 from tracecanary.contract import load_contract
 from tracecanary.fixture import bundle
 from tracecanary.otlp import validate_trace
-from tracecanary.report import UnsafeReportError, ensure_object_values_absent, render_human, render_json
-
+from tracecanary.report import (
+    UnsafeReportError,
+    ensure_object_values_absent,
+    render_human,
+    render_json,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "fixtures" / "v1"
@@ -116,8 +120,8 @@ class ReportTests(unittest.TestCase):
             input_path = root / "input.json"
             contract_path.write_text(json.dumps(contract), encoding="utf-8")
             input_path.write_text('{"resourceSpans":[]}', encoding="utf-8")
-            output = io.StringIO()
-            error = io.StringIO()
+            io.StringIO()
+            io.StringIO()
             commands = (
                 ["validate", str(contract_path), "--format", "json"],
                 ["check", "--contract", str(contract_path), "--input", str(input_path)],
@@ -405,7 +409,7 @@ class ReportTests(unittest.TestCase):
             with contextlib.redirect_stdout(output):
                 status = main(["fixture", "create", "--output", directory])
             self.assertEqual(status, EXIT_PASS)
-            self.assertEqual(set(path.name for path in Path(directory).iterdir()), set(bundle()))
+            self.assertEqual({path.name for path in Path(directory).iterdir()}, set(bundle()))
 
     def test_fixture_command_rejects_an_existing_file_without_a_traceback(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

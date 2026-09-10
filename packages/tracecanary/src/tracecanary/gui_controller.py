@@ -10,12 +10,20 @@ from typing import Any
 from tracecanary.canonical import InputError, load_json
 from tracecanary.checker import check_trace
 from tracecanary.comparison import diff_traces
-from tracecanary.coverage import coverage_report
 from tracecanary.contract import Contract, ContractError, load_contract, parse_contract
+from tracecanary.coverage import coverage_report
 from tracecanary.fixture import bundle, write_bundle
 from tracecanary.otlp import OtlpError, validate_trace
-from tracecanary.report import Report, Status, UnsafeReportError, Violation, build_report, ensure_values_absent, render_human, render_json
-
+from tracecanary.report import (
+    Report,
+    Status,
+    UnsafeReportError,
+    Violation,
+    build_report,
+    ensure_values_absent,
+    render_human,
+    render_json,
+)
 
 EXIT_PASS = 0
 EXIT_REGRESSION = 1

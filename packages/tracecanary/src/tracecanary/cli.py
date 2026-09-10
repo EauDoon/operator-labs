@@ -4,20 +4,25 @@ from __future__ import annotations
 
 import argparse
 import sys
-from fractions import Fraction
 from collections.abc import Sequence
+from fractions import Fraction
 from pathlib import Path
 from typing import Any
 
 from tracecanary.canonical import InputError, load_json
 from tracecanary.checker import check_trace
 from tracecanary.comparison import diff_traces
-from tracecanary.coverage import coverage_report
-from tracecanary.inspection import inspect_contract, coverage_gate, coverage_diff, retention_matrix
 from tracecanary.contract import Contract, ContractError, load_contract
+from tracecanary.coverage import coverage_report
 from tracecanary.fixture import write_bundle
-from tracecanary.output import protect_inputs, write_report
+from tracecanary.inspection import (
+    coverage_diff,
+    coverage_gate,
+    inspect_contract,
+    retention_matrix,
+)
 from tracecanary.otlp import OtlpError, validate_trace
+from tracecanary.output import protect_inputs, write_report
 from tracecanary.report import (
     BatchItem,
     BatchReport,
@@ -34,7 +39,6 @@ from tracecanary.report import (
     render_junit,
     render_sarif,
 )
-
 
 EXIT_PASS = 0
 EXIT_REGRESSION = 1

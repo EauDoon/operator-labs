@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import math
 import re
 import sys
-from typing import Any, Iterator
+from collections.abc import Iterator
+from dataclasses import dataclass
+from typing import Any
 
 from tracecanary.canonical import json_pointer
 

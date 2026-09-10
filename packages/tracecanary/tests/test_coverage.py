@@ -1,12 +1,13 @@
-import copy
+import sys
 import unittest
 from pathlib import Path
-import sys
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from tracecanary.contract import parse_contract
 from tracecanary.coverage import coverage_report
 from tracecanary.fixture import bundle
-from tracecanary.contract import parse_contract
-from tracecanary.report import render_json, render_human
+from tracecanary.report import render_human, render_json
+
 
 class CoverageTests(unittest.TestCase):
     def test_counts_are_value_free_and_stable(self):

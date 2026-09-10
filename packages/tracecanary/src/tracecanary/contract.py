@@ -8,7 +8,6 @@ from typing import Any
 
 from tracecanary.canonical import InputError, load_json
 
-
 SUPPORTED_CONTRACT_VERSION = "tracecanary/v1"
 SUPPORTED_SEMCONV_VERSION = "opentelemetry/semconv/1.43.0"
 DEFAULT_MAX_INPUT_BYTES = 5_000_000

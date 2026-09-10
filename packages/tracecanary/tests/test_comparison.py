@@ -11,7 +11,6 @@ from tracecanary.comparison import diff_traces
 from tracecanary.contract import load_contract
 from tracecanary.otlp import validate_trace
 
-
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "fixtures" / "v1"
 

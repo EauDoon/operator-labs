@@ -9,7 +9,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from tracecanary.canonical import InputError, load_json
 from tracecanary.otlp import OtlpError, iter_attributes, validate_trace
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 

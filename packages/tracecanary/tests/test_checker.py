@@ -13,7 +13,6 @@ from tracecanary.contract import Canary, Contract, load_contract
 from tracecanary.otlp import validate_trace
 from tracecanary.report import UnsafeReportError, render_human, render_json
 
-
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "fixtures" / "v1"
 

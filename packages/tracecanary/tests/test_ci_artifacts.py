@@ -1,10 +1,12 @@
 import json
+import sys
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
-import sys
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from tracecanary.report import build_report, Violation, render_sarif, render_junit
+from tracecanary.report import Violation, build_report, render_junit, render_sarif
+
 
 class CiArtifactTests(unittest.TestCase):
     def test_pointer_diagnostics_uri_encoding_and_path_opt_in(self):

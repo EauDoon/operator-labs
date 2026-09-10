@@ -1,10 +1,16 @@
 """Value-free inspection of declared synthetic privacy checks and coverage."""
-from fractions import Fraction
 import re
+from fractions import Fraction
+
 from .canonical import InputError
 from .contract import Contract
 from .coverage import coverage_report
-from .report import Violation, build_report, ensure_object_values_absent, ensure_values_absent
+from .report import (
+    Violation,
+    build_report,
+    ensure_object_values_absent,
+    ensure_values_absent,
+)
 
 
 def _privacy_checked(contract: Contract, report):
