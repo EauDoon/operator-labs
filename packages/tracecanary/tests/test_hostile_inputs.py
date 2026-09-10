@@ -87,9 +87,8 @@ class HostileInputTests(unittest.TestCase):
                     read_sizes.append(size)
                     return super().read(size)
 
-            with patch.object(Path, "open", return_value=GrowingInput(b"x" * 2_048)):
-                with self.assertRaisesRegex(InputError, "exceeds"):
-                    load_json(path, max_bytes=1_024, max_depth=10)
+            with patch.object(Path, "open", return_value=GrowingInput(b"x" * 2_048)), self.assertRaisesRegex(InputError, "exceeds"):
+                load_json(path, max_bytes=1_024, max_depth=10)
             self.assertEqual(read_sizes, [1_025])
 
     def test_missing_input_is_unresolved_without_echoing_filename(self) -> None:
