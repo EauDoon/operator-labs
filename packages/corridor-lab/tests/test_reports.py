@@ -99,8 +99,7 @@ class ReportTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             target = Path(directory) / "report.json"
             target.write_text("old\n", encoding="utf-8")
-            with patch("corridor_lab.canonical.os.replace", side_effect=OSError("replace failed")):
-                with self.assertRaises(OSError):
-                    atomic_write_text(target, "new\n")
+            with patch("corridor_lab.canonical.os.replace", side_effect=OSError("replace failed")), self.assertRaises(OSError):
+                atomic_write_text(target, "new\n")
             self.assertEqual(target.read_text(encoding="utf-8"), "old\n")
             self.assertEqual(list(Path(directory).glob("*.tmp")), [])
