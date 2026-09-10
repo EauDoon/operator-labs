@@ -368,9 +368,8 @@ class ReportTests(unittest.TestCase):
 
             output = io.StringIO()
             error = io.StringIO()
-            with patch.object(Path, "glob", return_value=bounded_candidates()):
-                with contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
-                    status = main([
+            with patch.object(Path, "glob", return_value=bounded_candidates()), contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
+                status = main([
                         "batch",
                         "--contract",
                         str(contract),
