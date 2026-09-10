@@ -1,6 +1,7 @@
 import unittest
 from decimal import getcontext, setcontext
 
+from corridor_lab.common import InputError
 from corridor_lab.model import evaluate_route
 from corridor_lab.route import parse_route
 from corridor_lab.scenario import parse_scenario
@@ -28,7 +29,7 @@ class ModelTests(unittest.TestCase):
         data = route()
         data["outcomes"][1]["recovery_amount_send"] = "101"
         tx = parse_scenario(scenario()).transaction
-        with self.assertRaises(Exception):
+        with self.assertRaises(InputError):
             evaluate_route(parse_route(data), tx)
 
     def test_evaluation_and_rendering_ignore_ambient_decimal_context(self):
