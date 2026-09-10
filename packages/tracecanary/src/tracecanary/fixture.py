@@ -8,7 +8,6 @@ from typing import Any
 
 from tracecanary.canonical import canonical_json
 
-
 PROMPT = "TCANARY_PROMPT_71f0e04f"
 TOOL_ARGUMENTS = "TCANARY_TOOL_ARGUMENTS_b26dc3a1"
 TOOL_RESULT = "TCANARY_TOOL_RESULT_5aa72e93"

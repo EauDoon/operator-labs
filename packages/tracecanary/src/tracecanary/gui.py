@@ -8,10 +8,15 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
-from tracecanary.gui_controller import EXIT_PASS, EXIT_UNRESOLVED, GuiResult, TraceCanaryController
+from tracecanary.gui_controller import (
+    EXIT_PASS,
+    EXIT_UNRESOLVED,
+    GuiResult,
+    TraceCanaryController,
+)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

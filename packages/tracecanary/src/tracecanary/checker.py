@@ -8,7 +8,13 @@ from typing import Any
 from tracecanary.canonical import json_pointer, pointer_matches
 from tracecanary.contract import Contract
 from tracecanary.otlp import iter_attributes
-from tracecanary.report import Report, ReportMode, Violation, build_report, ensure_values_absent
+from tracecanary.report import (
+    Report,
+    ReportMode,
+    Violation,
+    build_report,
+    ensure_values_absent,
+)
 
 
 def check_trace(contract: Contract, payload: dict[str, Any], *, mode: ReportMode = "check") -> Report:

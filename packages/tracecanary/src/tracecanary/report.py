@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import xml.etree.ElementTree as ET
-from urllib.parse import quote
+from dataclasses import dataclass
 from typing import Any, Literal, NotRequired, TypedDict
+from urllib.parse import quote
 
 from tracecanary.canonical import canonical_json
-
 
 Status = Literal["pass", "regression", "unresolved"]
 ReportMode = Literal["validate", "check", "diff", "batch", "demo", "starter", "coverage"]

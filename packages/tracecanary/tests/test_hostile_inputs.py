@@ -200,7 +200,7 @@ class HostileInputTests(unittest.TestCase):
         self.assertNotIn(marker, error.getvalue())
 
     def test_unknown_version_returns_unresolved_exit(self) -> None:
-        root = Path(__file__).resolve().parents[1]
+        Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory() as directory:
             contract = Path(directory) / "contract.json"
             contract.write_text('{"contract_version":"tracecanary/v999","semantic_conventions_version":"opentelemetry/semconv/1.43.0","canaries":[{"label":"a","category":"test","value":"synthetic"}],"required_retained_fields":[]}', encoding="utf-8")

@@ -20,7 +20,6 @@ from tracecanary.contract import (
     parse_contract,
 )
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 

@@ -13,10 +13,21 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-import tracecanary.gui as gui
-from tracecanary.gui import launch_window, main as gui_main
-from tracecanary.gui_controller import GUI001, GUI002, GUI003, GUI004, GUI005, GUI006, EXIT_PASS, EXIT_REGRESSION, EXIT_UNRESOLVED, TraceCanaryController
-
+from tracecanary import gui
+from tracecanary.gui import launch_window
+from tracecanary.gui import main as gui_main
+from tracecanary.gui_controller import (
+    EXIT_PASS,
+    EXIT_REGRESSION,
+    EXIT_UNRESOLVED,
+    GUI001,
+    GUI002,
+    GUI003,
+    GUI004,
+    GUI005,
+    GUI006,
+    TraceCanaryController,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "fixtures" / "v1"

@@ -1,13 +1,15 @@
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
-import sys
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from tracecanary.cli import _run_batch
-from tracecanary.fixture import bundle
-from tracecanary.contract import parse_contract
 from tracecanary.canonical import InputError
+from tracecanary.cli import _run_batch
+from tracecanary.contract import parse_contract
+from tracecanary.fixture import bundle
+
 
 class BatchBaselineTests(unittest.TestCase):
     def test_retention_loss_detected_across_candidates(self):

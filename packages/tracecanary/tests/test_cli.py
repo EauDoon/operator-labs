@@ -13,7 +13,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from tracecanary.cli import EXIT_PASS, EXIT_UNRESOLVED, main
 from tracecanary.gui import main as gui_main
 
-
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "fixtures" / "v1"
 
