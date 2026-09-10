@@ -230,9 +230,8 @@ class ReportTests(unittest.TestCase):
                 {"items": [{f"before-{marker}-after": "safe"}]},
             )
             for value in unsafe_objects:
-                with self.subTest(marker=repr(marker), value=value):
-                    with self.assertRaises(UnsafeReportError):
-                        ensure_object_values_absent(value, (marker,))
+                with self.subTest(marker=repr(marker), value=value), self.assertRaises(UnsafeReportError):
+                    ensure_object_values_absent(value, (marker,))
 
     def test_batch_converts_an_ordinary_value_error_to_an_unresolved_item(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -250,9 +249,8 @@ class ReportTests(unittest.TestCase):
                 "--format",
                 "json",
             ]
-            with patch("tracecanary.cli.check_trace", side_effect=ValueError("sensitive per-item detail")):
-                with contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
-                    status = main(command)
+            with patch("tracecanary.cli.check_trace", side_effect=ValueError("sensitive per-item detail")), contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
+                status = main(command)
             self.assertEqual(status, EXIT_UNRESOLVED)
             self.assertEqual(error.getvalue(), "")
             self.assertNotIn("sensitive per-item detail", output.getvalue())
@@ -293,9 +291,8 @@ class ReportTests(unittest.TestCase):
             destination = Path(directory) / marker
             output = io.StringIO()
             error = io.StringIO()
-            with patch.object(Path, "mkdir", side_effect=OSError("permission denied: " + marker)):
-                with contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
-                    status = main(["fixture", "create", "--output", str(destination)])
+            with patch.object(Path, "mkdir", side_effect=OSError("permission denied: " + marker)), contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
+                status = main(["fixture", "create", "--output", str(destination)])
             self.assertEqual(status, EXIT_UNRESOLVED)
             self.assertEqual(output.getvalue(), "")
             self.assertIn("could not be written", error.getvalue())
