@@ -1,5 +1,10 @@
 # Corridor Lab
 
+`corridorlab deadline-target scenario.json --probability 0.95` finds the earliest
+declared success time reaching that unconditional probability. If total success
+probability is too low, the row is `unreachable` with a null time. Target zero
+returns time zero. Failure recovery is not delivery, and times are not interpolated.
+
 `corridorlab cost-ledger scenario.json --format markdown` explains unrounded
 per-transaction sender cost as fixed fee, percentage fee, liquidity carry, and
 expected failure loss. Components reconcile to the existing model; receive-currency

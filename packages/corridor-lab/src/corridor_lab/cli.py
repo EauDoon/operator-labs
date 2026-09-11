@@ -14,6 +14,7 @@ from .analysis import (
     break_even_check,
     cost_ledger,
     deadline_profile,
+    deadline_target,
     guardrail_headroom,
     outcome_ledger,
 )
@@ -145,6 +146,10 @@ def build_parser() -> argparse.ArgumentParser:
     costs = commands.add_parser("cost-ledger", help="reconcile unrounded sender-cost components")
     _add_scenario_argument(costs)
     _add_output_options(costs)
+    target = commands.add_parser("deadline-target", help="find the earliest time meeting a declared delivery probability")
+    _add_scenario_argument(target)
+    target.add_argument("--probability", required=True, help="unconditional delivery probability from 0 to 1")
+    _add_output_options(target)
     headroom = commands.add_parser("guardrail-headroom", help="inspect margins against declared guardrails")
     _add_scenario_argument(headroom)
     _add_output_options(headroom)
@@ -387,6 +392,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         report: dict[str, object]
         if args.command == "cost-ledger":
             report = cost_ledger(scenario)
+        elif args.command == "deadline-target":
+            report = deadline_target(scenario, args.probability)
         elif args.command == "guardrail-headroom":
             report = guardrail_headroom(scenario)
         elif args.command == "outcome-ledger":

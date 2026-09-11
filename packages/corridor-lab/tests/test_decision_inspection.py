@@ -29,3 +29,26 @@ class CostLedgerTests(unittest.TestCase):
         raw["outcomes"][1]["recovery_amount_send"] = "100"
         self.assertTrue(all(row["share_of_sender_cost"] is None
                             for row in cost_ledger(parse_scenario(scenario([raw])))["rows"]))
+
+
+class DeadlineTargetTests(unittest.TestCase):
+    def test_target_is_unconditional_success_and_never_interpolates(self):
+        from corridor_lab.analysis import deadline_target
+        source = parse_scenario(scenario([route()]))
+        row = deadline_target(source, "0.8")["rows"][0]
+        self.assertEqual((row["status"], row["earliest_hours"]), ("reached", "2"))
+        self.assertEqual(deadline_target(source, "0")["rows"][0]["earliest_hours"], "0")
+        row = deadline_target(source, "0.800001")["rows"][0]
+        self.assertEqual((row["status"], row["earliest_hours"]), ("unreachable", None))
+        self.assertEqual(row["maximum_success_probability"], "0.8")
+
+    def test_tied_success_times_and_invalid_targets(self):
+        from corridor_lab.analysis import deadline_target
+        from corridor_lab.canonical import InputError
+        raw = route()
+        raw["outcomes"][1].update(completion="success", delay_hours="2", recovery_amount_send="0", recovery_delay_hours="0")
+        source = parse_scenario(scenario([raw]))
+        self.assertEqual(deadline_target(source, "1")["rows"][0]["earliest_hours"], "2")
+        for target in ("NaN", "-0.1", "1.1", True):
+            with self.assertRaises(InputError):
+                deadline_target(source, target)

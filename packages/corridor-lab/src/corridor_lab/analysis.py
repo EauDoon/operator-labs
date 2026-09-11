@@ -7,6 +7,7 @@ from .canonical import (
     InputError,
     decimal_text,
     local_decimal_context,
+    require_decimal,
 )
 from .comparison import _break_even, _declared_transaction
 from .model import evaluate_route
@@ -45,6 +46,27 @@ def cost_ledger(scenario: Scenario) -> dict:
     return _table(scenario, "cost-ledger", ["route_id", "component", "send_currency", "amount_send",
         "share_of_sender_cost"], rows,
         "Unrounded per-transaction components sum to expected sender cost. FX spread is in receive currency and is excluded. Zero total cost has no share.")
+
+
+def deadline_target(scenario: Scenario, probability: str) -> dict:
+    """Find the first declared success time meeting an unconditional probability."""
+    target = require_decimal(probability, "probability", minimum=Decimal(0), maximum=Decimal(1))
+    rows = []
+    with local_decimal_context():
+        for evaluation in _evaluations(scenario):
+            cumulative, hours = Decimal(0), Decimal(0) if target == 0 else None
+            for outcome in sorted(evaluation.route.outcomes, key=lambda item: (item.delay_hours, item.outcome_id)):
+                if outcome.completion == "success":
+                    cumulative += outcome.probability
+                    if hours is None and cumulative >= target:
+                        hours = outcome.delay_hours
+            rows.append({"route_id": evaluation.route.route_id, "target_probability": decimal_text(target),
+                "maximum_success_probability": decimal_text(cumulative),
+                "status": "reached" if hours is not None else "unreachable",
+                "earliest_hours": decimal_text(hours) if hours is not None else None})
+    return _table(scenario, "deadline-target", ["route_id", "target_probability",
+        "maximum_success_probability", "status", "earliest_hours"], rows,
+        "Earliest time meeting an explicitly requested unconditional delivery probability. Failure recovery never counts as delivery; no interpolation or forecast.")
 
 
 def guardrail_headroom(scenario: Scenario) -> dict:
