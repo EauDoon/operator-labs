@@ -18,6 +18,21 @@ FIXTURES = ROOT / "fixtures" / "v1"
 
 
 class CliUsageTests(unittest.TestCase):
+    def test_explicit_quality_gates_emit_reports_with_expected_exit_status(self):
+        for command, extra, expected in (
+            ("control-check", [], 2),
+            ("population-gate", ["--scope", "span", "--minimum", "1"], 0),
+            ("population-gate", ["--scope", "span", "--minimum", "2"], 1),
+            ("dropped-telemetry", ["--require-zero"], 0),
+        ):
+            for fmt in ("human", "json"):
+                with self.subTest(command=command, format=fmt, extra=extra):
+                    status, output, error = self._run([command, "--contract", str(FIXTURES / "contract.json"),
+                                                     "--input", str(FIXTURES / "safe-export.json"), *extra, "--format", fmt])
+                    self.assertEqual(status, expected)
+                    self.assertTrue(output)
+                    self.assertEqual(error, "")
+
     def _run(self, command: list[str]) -> tuple[int, str, str]:
         output = io.StringIO()
         error = io.StringIO()
@@ -30,6 +45,7 @@ class CliUsageTests(unittest.TestCase):
         self.assertEqual(status, EXIT_PASS)
         self.assertEqual(error, "")
         self.assertIn("Exit status:", output)
+        self.assertIn("control-check: 0 means all canaries were exercised", output)
         self.assertIn("invalid input, unsupported version, or unresolved comparison", output)
         self.assertIn("validate", output)
         status, output, error = self._run(["check", "--help"])

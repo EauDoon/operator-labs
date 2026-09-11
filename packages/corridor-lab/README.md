@@ -1,38 +1,5 @@
 # Corridor Lab
 
-`corridorlab feasible-amount scenario.json` finds the smallest positive amount on
-the declared send-currency precision grid that covers fees and every stated
-recovery. It can explain scenarios whose current amount cannot be evaluated.
-A 100% proportional fee plus a positive fixed fee is infeasible at every amount.
-The result permits zero recipient value and addresses model bounds only, not
-commercial availability or profitability. Other transaction assumptions stay fixed.
-The current amount is checked against exact fee and recovery bounds before the
-reported minimum is rounded up to the currency grid; existing inputs may contain
-more decimal places than the display precision.
-
-`corridorlab loss-profile scenario.json --format csv` shows the unconditional
-probability of unreturned principal **strictly above** zero and each declared
-failure-loss breakpoint, plus expected excess loss above that breakpoint. At zero,
-expected excess reconciles to model failure cost. Fees and liquidity carry are
-excluded; full recovery has no principal loss. This is a synthetic distribution.
-
-`corridorlab resolution-quantiles scenario.json --probabilities 0.5,0.9,0.99,1`
-reports exact discrete final-state times, including failure recovery. Probabilities
-must be distinct and greater than zero through one; zero is undefined for this
-inverse CDF. Up to 64 values and 512 route/value rows are allowed. JSON, CSV, and
-Markdown expose the chosen probability beside each time without interpolation.
-
-`corridorlab deadline-target scenario.json --probability 0.95` finds the earliest
-declared success time reaching that unconditional probability. If total success
-probability is too low, the row is `unreachable` with a null time. Target zero
-returns time zero. Failure recovery is not delivery, and times are not interpolated.
-
-`corridorlab cost-ledger scenario.json --format markdown` explains unrounded
-per-transaction sender cost as fixed fee, percentage fee, liquidity carry, and
-expected failure loss. Components reconcile to the existing model; receive-currency
-FX spread is separate. A zero total has null component shares. These are declared
-fictional assumptions, not observed costs or route recommendations.
-
 Corridor Lab compares declared, fictional cross-border payment routes using
 deterministic cost, timing, liquidity, and failure assumptions. It is an
 offline scenario engine, not a live pricing service or provider recommendation.
@@ -71,6 +38,45 @@ accept `--format markdown` only, not csv. Use `--output FILE` to write a report.
 If `--format` is omitted, it is inferred from `--output` (`.json`, `.md` /
 `.markdown`, `.csv`) or from `CORRIDOR_LAB_FORMAT`; otherwise JSON is the
 default. An explicit `--format` always wins.
+
+## Inspect declared cost, timing, and loss
+
+These commands require embedded routes. Use `corridorlab init --output scenario.json`
+to create a self-contained fictional input, or use the bundled `embedded-scenario.json`.
+All five support JSON, CSV, Markdown, and protected atomic `--output` files.
+
+`corridorlab feasible-amount scenario.json` finds the smallest positive amount on
+the declared send-currency precision grid that covers fees and every stated
+recovery. It can explain scenarios whose current amount cannot be evaluated.
+A 100% proportional fee plus a positive fixed fee is infeasible at every amount.
+The result permits zero recipient value and addresses model bounds only, not
+commercial availability or profitability. Other transaction assumptions stay fixed.
+The current amount is checked against exact fee and recovery bounds before the
+reported minimum is rounded up to the currency grid; existing inputs may contain
+more decimal places than the display precision.
+
+`corridorlab loss-profile scenario.json --format csv` shows the unconditional
+probability of unreturned principal **strictly above** zero and each declared
+failure-loss breakpoint, plus expected excess loss above that breakpoint. At zero,
+expected excess reconciles to model failure cost. Fees and liquidity carry are
+excluded; full recovery has no principal loss. This is a synthetic distribution.
+
+`corridorlab resolution-quantiles scenario.json --probabilities 0.5,0.9,0.99,1`
+reports exact discrete final-state times, including failure recovery. Probabilities
+must be distinct and greater than zero through one; zero is undefined for this
+inverse CDF. Up to 64 values and 512 route/value rows are allowed. JSON, CSV, and
+Markdown expose the chosen probability beside each time without interpolation.
+
+`corridorlab deadline-target scenario.json --probability 0.95` finds the earliest
+declared success time reaching that unconditional probability. If total success
+probability is too low, the row is `unreachable` with a null time. Target zero
+returns time zero. Failure recovery is not delivery, and times are not interpolated.
+
+`corridorlab cost-ledger scenario.json --format markdown` explains unrounded
+per-transaction sender cost as fixed fee, percentage fee, liquidity carry, and
+expected failure loss. Components reconcile to the existing model; receive-currency
+FX spread is separate. A zero total has null component shares. These are declared
+fictional assumptions, not observed costs or route recommendations.
 
 ## First screen
 

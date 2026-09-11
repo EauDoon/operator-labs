@@ -53,6 +53,7 @@ _EXIT_STATUS_HELP = (
     "  0  contract satisfied\n"
     "  1  privacy or retention regression detected\n"
     "  2  invalid input, unsupported version, or unresolved comparison\n"
+    "  control-check: 0 means all canaries were exercised, not a privacy pass\n"
     "\n"
     "Reports never include matched canary values."
 )

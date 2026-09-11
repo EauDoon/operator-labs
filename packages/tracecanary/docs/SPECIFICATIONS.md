@@ -6,7 +6,7 @@ The supported contract version is `tracecanary/v1`; the supported semantic-conve
 
 OpenTelemetry describes its GenAI semantic conventions as Development. TraceCanary pins this reviewed snapshot and checks only a narrow reviewed subset: OTLP JSON resource, instrumentation-scope, span, event, and link attributes used by its explicit contract. It does not implement the full semantic-convention registry. See the official [semantic conventions documentation](https://opentelemetry.io/docs/specs/semconv/) and [GenAI attribute registry](https://opentelemetry.io/docs/specs/semconv/registry/attributes/gen-ai/).
 
-`canaries` is a non-empty list of unique objects with `label`, `category`, and `value`. The values are exact string sentinels. `forbidden_attribute_keys`, `forbidden_attribute_key_prefixes`, and `forbidden_path_prefixes` are optional unique string lists. Path prefixes use RFC 6901-style segments and allow `*` for one segment. `required_retained_fields` is a list of unique `{scope, key}` entries, where scope is `resource`, `span`, or `event`.
+`canaries` is a non-empty list of unique objects with `label`, `category`, and `value`. The values are exact string sentinels. `forbidden_attribute_keys`, `forbidden_attribute_key_prefixes`, and `forbidden_path_prefixes` are optional unique string lists. Path prefixes use RFC 6901-style segments and allow `*` for one segment. `required_retained_fields` is a list of unique `{scope, key}` entries, where scope is `resource`, `scope`, `span`, `event`, or `link`.
 
 `limits.max_input_bytes` defaults to 5,000,000 and must be from 1,024 through 50,000,000. `limits.max_nesting` defaults to 100 and must be from 2 through 1,000. `limits.max_batch_files` defaults to 256 and must be from 1 through 10,000; `batch` rejects a directory that contains more JSON files than this limit.
 
@@ -26,21 +26,37 @@ This structural subset accepts the fields necessary for the stated v1 checks. In
 | `TC004` | A contract-required operational field is absent. |
 | `TC005` | A candidate has fewer contract-required fields than a passing baseline. |
 | `TC006` | A batch item could not be validated, so that item is unresolved. |
+| `TC010` | A retained field conflicts with a forbidden key or key prefix. |
+| `TC011` | A retained-field entity ratio is below the explicit minimum. |
+| `TC012` | A retained-field coverage rate decreased from the baseline. |
+| `TC013` | An entity population is below the explicit minimum. |
+| `TC014` | Declared dropped counters violate an explicit zero-drop gate. |
 | `TC900` | The baseline does not satisfy the contract, so comparison is unresolved. |
+| `TC901` | Coverage cannot be gated or compared because requirements or populations are absent, or a baseline is invalid. |
+| `TC902` | A positive control does not exercise a declared canary. |
 
 ## Report object
 
 Library functions `check_trace` and `diff_traces` return the same JSON object the CLI prints with `--format json`. The object always contains:
 
 - `contract_version`: the pinned contract identifier.
-- `mode`: `validate`, `check`, `diff`, `batch`, `demo`, or `starter`.
+- `mode`: `validate`, `check`, `diff`, `batch`, `demo`, `starter`, `coverage`, `inspect-contract`, `coverage-gate`, `coverage-diff`, `retention-matrix`, `control-check`, `population-gate`, or `dropped-telemetry`.
 - `status`: `pass`, `regression`, or `unresolved`.
-- `summary`: integer counters `canary_leaks` (TC001), `forbidden_attributes` (TC002), `forbidden_paths` (TC003), `missing_retained_fields` (TC004), `baseline_regressions` (TC005), and `total`. `TC006` and `TC900` increment only `total`.
+- `summary`: integer counters `canary_leaks` (TC001), `forbidden_attributes` (TC002), `forbidden_paths` (TC003), `missing_retained_fields` (TC004), `baseline_regressions` (TC005), and `total`. Other codes increment only `total`.
 - `violations`: findings ordered by code, path, label, and key.
 
 Each finding contains `code`, `message`, and `path`. Canary findings also include `label` and `category`. Forbidden-attribute and retained-field findings include `key` and `scope`. `path` is empty when a finding is not bound to a JSON location. Optional fields are omitted when they are absent or would expose a canary value.
 
 A batch JSON report contains `batch_version` (`tracecanary.batch/v1`), `contract_version`, `status`, and `items`. Each item has `id`, `status`, and a nested single-trace `report`. `--include-paths` adds `path` with a directory-relative POSIX path. Batch `human` output lists item ids and statuses only; SARIF and JUnit renderings are derived from the same item list.
+
+Inspection modes add their named value-free metadata to the common report.
+`control-check` is a positive-control test: pass means every declared canary
+appeared as an exact scalar, and missing canaries produce unresolved. This mode
+does not run the privacy or retention gate on an intentionally unsanitized input.
+`population-gate` and zero-gated `dropped-telemetry` preserve privacy findings.
+Coverage batches add `coverage_summary`; an optional minimum ratio applies per
+file, never to the aggregate. Structurally valid empty files can be counted as
+validated and unresolved together; only invalid files increment `excluded_items`.
 
 ## GUI guidance codes
 
