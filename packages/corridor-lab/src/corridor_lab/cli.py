@@ -16,6 +16,7 @@ from .analysis import (
     deadline_profile,
     deadline_target,
     guardrail_headroom,
+    loss_profile,
     outcome_ledger,
     resolution_quantiles,
 )
@@ -155,6 +156,9 @@ def build_parser() -> argparse.ArgumentParser:
     _add_scenario_argument(quantiles)
     quantiles.add_argument("--probabilities", required=True, help="comma-separated probabilities greater than 0 and at most 1")
     _add_output_options(quantiles)
+    losses = commands.add_parser("loss-profile", help="inspect declared principal-loss exceedance probabilities")
+    _add_scenario_argument(losses)
+    _add_output_options(losses)
     headroom = commands.add_parser("guardrail-headroom", help="inspect margins against declared guardrails")
     _add_scenario_argument(headroom)
     _add_output_options(headroom)
@@ -401,6 +405,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             report = deadline_target(scenario, args.probability)
         elif args.command == "resolution-quantiles":
             report = resolution_quantiles(scenario, _parse_values(args.probabilities, "--probabilities"))
+        elif args.command == "loss-profile":
+            report = loss_profile(scenario)
         elif args.command == "guardrail-headroom":
             report = guardrail_headroom(scenario)
         elif args.command == "outcome-ledger":

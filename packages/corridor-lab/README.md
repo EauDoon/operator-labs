@@ -1,5 +1,11 @@
 # Corridor Lab
 
+`corridorlab loss-profile scenario.json --format csv` shows the unconditional
+probability of unreturned principal **strictly above** zero and each declared
+failure-loss breakpoint, plus expected excess loss above that breakpoint. At zero,
+expected excess reconciles to model failure cost. Fees and liquidity carry are
+excluded; full recovery has no principal loss. This is a synthetic distribution.
+
 `corridorlab resolution-quantiles scenario.json --probabilities 0.5,0.9,0.99,1`
 reports exact discrete final-state times, including failure recovery. Probabilities
 must be distinct and greater than zero through one; zero is undefined for this

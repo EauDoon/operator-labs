@@ -85,6 +85,30 @@ def resolution_quantiles(scenario: Scenario, probabilities: list[Decimal]) -> di
         "Earliest final-state time whose cumulative probability reaches the requested quantile. Includes failure recovery; not conditional delivery latency and never interpolated.")
 
 
+def loss_profile(scenario: Scenario) -> dict:
+    """Exact exceedance of unreturned principal at each declared loss breakpoint."""
+    rows = []
+    with local_decimal_context():
+        for evaluation in _evaluations(scenario):
+            losses = [(scenario.transaction.send_amount - outcome.recovery_amount_send, outcome.probability)
+                      for outcome in evaluation.route.outcomes if outcome.completion == "failure"]
+            thresholds = sorted({Decimal(0), *(loss for loss, _ in losses)})
+            if len(rows) + len(thresholds) > MAX_SENSITIVITY_ROWS:
+                raise InputError("loss profile exceeds the row budget")
+            # ponytail: bounded outcome scan per breakpoint; suffix sums if outcome limits grow.
+            for threshold in thresholds:
+                probability = sum((weight for loss, weight in losses if loss > threshold), Decimal(0))
+                excess = sum((weight * (loss - threshold) for loss, weight in losses if loss > threshold), Decimal(0))
+                rows.append({"route_id": evaluation.route.route_id,
+                    "send_currency": scenario.transaction.send_currency,
+                    "loss_threshold_send": decimal_text(threshold),
+                    "probability_above_threshold": decimal_text(probability),
+                    "expected_excess_loss_send": decimal_text(excess)})
+    return _table(scenario, "loss-profile", ["route_id", "send_currency", "loss_threshold_send",
+        "probability_above_threshold", "expected_excess_loss_send"], rows,
+        "Strictly greater than each unreturned-principal threshold; expected excess is unconditional. Fees, liquidity carry, and receive-currency FX spread are excluded. Declared synthetic outcomes only.")
+
+
 def guardrail_headroom(scenario: Scenario) -> dict:
     """Positive or zero headroom passes only an explicitly declared guardrail."""
     objective = scenario.objective

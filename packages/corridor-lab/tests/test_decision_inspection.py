@@ -71,3 +71,20 @@ class ResolutionQuantileTests(unittest.TestCase):
                        [Decimal("0.5"), Decimal("0.50")]):
             with self.assertRaises(InputError):
                 resolution_quantiles(source, values)
+
+
+class LossProfileTests(unittest.TestCase):
+    def test_loss_exceedance_is_strict_and_excludes_sender_fees(self):
+        from corridor_lab.analysis import loss_profile
+        rows = loss_profile(parse_scenario(scenario([route()])))["rows"]
+        self.assertEqual([row["loss_threshold_send"] for row in rows], ["0", "50"])
+        self.assertEqual([row["probability_above_threshold"] for row in rows], ["0.2", "0"])
+        self.assertEqual([row["expected_excess_loss_send"] for row in rows], ["10", "0"])
+
+    def test_full_recovery_has_zero_principal_loss_despite_failure(self):
+        from corridor_lab.analysis import loss_profile
+        raw = route()
+        raw["outcomes"][1]["recovery_amount_send"] = "100"
+        rows = loss_profile(parse_scenario(scenario([raw])))["rows"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["probability_above_threshold"], "0")
