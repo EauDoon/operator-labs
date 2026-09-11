@@ -1,10 +1,13 @@
 """Value-free inspection of declared synthetic privacy checks and coverage."""
 import re
+from collections import Counter
 from fractions import Fraction
 
 from .canonical import InputError
+from .checker import _iter_scalars
 from .contract import Contract
 from .coverage import coverage_report
+from .otlp import validate_trace
 from .report import (
     Violation,
     build_report,
@@ -18,6 +21,24 @@ def _privacy_checked(contract: Contract, report):
     ensure_object_values_absent(report, values)
     ensure_values_absent(report, values)
     return report
+
+
+def control_check(contract: Contract, payload):
+    """Verify every synthetic canary is exercised in an unsanitized positive control."""
+    validate_trace(payload)
+    wanted = {canary.value for canary in contract.canaries}
+    counts = Counter(scalar for _, scalar in _iter_scalars(payload)
+                     if isinstance(scalar, str) and scalar in wanted)
+    fields, issues = [], []
+    for index, canary in enumerate(contract.canaries, 1):
+        identifier = f"canary-{index:04d}"
+        fields.append({"id": identifier, "occurrences": counts[canary.value]})
+        if not counts[canary.value]:
+            issues.append(Violation("TC902", "", "positive control does not exercise a declared canary", label=identifier))
+    report = build_report(contract.contract_version, "unresolved" if issues else "pass", issues,
+                          mode="control-check", redacted_values=tuple(canary.value for canary in contract.canaries))
+    report["control"] = {"canaries": fields}
+    return _privacy_checked(contract, report)
 
 
 def inspect_contract(contract: Contract):

@@ -160,6 +160,14 @@ Apache-2.0. See [LICENSE](LICENSE).
 
 ## Inspect coverage
 
+`tracecanary control-check --contract contract.json --input unsanitized-control.json`
+checks that **every** declared canary occurs as an exact scalar in a synthetic
+positive control before sanitization. Missing canaries return unresolved (2),
+including substrings the existing exact-match checker cannot detect. The value-free
+report uses one-based canary ordinals and occurrence counts. PASS (0) means the
+control exercised the canaries, **not** that it is privacy-safe. Run ordinary
+`check` on the separately sanitized export; no collector is invoked or configured.
+
 `tracecanary coverage-gate --contract contract.json --input export.json
 --minimum-ratio 0.95 --format json` adds an explicit per-required-field entity
 coverage gate. Decimal thresholds from 0 to 1 (at most six places) use exact
