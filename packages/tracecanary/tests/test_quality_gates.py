@@ -119,3 +119,39 @@ class DroppedTelemetryTests(unittest.TestCase):
         contract = parse_contract(fixtures["contract.json"])
         self.assertEqual(dropped_telemetry(contract, fixtures["safe-export.json"], require_zero=True)["status"], "pass")
         self.assertEqual(dropped_telemetry(contract, fixtures["leaked-prompt.json"], require_zero=True)["status"], "regression")
+
+
+class BatchRatioGateTests(unittest.TestCase):
+    def test_large_passing_file_cannot_hide_one_sparse_export(self):
+        import json
+        import tempfile
+        from pathlib import Path
+
+        from tracecanary.cli import _run_batch
+        fixtures = bundle()
+        contract = parse_contract(fixtures["contract.json"])
+        first = fixtures["safe-export.json"]
+        second = copy.deepcopy(first)
+        scope = second["resourceSpans"][0]["scopeSpans"][0]
+        extra = copy.deepcopy(scope["spans"][0])
+        extra.pop("attributes")
+        scope["spans"].append(extra)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "a.json").write_text(json.dumps(first))
+            (root / "b.json").write_text(json.dumps(second))
+            self.assertEqual(_run_batch(contract, root, False, False, coverage=True)["status"], "pass")
+            report = _run_batch(contract, root, False, False, coverage=True, minimum_ratio="0.6")
+        self.assertEqual(report["status"], "regression")
+        self.assertEqual([item["status"] for item in report["items"]], ["pass", "regression"])
+        self.assertEqual(report["coverage_summary"]["required_fields"][1]["ratio"], "2/3")
+        self.assertEqual(report["coverage_summary"]["minimum_ratio_per_file"], "0.6")
+
+    def test_invalid_batch_ratio_is_rejected_before_scanning(self):
+        from pathlib import Path
+
+        from tracecanary.canonical import InputError
+        from tracecanary.cli import _run_batch
+        contract = parse_contract(bundle()["contract.json"])
+        with self.assertRaisesRegex(InputError, "minimum ratio"):
+            _run_batch(contract, Path("does-not-exist"), False, False, coverage=True, minimum_ratio="NaN")

@@ -101,11 +101,15 @@ def inspect_contract(contract: Contract):
     return _privacy_checked(contract, report)
 
 
-def coverage_gate(contract: Contract, payload, minimum_ratio: str):
-    """Opt-in per-required-field ratio gate, layered on the unchanged privacy check."""
+def _parse_minimum_ratio(minimum_ratio: str) -> Fraction:
     if not isinstance(minimum_ratio, str) or not re.fullmatch(r"(?:0(?:\.[0-9]{1,6})?|1(?:\.0{1,6})?)", minimum_ratio):
         raise InputError("minimum ratio must be a decimal from 0 to 1 with at most six places")
-    threshold = Fraction(minimum_ratio)
+    return Fraction(minimum_ratio)
+
+
+def coverage_gate(contract: Contract, payload, minimum_ratio: str):
+    """Opt-in per-required-field ratio gate, layered on the unchanged privacy check."""
+    threshold = _parse_minimum_ratio(minimum_ratio)
     base = coverage_report(contract, payload)
     fields, extra = [], []
     unresolved = not contract.required_retained_fields
