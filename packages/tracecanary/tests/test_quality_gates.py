@@ -87,3 +87,35 @@ class PopulationGateTests(unittest.TestCase):
         for scope, count in (("unknown", 1), ("span", 0), ("span", True), ("span", 1.0), ("span", 1000001)):
             with self.assertRaises(InputError):
                 population_gate(contract, fixtures["safe-export.json"], scope, count)
+
+
+class DroppedTelemetryTests(unittest.TestCase):
+    def test_nested_drop_counters_are_descriptive_unless_explicitly_gated(self):
+        from tracecanary.inspection import dropped_telemetry
+        fixtures = bundle()
+        contract = parse_contract(fixtures["contract.json"])
+        payload = fixtures["safe-export.json"]
+        resource = payload["resourceSpans"][0]
+        resource["resource"]["droppedAttributesCount"] = 2
+        scope = resource["scopeSpans"][0]
+        scope["scope"]["droppedAttributesCount"] = 3
+        span = scope["spans"][0]
+        span.update(droppedAttributesCount=5, droppedEventsCount=7, droppedLinksCount=11)
+        span["events"][0]["droppedAttributesCount"] = 13
+        span["links"] = [{"droppedAttributesCount": 17}]
+        report = dropped_telemetry(contract, payload)
+        self.assertEqual(report["status"], "pass")
+        rows = report["dropped_telemetry"]["scopes"]
+        self.assertEqual([row["attributes"] for row in rows], [2, 3, 5, 13, 17])
+        self.assertEqual(sum(row["events"] for row in rows), 7)
+        self.assertEqual(sum(row["links"] for row in rows), 11)
+        report = dropped_telemetry(contract, payload, require_zero=True)
+        self.assertEqual(report["status"], "regression")
+        self.assertEqual(report["summary"]["total"], 5)
+
+    def test_absent_counters_do_not_hide_privacy_findings(self):
+        from tracecanary.inspection import dropped_telemetry
+        fixtures = bundle()
+        contract = parse_contract(fixtures["contract.json"])
+        self.assertEqual(dropped_telemetry(contract, fixtures["safe-export.json"], require_zero=True)["status"], "pass")
+        self.assertEqual(dropped_telemetry(contract, fixtures["leaked-prompt.json"], require_zero=True)["status"], "regression")

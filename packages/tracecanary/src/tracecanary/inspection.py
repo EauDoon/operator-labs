@@ -57,6 +57,27 @@ def population_gate(contract: Contract, payload, scope: str, minimum: int):
     return _privacy_checked(contract, report)
 
 
+def dropped_telemetry(contract: Contract, payload, *, require_zero: bool = False):
+    """Sum declared OTLP dropped counters, optionally enforcing an explicit zero gate."""
+    if type(require_zero) is not bool:
+        raise InputError("require_zero must be a boolean")
+    base = coverage_report(contract, payload)
+    totals = {scope: {"scope": scope, "attributes": 0, "events": 0, "links": 0}
+              for scope in ("resource", "scope", "span", "event", "link")}
+    for scope, _, entity in _retention_entities(payload):
+        for name in ("attributes", "events", "links"):
+            totals[scope][name] += entity.get(f"dropped{name.title()}Count", 0)
+    issues = [Violation(**item) for item in base["violations"]]
+    if require_zero:
+        for scope, counts in totals.items():
+            if any(counts[name] for name in ("attributes", "events", "links")):
+                issues.append(Violation("TC014", "", "declared dropped telemetry violates the explicit zero-drop gate", scope=scope))
+    report = build_report(contract.contract_version, "regression" if issues else "pass", issues,
+                          mode="dropped-telemetry", redacted_values=tuple(canary.value for canary in contract.canaries))
+    report["dropped_telemetry"] = {"require_zero": require_zero, "scopes": list(totals.values())}
+    return _privacy_checked(contract, report)
+
+
 def inspect_contract(contract: Contract):
     """Inventory effective checks and find directly contradictory retention requirements."""
     conflicts = []

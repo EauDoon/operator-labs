@@ -19,6 +19,7 @@ from tracecanary.inspection import (
     control_check,
     coverage_diff,
     coverage_gate,
+    dropped_telemetry,
     inspect_contract,
     population_gate,
     retention_matrix,
@@ -103,6 +104,11 @@ def build_parser() -> argparse.ArgumentParser:
     population.add_argument("--scope", required=True, choices=("resource", "scope", "span", "event", "link"))
     population.add_argument("--minimum", required=True, type=int)
     population.add_argument("--format", choices=("human", "json"), default="human")
+    dropped = commands.add_parser("dropped-telemetry", help="inspect declared dropped counters and optionally require zero")
+    dropped.add_argument("--contract", required=True, type=_cli_path)
+    dropped.add_argument("--input", required=True, type=_cli_path)
+    dropped.add_argument("--require-zero", action="store_true")
+    dropped.add_argument("--format", choices=("human", "json"), default="human")
     coverage = commands.add_parser("coverage", help="show value-free entity and required-field coverage")
     coverage.add_argument("--contract", required=True, type=_cli_path)
     coverage.add_argument("--input", required=True, type=_cli_path)
@@ -144,7 +150,7 @@ def build_parser() -> argparse.ArgumentParser:
     batch_coverage.add_argument("--recursive", action="store_true")
     batch_coverage.add_argument("--include-paths", action="store_true")
     batch_coverage.add_argument("--format", choices=("human", "json"), default="json")
-    for command in (validate, check, diff, batch, coverage, inspect, gate, rate_diff, matrix, batch_coverage, control, population):
+    for command in (validate, check, diff, batch, coverage, inspect, gate, rate_diff, matrix, batch_coverage, control, population, dropped):
         command.add_argument("--output", type=_cli_path, help="write a UTF-8 report atomically; cannot replace inputs")
     fixture = commands.add_parser("fixture", help="write synthetic fixtures")
     fixture_commands = fixture.add_subparsers(dest="fixture_command", required=True, parser_class=_ArgumentParser)
@@ -173,6 +179,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             report = control_check(contract, _load_trace(args.input, contract))
         elif args.command == "population-gate":
             report = population_gate(contract, _load_trace(args.input, contract), args.scope, args.minimum)
+        elif args.command == "dropped-telemetry":
+            report = dropped_telemetry(contract, _load_trace(args.input, contract), require_zero=args.require_zero)
         elif args.command == "coverage":
             report = coverage_report(contract, _load_trace(args.input, contract))
         elif args.command == "retention-matrix":

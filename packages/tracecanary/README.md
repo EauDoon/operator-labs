@@ -160,6 +160,13 @@ Apache-2.0. See [LICENSE](LICENSE).
 
 ## Inspect coverage
 
+`tracecanary dropped-telemetry --contract contract.json --input export.json --require-zero`
+reports declared dropped attribute, event, and link counters by entity scope.
+Without `--require-zero` the counters are descriptive; with it, any positive
+counter produces TC014 and exit 1. Existing privacy findings still fail the check.
+Absent counters count as zero according to the supported input representation;
+they do not establish that a collector retained all telemetry.
+
 `tracecanary population-gate --contract contract.json --input export.json --scope span --minimum 10`
 requires at least the explicitly selected entity count while preserving every
 normal privacy check. A smaller or empty population returns regression (1, TC013).
