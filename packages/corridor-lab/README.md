@@ -1,5 +1,12 @@
 # Corridor Lab
 
+`corridorlab feasible-amount scenario.json` finds the smallest positive amount on
+the declared send-currency precision grid that covers fees and every stated
+recovery. It can explain scenarios whose current amount cannot be evaluated.
+A 100% proportional fee plus a positive fixed fee is infeasible at every amount.
+The result permits zero recipient value and addresses model bounds only, not
+commercial availability or profitability. Other transaction assumptions stay fixed.
+
 `corridorlab loss-profile scenario.json --format csv` shows the unconditional
 probability of unreturned principal **strictly above** zero and each declared
 failure-loss breakpoint, plus expected excess loss above that breakpoint. At zero,

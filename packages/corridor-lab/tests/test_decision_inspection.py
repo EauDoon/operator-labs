@@ -88,3 +88,31 @@ class LossProfileTests(unittest.TestCase):
         rows = loss_profile(parse_scenario(scenario([raw])))["rows"]
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["probability_above_threshold"], "0")
+
+
+class FeasibleAmountTests(unittest.TestCase):
+    def test_fee_boundary_rounds_up_and_recovery_floor_is_respected(self):
+        from corridor_lab.analysis import feasible_amount
+        raw = route()
+        raw["outcomes"][1]["recovery_amount_send"] = "0"
+        row = feasible_amount(parse_scenario(scenario([raw])))["rows"][0]
+        self.assertEqual(row["minimum_send_amount"], "1.02")
+        self.assertEqual(feasible_amount(parse_scenario(scenario([route()])))["rows"][0]["minimum_send_amount"], "50")
+
+    def test_hundred_percent_fee_and_zero_cost_bounds(self):
+        from corridor_lab.analysis import feasible_amount
+        raw = route()
+        raw["percent_fee_bps"] = "10000"
+        row = feasible_amount(parse_scenario(scenario([raw])))["rows"][0]
+        self.assertEqual((row["status"], row["minimum_send_amount"]), ("infeasible", None))
+        raw["fixed_fee_send"] = "0"
+        raw["outcomes"][1]["recovery_amount_send"] = "0"
+        row = feasible_amount(parse_scenario(scenario([raw])))["rows"][0]
+        self.assertEqual(row["minimum_send_amount"], "0.01")
+
+    def test_inspection_can_explain_a_currently_infeasible_amount(self):
+        from corridor_lab.analysis import feasible_amount
+        raw = scenario([route()])
+        raw["transaction"]["send_amount"] = "1"
+        row = feasible_amount(parse_scenario(raw))["rows"][0]
+        self.assertFalse(row["current_amount_meets_bounds"])

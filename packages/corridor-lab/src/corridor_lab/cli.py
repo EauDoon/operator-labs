@@ -15,6 +15,7 @@ from .analysis import (
     cost_ledger,
     deadline_profile,
     deadline_target,
+    feasible_amount,
     guardrail_headroom,
     loss_profile,
     outcome_ledger,
@@ -159,6 +160,9 @@ def build_parser() -> argparse.ArgumentParser:
     losses = commands.add_parser("loss-profile", help="inspect declared principal-loss exceedance probabilities")
     _add_scenario_argument(losses)
     _add_output_options(losses)
+    feasible = commands.add_parser("feasible-amount", help="inspect minimum amounts satisfying declared fee and recovery bounds")
+    _add_scenario_argument(feasible)
+    _add_output_options(feasible)
     headroom = commands.add_parser("guardrail-headroom", help="inspect margins against declared guardrails")
     _add_scenario_argument(headroom)
     _add_output_options(headroom)
@@ -407,6 +411,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             report = resolution_quantiles(scenario, _parse_values(args.probabilities, "--probabilities"))
         elif args.command == "loss-profile":
             report = loss_profile(scenario)
+        elif args.command == "feasible-amount":
+            report = feasible_amount(scenario)
         elif args.command == "guardrail-headroom":
             report = guardrail_headroom(scenario)
         elif args.command == "outcome-ledger":

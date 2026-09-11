@@ -109,6 +109,30 @@ def loss_profile(scenario: Scenario) -> dict:
         "Strictly greater than each unreturned-principal threshold; expected excess is unconditional. Fees, liquidity carry, and receive-currency FX spread are excluded. Declared synthetic outcomes only.")
 
 
+def feasible_amount(scenario: Scenario) -> dict:
+    """Solve model fee and recovery bounds on the declared currency precision grid."""
+    if not scenario.routes:
+        raise InputError("feasible amount requires embedded routes")
+    rows = []
+    with local_decimal_context():
+        unit = Decimal(1).scaleb(-scenario.transaction.send_precision)
+        for route in sorted(scenario.routes, key=lambda item: item.route_id):
+            remaining_fraction = 1 - route.percent_fee_bps / Decimal(10000)
+            recovery_floor = max(outcome.recovery_amount_send for outcome in route.outcomes)
+            impossible = remaining_fraction == 0 and route.fixed_fee_send > 0
+            minimum = None
+            if not impossible:
+                fee_floor = route.fixed_fee_send / remaining_fraction if remaining_fraction else Decimal(0)
+                minimum = max(unit, fee_floor, recovery_floor).quantize(unit, rounding=ROUND_CEILING)
+            rows.append({"route_id": route.route_id, "send_currency": scenario.transaction.send_currency,
+                "status": "infeasible" if impossible else "bounded",
+                "minimum_send_amount": decimal_text(minimum) if minimum is not None else None,
+                "current_amount_meets_bounds": minimum is not None and scenario.transaction.send_amount >= minimum})
+    return _table(scenario, "feasible-amount", ["route_id", "send_currency", "status",
+        "minimum_send_amount", "current_amount_meets_bounds"], rows,
+        "Smallest positive amount on the declared currency precision grid satisfying fee and recovery bounds only. A 100% fee with a positive fixed fee is infeasible. Zero recipient value is permitted by the model; no commercial availability or recommendation is implied.")
+
+
 def guardrail_headroom(scenario: Scenario) -> dict:
     """Positive or zero headroom passes only an explicitly declared guardrail."""
     objective = scenario.objective
