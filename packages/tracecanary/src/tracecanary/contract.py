@@ -134,7 +134,8 @@ def _parse_retained(value: Any) -> tuple[RetainedField, ...]:
         if not isinstance(item, dict) or set(item) != {"scope", "key"}:
             raise ContractError("each required retained field must contain scope and key")
         scope, key = item["scope"], item["key"]
-        if scope not in {"resource", "span", "event"} or not isinstance(key, str) or not key:
+        if (not isinstance(scope, str) or scope not in {"resource", "scope", "span", "event", "link"}
+                or not isinstance(key, str) or not key):
             raise ContractError("retained field scope or key is invalid")
         if (scope, key) in seen:
             raise ContractError("required retained fields must be unique")

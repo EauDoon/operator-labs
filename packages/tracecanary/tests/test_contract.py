@@ -24,6 +24,24 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ContractTests(unittest.TestCase):
+    def test_non_string_retained_scopes_fail_without_tracebacks(self) -> None:
+        fixture = ROOT / "fixtures" / "v1" / "contract.json"
+        for scope in ({}, [], None, True, 1):
+            with self.subTest(scope=scope), tempfile.TemporaryDirectory() as directory:
+                data = json.loads(fixture.read_text(encoding="utf-8"))
+                data["required_retained_fields"][0]["scope"] = scope
+                with self.assertRaisesRegex(ContractError, "scope or key is invalid"):
+                    parse_contract(data)
+                contract = Path(directory) / "contract.json"
+                contract.write_text(json.dumps(data), encoding="utf-8")
+                output, errors = io.StringIO(), io.StringIO()
+                with contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+                    code = main(["population-gate", "--contract", str(contract), "--input",
+                                 str(ROOT / "fixtures" / "v1" / "safe-export.json"),
+                                 "--scope", "span", "--minimum", "1", "--format", "json"])
+                self.assertEqual(code, EXIT_UNRESOLVED)
+                self.assertNotIn("Traceback", output.getvalue() + errors.getvalue())
+
     def test_fixture_contract_is_valid(self) -> None:
         contract = load_contract(ROOT / "fixtures" / "v1" / "contract.json")
         self.assertEqual(contract.contract_version, "tracecanary/v1")

@@ -1,10 +1,13 @@
 """Value-free inspection of declared synthetic privacy checks and coverage."""
 import re
+from collections import Counter
 from fractions import Fraction
 
 from .canonical import InputError
+from .checker import _iter_scalars
 from .contract import Contract
 from .coverage import coverage_report
+from .otlp import validate_trace
 from .report import (
     Violation,
     build_report,
@@ -18,6 +21,61 @@ def _privacy_checked(contract: Contract, report):
     ensure_object_values_absent(report, values)
     ensure_values_absent(report, values)
     return report
+
+
+def control_check(contract: Contract, payload):
+    """Verify every synthetic canary is exercised in an unsanitized positive control."""
+    validate_trace(payload)
+    wanted = {canary.value for canary in contract.canaries}
+    counts = Counter(scalar for _, scalar in _iter_scalars(payload)
+                     if isinstance(scalar, str) and scalar in wanted)
+    fields, issues = [], []
+    for index, canary in enumerate(contract.canaries, 1):
+        identifier = f"canary-{index:04d}"
+        fields.append({"id": identifier, "occurrences": counts[canary.value]})
+        if not counts[canary.value]:
+            issues.append(Violation("TC902", "", "positive control does not exercise a declared canary", label=identifier))
+    report = build_report(contract.contract_version, "unresolved" if issues else "pass", issues,
+                          mode="control-check", redacted_values=tuple(canary.value for canary in contract.canaries))
+    report["control"] = {"canaries": fields}
+    return _privacy_checked(contract, report)
+
+
+def population_gate(contract: Contract, payload, scope: str, minimum: int):
+    """Require an explicit population while preserving all existing privacy checks."""
+    if scope not in ("resource", "scope", "span", "event", "link") or type(minimum) is not int or not 1 <= minimum <= 1_000_000:
+        raise InputError("population gate requires a supported scope and integer minimum from 1 to 1000000")
+    base = coverage_report(contract, payload)
+    observed = base["coverage"]["entities"][scope]
+    issues = [Violation(**item) for item in base["violations"]]
+    if observed < minimum:
+        issues.append(Violation("TC013", "", "export population is below the explicitly required minimum", scope=scope))
+    report = build_report(contract.contract_version, "regression" if issues else "pass", issues,
+                          mode="population-gate", redacted_values=tuple(canary.value for canary in contract.canaries))
+    report["coverage"] = base["coverage"]
+    report["population_gate"] = {"scope": scope, "minimum": minimum, "observed": observed}
+    return _privacy_checked(contract, report)
+
+
+def dropped_telemetry(contract: Contract, payload, *, require_zero: bool = False):
+    """Sum declared OTLP dropped counters, optionally enforcing an explicit zero gate."""
+    if type(require_zero) is not bool:
+        raise InputError("require_zero must be a boolean")
+    base = coverage_report(contract, payload)
+    totals = {scope: {"scope": scope, "attributes": 0, "events": 0, "links": 0}
+              for scope in ("resource", "scope", "span", "event", "link")}
+    for scope, _, entity in _retention_entities(payload):
+        for name in ("attributes", "events", "links"):
+            totals[scope][name] += entity.get(f"dropped{name.title()}Count", 0)
+    issues = [Violation(**item) for item in base["violations"]]
+    if require_zero:
+        for scope, counts in totals.items():
+            if any(counts[name] for name in ("attributes", "events", "links")):
+                issues.append(Violation("TC014", "", "declared dropped telemetry violates the explicit zero-drop gate", scope=scope))
+    report = build_report(contract.contract_version, "regression" if issues else "pass", issues,
+                          mode="dropped-telemetry", redacted_values=tuple(canary.value for canary in contract.canaries))
+    report["dropped_telemetry"] = {"require_zero": require_zero, "scopes": list(totals.values())}
+    return _privacy_checked(contract, report)
 
 
 def inspect_contract(contract: Contract):
@@ -43,11 +101,15 @@ def inspect_contract(contract: Contract):
     return _privacy_checked(contract, report)
 
 
-def coverage_gate(contract: Contract, payload, minimum_ratio: str):
-    """Opt-in per-required-field ratio gate, layered on the unchanged privacy check."""
+def _parse_minimum_ratio(minimum_ratio: str) -> Fraction:
     if not isinstance(minimum_ratio, str) or not re.fullmatch(r"(?:0(?:\.[0-9]{1,6})?|1(?:\.0{1,6})?)", minimum_ratio):
         raise InputError("minimum ratio must be a decimal from 0 to 1 with at most six places")
-    threshold = Fraction(minimum_ratio)
+    return Fraction(minimum_ratio)
+
+
+def coverage_gate(contract: Contract, payload, minimum_ratio: str):
+    """Opt-in per-required-field ratio gate, layered on the unchanged privacy check."""
+    threshold = _parse_minimum_ratio(minimum_ratio)
     base = coverage_report(contract, payload)
     fields, extra = [], []
     unresolved = not contract.required_retained_fields
@@ -107,11 +169,14 @@ def _retention_entities(payload):
         rp = f"/resourceSpans/{ri}"
         yield "resource", rp + "/resource", resource.get("resource", {})
         for si, scope in enumerate(resource["scopeSpans"]):
+            yield "scope", f"{rp}/scopeSpans/{si}/scope", scope.get("scope", {})
             for pi, span in enumerate(scope["spans"]):
                 sp = f"{rp}/scopeSpans/{si}/spans/{pi}"
                 yield "span", sp, span
                 for ei, event in enumerate(span.get("events", [])):
                     yield "event", f"{sp}/events/{ei}", event
+                for li, link in enumerate(span.get("links", [])):
+                    yield "link", f"{sp}/links/{li}", link
 
 
 def retention_matrix(contract: Contract, payload):

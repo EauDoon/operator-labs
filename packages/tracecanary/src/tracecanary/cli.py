@@ -16,9 +16,13 @@ from tracecanary.contract import Contract, ContractError, load_contract
 from tracecanary.coverage import coverage_report
 from tracecanary.fixture import write_bundle
 from tracecanary.inspection import (
+    _parse_minimum_ratio,
+    control_check,
     coverage_diff,
     coverage_gate,
+    dropped_telemetry,
     inspect_contract,
+    population_gate,
     retention_matrix,
 )
 from tracecanary.otlp import OtlpError, validate_trace
@@ -49,6 +53,7 @@ _EXIT_STATUS_HELP = (
     "  0  contract satisfied\n"
     "  1  privacy or retention regression detected\n"
     "  2  invalid input, unsupported version, or unresolved comparison\n"
+    "  control-check: 0 means all canaries were exercised, not a privacy pass\n"
     "\n"
     "Reports never include matched canary values."
 )
@@ -91,6 +96,21 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument("--contract", required=True, type=_cli_path, help="TraceCanary contract JSON file")
     check.add_argument("--input", required=True, type=_cli_path, help="OTLP/HTTP JSON trace export")
     check.add_argument("--format", choices=("human", "json"), default="human", help="report format (default: human)")
+    control = commands.add_parser("control-check", help="verify every canary occurs in an unsanitized synthetic positive control")
+    control.add_argument("--contract", required=True, type=_cli_path)
+    control.add_argument("--input", required=True, type=_cli_path)
+    control.add_argument("--format", choices=("human", "json"), default="human")
+    population = commands.add_parser("population-gate", help="require an explicit minimum entity population")
+    population.add_argument("--contract", required=True, type=_cli_path)
+    population.add_argument("--input", required=True, type=_cli_path)
+    population.add_argument("--scope", required=True, choices=("resource", "scope", "span", "event", "link"))
+    population.add_argument("--minimum", required=True, type=int)
+    population.add_argument("--format", choices=("human", "json"), default="human")
+    dropped = commands.add_parser("dropped-telemetry", help="inspect declared dropped counters and optionally require zero")
+    dropped.add_argument("--contract", required=True, type=_cli_path)
+    dropped.add_argument("--input", required=True, type=_cli_path)
+    dropped.add_argument("--require-zero", action="store_true")
+    dropped.add_argument("--format", choices=("human", "json"), default="human")
     coverage = commands.add_parser("coverage", help="show value-free entity and required-field coverage")
     coverage.add_argument("--contract", required=True, type=_cli_path)
     coverage.add_argument("--input", required=True, type=_cli_path)
@@ -131,8 +151,9 @@ def build_parser() -> argparse.ArgumentParser:
     batch_coverage.add_argument("--input-dir", required=True, type=_cli_path)
     batch_coverage.add_argument("--recursive", action="store_true")
     batch_coverage.add_argument("--include-paths", action="store_true")
+    batch_coverage.add_argument("--minimum-ratio", help="require this exact retained-field ratio in every file")
     batch_coverage.add_argument("--format", choices=("human", "json"), default="json")
-    for command in (validate, check, diff, batch, coverage, inspect, gate, rate_diff, matrix, batch_coverage):
+    for command in (validate, check, diff, batch, coverage, inspect, gate, rate_diff, matrix, batch_coverage, control, population, dropped):
         command.add_argument("--output", type=_cli_path, help="write a UTF-8 report atomically; cannot replace inputs")
     fixture = commands.add_parser("fixture", help="write synthetic fixtures")
     fixture_commands = fixture.add_subparsers(dest="fixture_command", required=True, parser_class=_ArgumentParser)
@@ -157,6 +178,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             return EXIT_PASS
         if args.command == "inspect-contract":
             report = inspect_contract(contract)
+        elif args.command == "control-check":
+            report = control_check(contract, _load_trace(args.input, contract))
+        elif args.command == "population-gate":
+            report = population_gate(contract, _load_trace(args.input, contract), args.scope, args.minimum)
+        elif args.command == "dropped-telemetry":
+            report = dropped_telemetry(contract, _load_trace(args.input, contract), require_zero=args.require_zero)
         elif args.command == "coverage":
             report = coverage_report(contract, _load_trace(args.input, contract))
         elif args.command == "retention-matrix":
@@ -173,7 +200,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _status_exit(report["status"])
         else:
             baseline = _load_trace(args.baseline, contract) if getattr(args, "baseline", None) is not None else None
-            batch_report = _run_batch(contract, args.input_dir, args.recursive, args.include_paths, baseline, coverage=args.command == "coverage-batch")
+            batch_report = _run_batch(contract, args.input_dir, args.recursive, args.include_paths, baseline,
+                                      coverage=args.command == "coverage-batch", minimum_ratio=getattr(args, "minimum_ratio", None))
             _print_batch(
                 batch_report,
                 args.format,
@@ -201,7 +229,11 @@ def _load_trace(path: Path, contract: Contract) -> dict[str, Any]:
     return payload
 
 
-def _run_batch(contract: Contract, input_dir: Path, recursive: bool, include_paths: bool, baseline: dict[str, Any] | None = None, *, coverage: bool = False) -> BatchReport:
+def _run_batch(contract: Contract, input_dir: Path, recursive: bool, include_paths: bool, baseline: dict[str, Any] | None = None, *, coverage: bool = False, minimum_ratio: str | None = None) -> BatchReport:
+    if minimum_ratio is not None:
+        _parse_minimum_ratio(minimum_ratio)
+        if not coverage:
+            raise InputError("minimum ratio is only supported for coverage batches")
     if coverage and baseline is not None:
         raise InputError("batch coverage does not accept a baseline")
     if baseline is not None and check_trace(contract, baseline)["status"] != "pass":
@@ -237,7 +269,10 @@ def _run_batch(contract: Contract, input_dir: Path, recursive: bool, include_pat
         relative = path.relative_to(root).as_posix()
         try:
             payload = _load_trace(path, contract)
-            report = coverage_report(contract, payload) if coverage else check_trace(contract, payload, mode="batch") if baseline is None else diff_traces(contract, baseline, payload)
+            if minimum_ratio is not None:
+                report = coverage_gate(contract, payload, minimum_ratio)
+            else:
+                report = coverage_report(contract, payload) if coverage else check_trace(contract, payload, mode="batch") if baseline is None else diff_traces(contract, baseline, payload)
         except UnsafeReportError:
             raise
         except (InputError, OtlpError, ValueError):
@@ -263,8 +298,12 @@ def _run_batch(contract: Contract, input_dir: Path, recursive: bool, include_pat
             fields.append({"id": f"required-{index + 1:04d}", "scope": field.scope,
                            "present": present, "entities": entities,
                            "ratio": str(Fraction(present, entities)) if entities else None})
-        batch_report["coverage_summary"] = {"validated_items": len(valid), "unresolved_items": len(items) - len(valid),
+        batch_report["coverage_summary"] = {"validated_items": len(valid),
+                                             "unresolved_items": sum(item["status"] == "unresolved" for item in items),
+                                             "excluded_items": len(items) - len(valid),
                                              "required_fields": fields}
+        if minimum_ratio is not None:
+            batch_report["coverage_summary"]["minimum_ratio_per_file"] = minimum_ratio
     ensure_object_values_absent(
         batch_report,
         tuple(canary.value for canary in contract.canaries),
@@ -295,7 +334,9 @@ def _print_batch(report: BatchReport, output_format: str, redacted_values: tuple
         lines.extend(f"- {item['id']}: {item['status']}" for item in report["items"])
         if "coverage_summary" in report:
             summary = report["coverage_summary"]
-            lines.append(f"Coverage: {summary['validated_items']} validated item(s); {summary['unresolved_items']} unresolved item(s) excluded.")
+            lines.append(f"Coverage: {summary['validated_items']} validated item(s); {summary['unresolved_items']} unresolved item(s); {summary['excluded_items']} invalid item(s) excluded.")
+            if "minimum_ratio_per_file" in summary:
+                lines.append(f"Explicit retained-field ratio required in every file: {summary['minimum_ratio_per_file']}.")
             lines.extend(f"{field['id']}: {field['present']}/{field['entities']} ({field['ratio']})" for field in summary["required_fields"])
         output = "\n".join(lines) + "\n"
     ensure_text_values_absent(output, redacted_values)

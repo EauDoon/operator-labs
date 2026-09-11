@@ -12,9 +12,14 @@ from pathlib import Path
 
 from .analysis import (
     break_even_check,
+    cost_ledger,
     deadline_profile,
+    deadline_target,
+    feasible_amount,
     guardrail_headroom,
+    loss_profile,
     outcome_ledger,
+    resolution_quantiles,
 )
 from .canonical import (
     MAX_BATCH_SCENARIOS,
@@ -141,6 +146,23 @@ def build_parser() -> argparse.ArgumentParser:
     starter.add_argument("--output", required=True, help="new scenario JSON file, never overwritten")
     validate = commands.add_parser("validate", help="validate a synthetic scenario contract")
     _add_scenario_argument(validate)
+    costs = commands.add_parser("cost-ledger", help="reconcile unrounded sender-cost components")
+    _add_scenario_argument(costs)
+    _add_output_options(costs)
+    target = commands.add_parser("deadline-target", help="find the earliest time meeting a declared delivery probability")
+    _add_scenario_argument(target)
+    target.add_argument("--probability", required=True, help="unconditional delivery probability from 0 to 1")
+    _add_output_options(target)
+    quantiles = commands.add_parser("resolution-quantiles", help="inspect explicit quantiles of final-state time")
+    _add_scenario_argument(quantiles)
+    quantiles.add_argument("--probabilities", required=True, help="comma-separated probabilities greater than 0 and at most 1")
+    _add_output_options(quantiles)
+    losses = commands.add_parser("loss-profile", help="inspect declared principal-loss exceedance probabilities")
+    _add_scenario_argument(losses)
+    _add_output_options(losses)
+    feasible = commands.add_parser("feasible-amount", help="inspect minimum amounts satisfying declared fee and recovery bounds")
+    _add_scenario_argument(feasible)
+    _add_output_options(feasible)
     headroom = commands.add_parser("guardrail-headroom", help="inspect margins against declared guardrails")
     _add_scenario_argument(headroom)
     _add_output_options(headroom)
@@ -381,7 +403,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         scenario = load_scenario(_require_cli_text(args.scenario, "scenario"))
         report: dict[str, object]
-        if args.command == "guardrail-headroom":
+        if args.command == "cost-ledger":
+            report = cost_ledger(scenario)
+        elif args.command == "deadline-target":
+            report = deadline_target(scenario, args.probability)
+        elif args.command == "resolution-quantiles":
+            report = resolution_quantiles(scenario, _parse_values(args.probabilities, "--probabilities"))
+        elif args.command == "loss-profile":
+            report = loss_profile(scenario)
+        elif args.command == "feasible-amount":
+            report = feasible_amount(scenario)
+        elif args.command == "guardrail-headroom":
             report = guardrail_headroom(scenario)
         elif args.command == "outcome-ledger":
             report = outcome_ledger(scenario)

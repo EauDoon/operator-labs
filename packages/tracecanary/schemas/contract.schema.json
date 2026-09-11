@@ -17,7 +17,7 @@
     "forbidden_attribute_key_prefixes": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
     "forbidden_path_prefixes": {"type": "array", "items": {"type": "string", "pattern": "^/"}, "uniqueItems": true},
     "required_retained_fields": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["scope", "key"], "properties": {
-      "scope": {"enum": ["resource", "span", "event"]}, "key": {"type": "string", "minLength": 1}
+      "scope": {"enum": ["resource", "scope", "span", "event", "link"]}, "key": {"type": "string", "minLength": 1}
     }}},
     "limits": {"type": "object", "additionalProperties": false, "properties": {
       "max_input_bytes": {"type": "integer", "minimum": 1024, "maximum": 50000000, "default": 5000000},

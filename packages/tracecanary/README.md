@@ -160,6 +160,28 @@ Apache-2.0. See [LICENSE](LICENSE).
 
 ## Inspect coverage
 
+`tracecanary dropped-telemetry --contract contract.json --input export.json --require-zero`
+reports declared dropped attribute, event, and link counters by entity scope.
+Without `--require-zero` the counters are descriptive; with it, any positive
+counter produces TC014 and exit 1. Existing privacy findings still fail the check.
+Absent counters count as zero according to the supported input representation;
+they do not establish that a collector retained all telemetry.
+
+`tracecanary population-gate --contract contract.json --input export.json --scope span --minimum 10`
+requires at least the explicitly selected entity count while preserving every
+normal privacy check. A smaller or empty population returns regression (1, TC013).
+Supported scopes are resource, scope, span, event, and link; the integer minimum
+must be from 1 to 1,000,000. This catches small samples that presence or ratio
+checks alone can pass. It does not prove telemetry completeness or distinct identity.
+
+`tracecanary control-check --contract contract.json --input unsanitized-control.json`
+checks that **every** declared canary occurs as an exact scalar in a synthetic
+positive control before sanitization. Missing canaries return unresolved (2),
+including substrings the existing exact-match checker cannot detect. The value-free
+report uses one-based canary ordinals and occurrence counts. PASS (0) means the
+control exercised the canaries, **not** that it is privacy-safe. Run ordinary
+`check` on the separately sanitized export; no collector is invoked or configured.
+
 `tracecanary coverage-gate --contract contract.json --input export.json
 --minimum-ratio 0.95 --format json` adds an explicit per-required-field entity
 coverage gate. Decimal thresholds from 0 to 1 (at most six places) use exact
@@ -186,10 +208,26 @@ compares exact retained-field fractions and reports both sample denominators. A 
 
 ### Locate sparse retention
 
+Required retained fields also accept `scope` and `link`. These opt-in rules flow
+through check, diff, coverage, gates, batches, and retention matrices just like
+resource/span/event fields. Each `scopeSpans` group is one scope population, even
+when its optional `scope` object is absent; a missing object has no attributes.
+Links with no attribute list remain in the link denominator and missing-path list.
+
 `tracecanary retention-matrix --contract contract.json --input export.json --format json`
 shows missing entity locations by required-field ordinal and structural JSON pointer. It includes entities with absent attribute arrays, exposes no attribute keys or values, and rejects more than 10,000 entity-requirement checks instead of truncating. Matrix coverage is descriptive; use `coverage-gate` to enforce per-entity coverage.
 
 ### Aggregate bounded batch coverage
+
+Add `--minimum-ratio 0.95` to apply `coverage-gate` independently to **every** file.
+An aggregate ratio cannot conceal an individual sparse export. Existing exact
+threshold validation, privacy findings, and unresolved empty-population behavior
+apply per file. Human and JSON summaries name the per-file threshold alongside
+aggregate counts. Omitting the option preserves descriptive batch coverage.
+`validated_items` counts structurally valid exports, `unresolved_items` counts
+all unresolved results, and `excluded_items` counts malformed inputs omitted from
+aggregate denominators. A valid empty export can be an unresolved gate result
+without being excluded from the coverage input count.
 
 `tracecanary coverage-batch --contract contract.json --input-dir exports --format json`
 uses the same strict file, nesting, symlink and file-count bounds as `batch`. Each valid export includes normal privacy findings plus coverage. The aggregate sums presence counts and entity denominators, rather than averaging percentages. Invalid items are unresolved and explicitly excluded from aggregate denominators; an empty denominator has a null ratio. Counts describe the supplied files and may double-count repeated entities across exports. Paths remain opt-in. Human and JSON formats are supported; no production telemetry or collection is enabled.

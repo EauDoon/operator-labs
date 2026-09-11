@@ -4,12 +4,15 @@ from itertools import combinations
 
 from .canonical import (
     MAX_SENSITIVITY_ROWS,
+    MAX_SENSITIVITY_VALUES,
     InputError,
     decimal_text,
     local_decimal_context,
+    require_decimal,
+    require_decimal_values,
 )
 from .comparison import _break_even, _declared_transaction
-from .model import evaluate_route
+from .model import _quantile_time, evaluate_route
 from .scenario import Scenario, _parse_transaction
 
 
@@ -26,6 +29,110 @@ def _table(scenario: Scenario, analysis: str, columns: list[str], rows: list[dic
     return {"report_version": "corridor-lab.analysis/v1", "analysis": analysis,
             "scenario_id": scenario.scenario_id, "fictional": True,
             "columns": columns, "rows": rows, "scope": note}
+
+
+def cost_ledger(scenario: Scenario) -> dict:
+    """Reconcile unrounded sender costs without adding receive-currency FX spread."""
+    rows = []
+    with local_decimal_context():
+        for evaluation in _evaluations(scenario):
+            components = (("fixed_fee", evaluation.route.fixed_fee_send),
+                          ("percentage_fee", evaluation.percentage_fee_send),
+                          ("liquidity_carry", evaluation.liquidity_carry_cost_send),
+                          ("failure_loss", evaluation.expected_failure_recovery_cost_send))
+            for component, amount in components:
+                rows.append({"route_id": evaluation.route.route_id, "component": component,
+                    "send_currency": scenario.transaction.send_currency, "amount_send": decimal_text(amount),
+                    "share_of_sender_cost": decimal_text(amount / evaluation.expected_sender_cost)
+                    if evaluation.expected_sender_cost else None})
+    return _table(scenario, "cost-ledger", ["route_id", "component", "send_currency", "amount_send",
+        "share_of_sender_cost"], rows,
+        "Unrounded per-transaction components sum to expected sender cost. FX spread is in receive currency and is excluded. Zero total cost has no share.")
+
+
+def deadline_target(scenario: Scenario, probability: str) -> dict:
+    """Find the first declared success time meeting an unconditional probability."""
+    target = require_decimal(probability, "probability", minimum=Decimal(0), maximum=Decimal(1))
+    rows = []
+    with local_decimal_context():
+        for evaluation in _evaluations(scenario):
+            cumulative, hours = Decimal(0), Decimal(0) if target == 0 else None
+            for outcome in sorted(evaluation.route.outcomes, key=lambda item: (item.delay_hours, item.outcome_id)):
+                if outcome.completion == "success":
+                    cumulative += outcome.probability
+                    if hours is None and cumulative >= target:
+                        hours = outcome.delay_hours
+            rows.append({"route_id": evaluation.route.route_id, "target_probability": decimal_text(target),
+                "maximum_success_probability": decimal_text(cumulative),
+                "status": "reached" if hours is not None else "unreachable",
+                "earliest_hours": decimal_text(hours) if hours is not None else None})
+    return _table(scenario, "deadline-target", ["route_id", "target_probability",
+        "maximum_success_probability", "status", "earliest_hours"], rows,
+        "Earliest time meeting an explicitly requested unconditional delivery probability. Failure recovery never counts as delivery; no interpolation or forecast.")
+
+
+def resolution_quantiles(scenario: Scenario, probabilities: list[Decimal]) -> dict:
+    """Inspect caller-selected exact discrete quantiles of final-state time."""
+    values = require_decimal_values(probabilities, "probabilities")
+    if not values or len(values) > MAX_SENSITIVITY_VALUES or len(values) * len(scenario.routes) > MAX_SENSITIVITY_ROWS:
+        raise InputError("resolution quantiles require 1 to 64 probabilities within the row budget")
+    if any(value <= 0 or value > 1 for value in values):
+        raise InputError("resolution probabilities must be greater than zero and at most one")
+    rows = [{"route_id": evaluation.route.route_id, "probability": decimal_text(value),
+             "resolution_hours": decimal_text(_quantile_time(evaluation.route, value))}
+            for evaluation in _evaluations(scenario) for value in sorted(values)]
+    return _table(scenario, "resolution-quantiles", ["route_id", "probability", "resolution_hours"], rows,
+        "Earliest final-state time whose cumulative probability reaches the requested quantile. Includes failure recovery; not conditional delivery latency and never interpolated.")
+
+
+def loss_profile(scenario: Scenario) -> dict:
+    """Exact exceedance of unreturned principal at each declared loss breakpoint."""
+    rows = []
+    with local_decimal_context():
+        for evaluation in _evaluations(scenario):
+            losses = [(scenario.transaction.send_amount - outcome.recovery_amount_send, outcome.probability)
+                      for outcome in evaluation.route.outcomes if outcome.completion == "failure"]
+            thresholds = sorted({Decimal(0), *(loss for loss, _ in losses)})
+            if len(rows) + len(thresholds) > MAX_SENSITIVITY_ROWS:
+                raise InputError("loss profile exceeds the row budget")
+            # ponytail: bounded outcome scan per breakpoint; suffix sums if outcome limits grow.
+            for threshold in thresholds:
+                probability = sum((weight for loss, weight in losses if loss > threshold), Decimal(0))
+                excess = sum((weight * (loss - threshold) for loss, weight in losses if loss > threshold), Decimal(0))
+                rows.append({"route_id": evaluation.route.route_id,
+                    "send_currency": scenario.transaction.send_currency,
+                    "loss_threshold_send": decimal_text(threshold),
+                    "probability_above_threshold": decimal_text(probability),
+                    "expected_excess_loss_send": decimal_text(excess)})
+    return _table(scenario, "loss-profile", ["route_id", "send_currency", "loss_threshold_send",
+        "probability_above_threshold", "expected_excess_loss_send"], rows,
+        "Strictly greater than each unreturned-principal threshold; expected excess is unconditional. Fees, liquidity carry, and receive-currency FX spread are excluded. Declared synthetic outcomes only.")
+
+
+def feasible_amount(scenario: Scenario) -> dict:
+    """Solve model fee and recovery bounds on the declared currency precision grid."""
+    if not scenario.routes:
+        raise InputError("feasible amount requires embedded routes")
+    rows = []
+    with local_decimal_context():
+        unit = Decimal(1).scaleb(-scenario.transaction.send_precision)
+        for route in sorted(scenario.routes, key=lambda item: item.route_id):
+            remaining_fraction = 1 - route.percent_fee_bps / Decimal(10000)
+            recovery_floor = max(outcome.recovery_amount_send for outcome in route.outcomes)
+            impossible = remaining_fraction == 0 and route.fixed_fee_send > 0
+            minimum = None
+            if not impossible:
+                fee_floor = route.fixed_fee_send / remaining_fraction if remaining_fraction else Decimal(0)
+                minimum = max(unit, fee_floor, recovery_floor).quantize(unit, rounding=ROUND_CEILING)
+            rows.append({"route_id": route.route_id, "send_currency": scenario.transaction.send_currency,
+                "status": "infeasible" if impossible else "bounded",
+                "minimum_send_amount": decimal_text(minimum) if minimum is not None else None,
+                "current_amount_meets_bounds": not impossible
+                and scenario.transaction.send_amount * remaining_fraction >= route.fixed_fee_send
+                and scenario.transaction.send_amount >= recovery_floor})
+    return _table(scenario, "feasible-amount", ["route_id", "send_currency", "status",
+        "minimum_send_amount", "current_amount_meets_bounds"], rows,
+        "Smallest positive amount on the declared currency precision grid satisfying fee and recovery bounds only. A 100% fee with a positive fixed fee is infeasible. Zero recipient value is permitted by the model; no commercial availability or recommendation is implied.")
 
 
 def guardrail_headroom(scenario: Scenario) -> dict:

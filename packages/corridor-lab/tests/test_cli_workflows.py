@@ -9,6 +9,23 @@ from corridor_lab.cli import main
 
 
 class CliWorkflowTests(unittest.TestCase):
+    def test_declared_inspection_commands_export_all_formats(self):
+        with tempfile.TemporaryDirectory() as directory, contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            root = Path(directory)
+            source = root / "scenario.json"
+            self.assertEqual(main(["init", "--output", str(source)]), 0)
+            before = source.read_bytes()
+            for command, extra in (("cost-ledger", []), ("deadline-target", ["--probability", "0.95"]),
+                                   ("resolution-quantiles", ["--probabilities", "0.5,1"]),
+                                   ("loss-profile", []), ("feasible-amount", [])):
+                for fmt in ("json", "csv", "markdown"):
+                    with self.subTest(command=command, format=fmt):
+                        output = root / "report.txt"
+                        self.assertEqual(main([command, str(source), *extra, "--format", fmt, "--output", str(output)]), 0)
+                        self.assertIn("route_id", output.read_text(encoding="utf-8"))
+                self.assertEqual(main([command, str(source), *extra, "--output", str(source)]), 2)
+            self.assertEqual(source.read_bytes(), before)
+
     def test_starter_sweep_diff_and_preserved_sources(self):
         with tempfile.TemporaryDirectory() as directory, contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             root = Path(directory)
