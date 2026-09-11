@@ -224,6 +224,10 @@ An aggregate ratio cannot conceal an individual sparse export. Existing exact
 threshold validation, privacy findings, and unresolved empty-population behavior
 apply per file. Human and JSON summaries name the per-file threshold alongside
 aggregate counts. Omitting the option preserves descriptive batch coverage.
+`validated_items` counts structurally valid exports, `unresolved_items` counts
+all unresolved results, and `excluded_items` counts malformed inputs omitted from
+aggregate denominators. A valid empty export can be an unresolved gate result
+without being excluded from the coverage input count.
 
 `tracecanary coverage-batch --contract contract.json --input-dir exports --format json`
 uses the same strict file, nesting, symlink and file-count bounds as `batch`. Each valid export includes normal privacy findings plus coverage. The aggregate sums presence counts and entity denominators, rather than averaging percentages. Invalid items are unresolved and explicitly excluded from aggregate denominators; an empty denominator has a null ratio. Counts describe the supplied files and may double-count repeated entities across exports. Paths remain opt-in. Human and JSON formats are supported; no production telemetry or collection is enabled.

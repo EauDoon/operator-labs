@@ -297,7 +297,9 @@ def _run_batch(contract: Contract, input_dir: Path, recursive: bool, include_pat
             fields.append({"id": f"required-{index + 1:04d}", "scope": field.scope,
                            "present": present, "entities": entities,
                            "ratio": str(Fraction(present, entities)) if entities else None})
-        batch_report["coverage_summary"] = {"validated_items": len(valid), "unresolved_items": len(items) - len(valid),
+        batch_report["coverage_summary"] = {"validated_items": len(valid),
+                                             "unresolved_items": sum(item["status"] == "unresolved" for item in items),
+                                             "excluded_items": len(items) - len(valid),
                                              "required_fields": fields}
         if minimum_ratio is not None:
             batch_report["coverage_summary"]["minimum_ratio_per_file"] = minimum_ratio
@@ -331,7 +333,7 @@ def _print_batch(report: BatchReport, output_format: str, redacted_values: tuple
         lines.extend(f"- {item['id']}: {item['status']}" for item in report["items"])
         if "coverage_summary" in report:
             summary = report["coverage_summary"]
-            lines.append(f"Coverage: {summary['validated_items']} validated item(s); {summary['unresolved_items']} unresolved item(s) excluded.")
+            lines.append(f"Coverage: {summary['validated_items']} validated item(s); {summary['unresolved_items']} unresolved item(s); {summary['excluded_items']} invalid item(s) excluded.")
             if "minimum_ratio_per_file" in summary:
                 lines.append(f"Explicit retained-field ratio required in every file: {summary['minimum_ratio_per_file']}.")
             lines.extend(f"{field['id']}: {field['present']}/{field['entities']} ({field['ratio']})" for field in summary["required_fields"])

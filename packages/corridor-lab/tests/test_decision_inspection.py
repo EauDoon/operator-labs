@@ -116,3 +116,13 @@ class FeasibleAmountTests(unittest.TestCase):
         raw["transaction"]["send_amount"] = "1"
         row = feasible_amount(parse_scenario(raw))["rows"][0]
         self.assertFalse(row["current_amount_meets_bounds"])
+
+    def test_current_bounds_are_checked_before_precision_grid_rounding(self):
+        from corridor_lab.analysis import feasible_amount
+        raw = route()
+        raw["outcomes"][1]["recovery_amount_send"] = "0"
+        source = scenario([raw])
+        source["transaction"]["send_amount"] = "1.015"
+        row = feasible_amount(parse_scenario(source))["rows"][0]
+        self.assertEqual(row["minimum_send_amount"], "1.02")
+        self.assertTrue(row["current_amount_meets_bounds"])

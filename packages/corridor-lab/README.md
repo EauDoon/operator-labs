@@ -6,6 +6,9 @@ recovery. It can explain scenarios whose current amount cannot be evaluated.
 A 100% proportional fee plus a positive fixed fee is infeasible at every amount.
 The result permits zero recipient value and addresses model bounds only, not
 commercial availability or profitability. Other transaction assumptions stay fixed.
+The current amount is checked against exact fee and recovery bounds before the
+reported minimum is rounded up to the currency grid; existing inputs may contain
+more decimal places than the display precision.
 
 `corridorlab loss-profile scenario.json --format csv` shows the unconditional
 probability of unreturned principal **strictly above** zero and each declared

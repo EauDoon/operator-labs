@@ -127,7 +127,9 @@ def feasible_amount(scenario: Scenario) -> dict:
             rows.append({"route_id": route.route_id, "send_currency": scenario.transaction.send_currency,
                 "status": "infeasible" if impossible else "bounded",
                 "minimum_send_amount": decimal_text(minimum) if minimum is not None else None,
-                "current_amount_meets_bounds": minimum is not None and scenario.transaction.send_amount >= minimum})
+                "current_amount_meets_bounds": not impossible
+                and scenario.transaction.send_amount * remaining_fraction >= route.fixed_fee_send
+                and scenario.transaction.send_amount >= recovery_floor})
     return _table(scenario, "feasible-amount", ["route_id", "send_currency", "status",
         "minimum_send_amount", "current_amount_meets_bounds"], rows,
         "Smallest positive amount on the declared currency precision grid satisfying fee and recovery bounds only. A 100% fee with a positive fixed fee is infeasible. Zero recipient value is permitted by the model; no commercial availability or recommendation is implied.")

@@ -155,3 +155,19 @@ class BatchRatioGateTests(unittest.TestCase):
         contract = parse_contract(bundle()["contract.json"])
         with self.assertRaisesRegex(InputError, "minimum ratio"):
             _run_batch(contract, Path("does-not-exist"), False, False, coverage=True, minimum_ratio="NaN")
+
+    def test_unresolved_gate_population_is_counted_without_discarding_valid_input(self):
+        import json
+        import tempfile
+        from pathlib import Path
+
+        from tracecanary.cli import _run_batch
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "empty.json").write_text(json.dumps({"resourceSpans": []}))
+            report = _run_batch(parse_contract(bundle()["contract.json"]), root, False, False,
+                                coverage=True, minimum_ratio="1")
+        self.assertEqual(report["status"], "unresolved")
+        self.assertEqual(report["coverage_summary"]["unresolved_items"], 1)
+        self.assertEqual(report["coverage_summary"]["validated_items"], 1)
+        self.assertEqual(report["coverage_summary"]["excluded_items"], 0)
