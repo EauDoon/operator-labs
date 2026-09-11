@@ -17,6 +17,7 @@ from .analysis import (
     deadline_target,
     guardrail_headroom,
     outcome_ledger,
+    resolution_quantiles,
 )
 from .canonical import (
     MAX_BATCH_SCENARIOS,
@@ -150,6 +151,10 @@ def build_parser() -> argparse.ArgumentParser:
     _add_scenario_argument(target)
     target.add_argument("--probability", required=True, help="unconditional delivery probability from 0 to 1")
     _add_output_options(target)
+    quantiles = commands.add_parser("resolution-quantiles", help="inspect explicit quantiles of final-state time")
+    _add_scenario_argument(quantiles)
+    quantiles.add_argument("--probabilities", required=True, help="comma-separated probabilities greater than 0 and at most 1")
+    _add_output_options(quantiles)
     headroom = commands.add_parser("guardrail-headroom", help="inspect margins against declared guardrails")
     _add_scenario_argument(headroom)
     _add_output_options(headroom)
@@ -394,6 +399,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             report = cost_ledger(scenario)
         elif args.command == "deadline-target":
             report = deadline_target(scenario, args.probability)
+        elif args.command == "resolution-quantiles":
+            report = resolution_quantiles(scenario, _parse_values(args.probabilities, "--probabilities"))
         elif args.command == "guardrail-headroom":
             report = guardrail_headroom(scenario)
         elif args.command == "outcome-ledger":

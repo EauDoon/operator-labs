@@ -1,5 +1,11 @@
 # Corridor Lab
 
+`corridorlab resolution-quantiles scenario.json --probabilities 0.5,0.9,0.99,1`
+reports exact discrete final-state times, including failure recovery. Probabilities
+must be distinct and greater than zero through one; zero is undefined for this
+inverse CDF. Up to 64 values and 512 route/value rows are allowed. JSON, CSV, and
+Markdown expose the chosen probability beside each time without interpolation.
+
 `corridorlab deadline-target scenario.json --probability 0.95` finds the earliest
 declared success time reaching that unconditional probability. If total success
 probability is too low, the row is `unreachable` with a null time. Target zero

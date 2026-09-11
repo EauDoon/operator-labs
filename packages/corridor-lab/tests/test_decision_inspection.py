@@ -52,3 +52,22 @@ class DeadlineTargetTests(unittest.TestCase):
         for target in ("NaN", "-0.1", "1.1", True):
             with self.assertRaises(InputError):
                 deadline_target(source, target)
+
+
+class ResolutionQuantileTests(unittest.TestCase):
+    def test_exact_mass_boundaries_include_failure_recovery_time(self):
+        from corridor_lab.analysis import resolution_quantiles
+        source = parse_scenario(scenario([route()]))
+        rows = resolution_quantiles(source, [Decimal("0.8"), Decimal("0.800001"), Decimal(1)])["rows"]
+        self.assertEqual([row["resolution_hours"] for row in rows], ["2", "5", "5"])
+        for output_format in ("json", "csv", "markdown"):
+            self.assertIn("resolution_hours", render_report(resolution_quantiles(source, [Decimal(1)]), output_format))
+
+    def test_invalid_probabilities_and_budgets_fail_closed(self):
+        from corridor_lab.analysis import resolution_quantiles
+        from corridor_lab.canonical import InputError
+        source = parse_scenario(scenario([route()]))
+        for values in ([], [Decimal(0)], [Decimal("1.01")], [Decimal("NaN")], [Decimal(1)] * 65,
+                       [Decimal("0.5"), Decimal("0.50")]):
+            with self.assertRaises(InputError):
+                resolution_quantiles(source, values)

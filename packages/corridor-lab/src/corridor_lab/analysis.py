@@ -4,13 +4,15 @@ from itertools import combinations
 
 from .canonical import (
     MAX_SENSITIVITY_ROWS,
+    MAX_SENSITIVITY_VALUES,
     InputError,
     decimal_text,
     local_decimal_context,
     require_decimal,
+    require_decimal_values,
 )
 from .comparison import _break_even, _declared_transaction
-from .model import evaluate_route
+from .model import _quantile_time, evaluate_route
 from .scenario import Scenario, _parse_transaction
 
 
@@ -67,6 +69,20 @@ def deadline_target(scenario: Scenario, probability: str) -> dict:
     return _table(scenario, "deadline-target", ["route_id", "target_probability",
         "maximum_success_probability", "status", "earliest_hours"], rows,
         "Earliest time meeting an explicitly requested unconditional delivery probability. Failure recovery never counts as delivery; no interpolation or forecast.")
+
+
+def resolution_quantiles(scenario: Scenario, probabilities: list[Decimal]) -> dict:
+    """Inspect caller-selected exact discrete quantiles of final-state time."""
+    values = require_decimal_values(probabilities, "probabilities")
+    if not values or len(values) > MAX_SENSITIVITY_VALUES or len(values) * len(scenario.routes) > MAX_SENSITIVITY_ROWS:
+        raise InputError("resolution quantiles require 1 to 64 probabilities within the row budget")
+    if any(value <= 0 or value > 1 for value in values):
+        raise InputError("resolution probabilities must be greater than zero and at most one")
+    rows = [{"route_id": evaluation.route.route_id, "probability": decimal_text(value),
+             "resolution_hours": decimal_text(_quantile_time(evaluation.route, value))}
+            for evaluation in _evaluations(scenario) for value in sorted(values)]
+    return _table(scenario, "resolution-quantiles", ["route_id", "probability", "resolution_hours"], rows,
+        "Earliest final-state time whose cumulative probability reaches the requested quantile. Includes failure recovery; not conditional delivery latency and never interpolated.")
 
 
 def guardrail_headroom(scenario: Scenario) -> dict:
