@@ -107,11 +107,14 @@ def _retention_entities(payload):
         rp = f"/resourceSpans/{ri}"
         yield "resource", rp + "/resource", resource.get("resource", {})
         for si, scope in enumerate(resource["scopeSpans"]):
+            yield "scope", f"{rp}/scopeSpans/{si}/scope", scope.get("scope", {})
             for pi, span in enumerate(scope["spans"]):
                 sp = f"{rp}/scopeSpans/{si}/spans/{pi}"
                 yield "span", sp, span
                 for ei, event in enumerate(span.get("events", [])):
                     yield "event", f"{sp}/events/{ei}", event
+                for li, link in enumerate(span.get("links", [])):
+                    yield "link", f"{sp}/links/{li}", link
 
 
 def retention_matrix(contract: Contract, payload):

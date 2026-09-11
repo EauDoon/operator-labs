@@ -186,6 +186,12 @@ compares exact retained-field fractions and reports both sample denominators. A 
 
 ### Locate sparse retention
 
+Required retained fields also accept `scope` and `link`. These opt-in rules flow
+through check, diff, coverage, gates, batches, and retention matrices just like
+resource/span/event fields. Each `scopeSpans` group is one scope population, even
+when its optional `scope` object is absent; a missing object has no attributes.
+Links with no attribute list remain in the link denominator and missing-path list.
+
 `tracecanary retention-matrix --contract contract.json --input export.json --format json`
 shows missing entity locations by required-field ordinal and structural JSON pointer. It includes entities with absent attribute arrays, exposes no attribute keys or values, and rejects more than 10,000 entity-requirement checks instead of truncating. Matrix coverage is descriptive; use `coverage-gate` to enforce per-entity coverage.
 
