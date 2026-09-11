@@ -10,7 +10,7 @@ from urllib.parse import quote
 from tracecanary.canonical import canonical_json
 
 Status = Literal["pass", "regression", "unresolved"]
-ReportMode = Literal["validate", "check", "diff", "batch", "demo", "starter", "coverage", "inspect-contract", "coverage-gate", "coverage-diff", "retention-matrix", "control-check"]
+ReportMode = Literal["validate", "check", "diff", "batch", "demo", "starter", "coverage", "inspect-contract", "coverage-gate", "coverage-diff", "retention-matrix", "control-check", "population-gate"]
 
 
 class ReportSummary(TypedDict):
@@ -44,6 +44,7 @@ class Report(TypedDict):
     coverage_diff: NotRequired[dict[str, Any]]
     retention_matrix: NotRequired[dict[str, Any]]
     control: NotRequired[dict[str, Any]]
+    population_gate: NotRequired[dict[str, Any]]
 
 
 class BatchItem(TypedDict):
@@ -141,6 +142,9 @@ def render_json(report: Report | BatchReport) -> str:
 def render_human(report: Report) -> str:
     headline = f"TraceCanary: {report['status'].upper()} ({report['summary']['total']} finding(s))"
     lines = [headline]
+    if "population_gate" in report:
+        gate = report["population_gate"]
+        lines.append(f"Explicit {gate['scope']} population minimum: {gate['minimum']}; observed: {gate['observed']}.")
     if "control" in report:
         lines.append("Synthetic positive control only: PASS means all canaries were exercised, not that privacy checks passed.")
         for field in report["control"]["canaries"]:

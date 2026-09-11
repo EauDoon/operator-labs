@@ -20,6 +20,7 @@ from tracecanary.inspection import (
     coverage_diff,
     coverage_gate,
     inspect_contract,
+    population_gate,
     retention_matrix,
 )
 from tracecanary.otlp import OtlpError, validate_trace
@@ -96,6 +97,12 @@ def build_parser() -> argparse.ArgumentParser:
     control.add_argument("--contract", required=True, type=_cli_path)
     control.add_argument("--input", required=True, type=_cli_path)
     control.add_argument("--format", choices=("human", "json"), default="human")
+    population = commands.add_parser("population-gate", help="require an explicit minimum entity population")
+    population.add_argument("--contract", required=True, type=_cli_path)
+    population.add_argument("--input", required=True, type=_cli_path)
+    population.add_argument("--scope", required=True, choices=("resource", "scope", "span", "event", "link"))
+    population.add_argument("--minimum", required=True, type=int)
+    population.add_argument("--format", choices=("human", "json"), default="human")
     coverage = commands.add_parser("coverage", help="show value-free entity and required-field coverage")
     coverage.add_argument("--contract", required=True, type=_cli_path)
     coverage.add_argument("--input", required=True, type=_cli_path)
@@ -137,7 +144,7 @@ def build_parser() -> argparse.ArgumentParser:
     batch_coverage.add_argument("--recursive", action="store_true")
     batch_coverage.add_argument("--include-paths", action="store_true")
     batch_coverage.add_argument("--format", choices=("human", "json"), default="json")
-    for command in (validate, check, diff, batch, coverage, inspect, gate, rate_diff, matrix, batch_coverage, control):
+    for command in (validate, check, diff, batch, coverage, inspect, gate, rate_diff, matrix, batch_coverage, control, population):
         command.add_argument("--output", type=_cli_path, help="write a UTF-8 report atomically; cannot replace inputs")
     fixture = commands.add_parser("fixture", help="write synthetic fixtures")
     fixture_commands = fixture.add_subparsers(dest="fixture_command", required=True, parser_class=_ArgumentParser)
@@ -164,6 +171,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             report = inspect_contract(contract)
         elif args.command == "control-check":
             report = control_check(contract, _load_trace(args.input, contract))
+        elif args.command == "population-gate":
+            report = population_gate(contract, _load_trace(args.input, contract), args.scope, args.minimum)
         elif args.command == "coverage":
             report = coverage_report(contract, _load_trace(args.input, contract))
         elif args.command == "retention-matrix":

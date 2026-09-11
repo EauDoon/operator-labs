@@ -65,3 +65,25 @@ class ControlCheckTests(unittest.TestCase):
         report = control_check(contract, payload)
         self.assertEqual(report["status"], "unresolved")
         self.assertEqual(report["summary"]["total"], 4)
+
+
+class PopulationGateTests(unittest.TestCase):
+    def test_empty_or_small_exports_fail_without_losing_privacy_findings(self):
+        from tracecanary.inspection import population_gate
+        fixtures = bundle()
+        contract = parse_contract(fixtures["contract.json"])
+        self.assertEqual(population_gate(contract, fixtures["safe-export.json"], "span", 1)["status"], "pass")
+        report = population_gate(contract, fixtures["safe-export.json"], "span", 2)
+        self.assertEqual(report["population_gate"], {"scope": "span", "minimum": 2, "observed": 1})
+        self.assertEqual(report["status"], "regression")
+        self.assertEqual(population_gate(contract, {"resourceSpans": []}, "span", 1)["status"], "regression")
+        self.assertEqual(population_gate(contract, fixtures["leaked-prompt.json"], "span", 1)["status"], "regression")
+
+    def test_invalid_gates_do_not_weaken_checks(self):
+        from tracecanary.canonical import InputError
+        from tracecanary.inspection import population_gate
+        fixtures = bundle()
+        contract = parse_contract(fixtures["contract.json"])
+        for scope, count in (("unknown", 1), ("span", 0), ("span", True), ("span", 1.0), ("span", 1000001)):
+            with self.assertRaises(InputError):
+                population_gate(contract, fixtures["safe-export.json"], scope, count)

@@ -160,6 +160,13 @@ Apache-2.0. See [LICENSE](LICENSE).
 
 ## Inspect coverage
 
+`tracecanary population-gate --contract contract.json --input export.json --scope span --minimum 10`
+requires at least the explicitly selected entity count while preserving every
+normal privacy check. A smaller or empty population returns regression (1, TC013).
+Supported scopes are resource, scope, span, event, and link; the integer minimum
+must be from 1 to 1,000,000. This catches small samples that presence or ratio
+checks alone can pass. It does not prove telemetry completeness or distinct identity.
+
 `tracecanary control-check --contract contract.json --input unsanitized-control.json`
 checks that **every** declared canary occurs as an exact scalar in a synthetic
 positive control before sanitization. Missing canaries return unresolved (2),

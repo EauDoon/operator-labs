@@ -41,6 +41,22 @@ def control_check(contract: Contract, payload):
     return _privacy_checked(contract, report)
 
 
+def population_gate(contract: Contract, payload, scope: str, minimum: int):
+    """Require an explicit population while preserving all existing privacy checks."""
+    if scope not in ("resource", "scope", "span", "event", "link") or type(minimum) is not int or not 1 <= minimum <= 1_000_000:
+        raise InputError("population gate requires a supported scope and integer minimum from 1 to 1000000")
+    base = coverage_report(contract, payload)
+    observed = base["coverage"]["entities"][scope]
+    issues = [Violation(**item) for item in base["violations"]]
+    if observed < minimum:
+        issues.append(Violation("TC013", "", "export population is below the explicitly required minimum", scope=scope))
+    report = build_report(contract.contract_version, "regression" if issues else "pass", issues,
+                          mode="population-gate", redacted_values=tuple(canary.value for canary in contract.canaries))
+    report["coverage"] = base["coverage"]
+    report["population_gate"] = {"scope": scope, "minimum": minimum, "observed": observed}
+    return _privacy_checked(contract, report)
+
+
 def inspect_contract(contract: Contract):
     """Inventory effective checks and find directly contradictory retention requirements."""
     conflicts = []
