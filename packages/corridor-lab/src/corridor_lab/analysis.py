@@ -28,6 +28,25 @@ def _table(scenario: Scenario, analysis: str, columns: list[str], rows: list[dic
             "columns": columns, "rows": rows, "scope": note}
 
 
+def cost_ledger(scenario: Scenario) -> dict:
+    """Reconcile unrounded sender costs without adding receive-currency FX spread."""
+    rows = []
+    with local_decimal_context():
+        for evaluation in _evaluations(scenario):
+            components = (("fixed_fee", evaluation.route.fixed_fee_send),
+                          ("percentage_fee", evaluation.percentage_fee_send),
+                          ("liquidity_carry", evaluation.liquidity_carry_cost_send),
+                          ("failure_loss", evaluation.expected_failure_recovery_cost_send))
+            for component, amount in components:
+                rows.append({"route_id": evaluation.route.route_id, "component": component,
+                    "send_currency": scenario.transaction.send_currency, "amount_send": decimal_text(amount),
+                    "share_of_sender_cost": decimal_text(amount / evaluation.expected_sender_cost)
+                    if evaluation.expected_sender_cost else None})
+    return _table(scenario, "cost-ledger", ["route_id", "component", "send_currency", "amount_send",
+        "share_of_sender_cost"], rows,
+        "Unrounded per-transaction components sum to expected sender cost. FX spread is in receive currency and is excluded. Zero total cost has no share.")
+
+
 def guardrail_headroom(scenario: Scenario) -> dict:
     """Positive or zero headroom passes only an explicitly declared guardrail."""
     objective = scenario.objective

@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .analysis import (
     break_even_check,
+    cost_ledger,
     deadline_profile,
     guardrail_headroom,
     outcome_ledger,
@@ -141,6 +142,9 @@ def build_parser() -> argparse.ArgumentParser:
     starter.add_argument("--output", required=True, help="new scenario JSON file, never overwritten")
     validate = commands.add_parser("validate", help="validate a synthetic scenario contract")
     _add_scenario_argument(validate)
+    costs = commands.add_parser("cost-ledger", help="reconcile unrounded sender-cost components")
+    _add_scenario_argument(costs)
+    _add_output_options(costs)
     headroom = commands.add_parser("guardrail-headroom", help="inspect margins against declared guardrails")
     _add_scenario_argument(headroom)
     _add_output_options(headroom)
@@ -381,7 +385,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         scenario = load_scenario(_require_cli_text(args.scenario, "scenario"))
         report: dict[str, object]
-        if args.command == "guardrail-headroom":
+        if args.command == "cost-ledger":
+            report = cost_ledger(scenario)
+        elif args.command == "guardrail-headroom":
             report = guardrail_headroom(scenario)
         elif args.command == "outcome-ledger":
             report = outcome_ledger(scenario)

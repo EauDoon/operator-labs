@@ -1,5 +1,11 @@
 # Corridor Lab
 
+`corridorlab cost-ledger scenario.json --format markdown` explains unrounded
+per-transaction sender cost as fixed fee, percentage fee, liquidity carry, and
+expected failure loss. Components reconcile to the existing model; receive-currency
+FX spread is separate. A zero total has null component shares. These are declared
+fictional assumptions, not observed costs or route recommendations.
+
 Corridor Lab compares declared, fictional cross-border payment routes using
 deterministic cost, timing, liquidity, and failure assumptions. It is an
 offline scenario engine, not a live pricing service or provider recommendation.
