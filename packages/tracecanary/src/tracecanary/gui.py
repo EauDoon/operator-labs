@@ -28,6 +28,7 @@ TAB_TITLES = (
     "4. Did the Candidate Leak?",
     "5. Did Telemetry Survive?",
     "6. Batch Directories",
+    "7. Regression Campaign",
 )
 
 SCOPES = ("resource", "scope", "span", "event", "link")
@@ -176,6 +177,7 @@ class TraceCanaryWindow:
         self._input = tk.StringVar()
         self._baseline = tk.StringVar()
         self._candidate = tk.StringVar()
+        self._control = tk.StringVar()
         self._batch_dir = tk.StringVar()
         self._minimum_ratio = tk.StringVar(value="0.95")
         self._batch_ratio = tk.StringVar(value="0.95")
@@ -217,6 +219,7 @@ class TraceCanaryWindow:
         self._build_leak_tab()
         self._build_survival_tab()
         self._build_batch_tab()
+        self._build_campaign_tab()
 
         report_frame = self._ttk.LabelFrame(frame, text="Result report", padding=6)
         report_frame.grid(row=1, column=0, sticky="ew", pady=(8, 0))
@@ -251,6 +254,7 @@ class TraceCanaryWindow:
         self._add_selector(tab, 3, "Baseline (before)", self._baseline)
         self._add_selector(tab, 4, "Candidate (after)", self._candidate)
         self._add_selector(tab, 5, "Batch directory", self._batch_dir, directory=True)
+        self._add_selector(tab, 6, "Control (unsanitized)", self._control)
 
         projects = self._ttk.LabelFrame(tab, text="Saved local projects", padding=8)
         projects.grid(row=7, column=0, columnspan=3, sticky="ew", pady=(12, 0))
@@ -388,6 +392,80 @@ class TraceCanaryWindow:
         self._ttk.Entry(ratio_row, textvariable=self._batch_ratio, width=10).grid(row=0, column=1, padx=(6, 0))
         self._coverage_batch_button = self._ttk.Button(ratio_row, text="Run Coverage Batch", command=self._coverage_batch)
         self._coverage_batch_button.grid(row=0, column=2, padx=(6, 0))
+
+    def _build_campaign_tab(self) -> None:
+        tab = self._ttk.Frame(self._notebook, padding=10)
+        self._notebook.add(tab, text=TAB_TITLES[6])
+        tab.columnconfigure(0, weight=1)
+        self._ttk.Label(tab, text="Run a bounded synthetic regression campaign", font=("TkDefaultFont", 12, "bold")).grid(row=0, column=0, sticky="w")
+        self._ttk.Label(
+            tab,
+            text="One pass over the current selections: contract validity, control-check canary exercise (a control pass is not a privacy pass), baseline validity, per-candidate privacy and retention findings, the batch directory, and the coverage thresholds configured on the other tabs. A failing baseline is never used.",
+            wraplength=760,
+        ).grid(row=1, column=0, sticky="w", pady=(4, 8))
+        campaign_row = self._ttk.Frame(tab)
+        campaign_row.grid(row=2, column=0, sticky="w")
+        self._campaign_button = self._ttk.Button(campaign_row, text="Run Campaign", command=self._campaign)
+        self._campaign_button.grid(row=0, column=0)
+        self._ttk.Button(campaign_row, text="Save Summary As...", command=self._save_campaign_summary).grid(row=0, column=1, padx=(6, 0))
+        self._ttk.Button(campaign_row, text="Compare Saved Summaries...", command=self._compare_summaries).grid(row=0, column=2, padx=(6, 0))
+        self._ttk.Label(
+            tab,
+            text="Saved summaries are deterministic and value-free; comparison aggregates findings by value-free code and never implies matched entity identity.",
+            wraplength=760,
+        ).grid(row=3, column=0, sticky="w", pady=(8, 0))
+
+    def _campaign(self) -> None:
+        contract = self._contract.get().strip()
+        if not contract:
+            self._messagebox.showerror("TraceCanary", "Select a contract JSON file before running a campaign.")
+            return
+        input_path = self._input.get().strip() or None
+        baseline_path = self._baseline.get().strip() or None
+        batch_path = self._batch_dir.get().strip() or None
+        control_path = self._control.get().strip() or None
+        minimum_ratio = self._minimum_ratio.get().strip() or None
+        population_scope = self._population_scope.get()
+        population_text = self._population_minimum.get().strip()
+        population_minimum = int(population_text) if population_text.isdigit() else None
+        effective_scope = population_scope if population_minimum is not None else None
+
+        def operation():
+            return self._controller.run_campaign_selections(
+                contract_path=contract,
+                input_path=input_path,
+                baseline_path=baseline_path,
+                batch_path=batch_path,
+                control_path=control_path,
+                minimum_ratio=minimum_ratio,
+                population_scope=effective_scope,
+                population_minimum=population_minimum,
+            )
+
+        self._run_background(operation, "Status: campaign running (bounded by contract limits); the window stays responsive.", buttons=(self._campaign_button,))
+
+    def _save_campaign_summary(self) -> None:
+        if self._result is None or self._result.mode != "campaign":
+            self._messagebox.showerror("TraceCanary", "Run a campaign before saving its summary.")
+            return
+        selected = self._filedialog.asksaveasfilename(
+            title="Save value-free campaign summary",
+            defaultextension=".json",
+            filetypes=[("JSON summary", "*.json"), ("All files", "*.*")],
+        )
+        if not selected:
+            return
+        result = self._controller.save_campaign_summary(selected, self._result)
+        self._apply(result)
+
+    def _compare_summaries(self) -> None:
+        baseline = self._filedialog.askopenfilename(title="Select the baseline campaign summary", filetypes=[("JSON summaries", "*.json")])
+        if not baseline:
+            return
+        candidate = self._filedialog.askopenfilename(title="Select the candidate campaign summary", filetypes=[("JSON summaries", "*.json")])
+        if not candidate:
+            return
+        self._apply(self._controller.compare_saved_summaries(baseline, candidate))
 
     def _make_tab_shortcut(self, index: int):
         def handler(_event: object) -> str:
@@ -532,29 +610,29 @@ class TraceCanaryWindow:
             "Status: coverage batch running (bounded by the contract file limit); the window stays responsive.",
         )
 
-    def _run_background(self, operation: Callable[[], GuiResult], pending_message: str) -> None:
+    def _run_background(self, operation: Callable[[], GuiResult], pending_message: str, *, buttons: tuple[object, ...] = ()) -> None:
         if self._batch_job is not None and not self._batch_job.finished():
             return
         job = BackgroundBatch(operation)
         self._batch_job = job
-        self._batch_button.configure(state="disabled")
-        self._coverage_batch_button.configure(state="disabled")
+        for button in (self._batch_button, self._coverage_batch_button, *buttons):
+            button.configure(state="disabled")
         self._status.set(pending_message)
         job.start()
-        self._root.after(50, lambda: self._poll_batch(job))
+        self._root.after(50, lambda: self._poll_batch(job, buttons))
 
-    def _poll_batch(self, job: BackgroundBatch) -> None:
+    def _poll_batch(self, job: BackgroundBatch, buttons: tuple[object, ...] = ()) -> None:
         if self._batch_job is not job:
             return
         if not job.finished():
-            self._root.after(50, lambda: self._poll_batch(job))
+            self._root.after(50, lambda: self._poll_batch(job, buttons))
             return
         self._batch_job = None
-        self._batch_button.configure(state="normal")
-        self._coverage_batch_button.configure(state="normal")
+        for button in (self._batch_button, self._coverage_batch_button, *buttons):
+            button.configure(state="normal")
         if job.error is not None:
-            self._messagebox.showerror("TraceCanary", f"The batch could not be run: {job.error}")
-            self._status.set(f"Status: batch failed ({job.error})")
+            self._messagebox.showerror("TraceCanary", f"The operation could not be completed: {job.error}")
+            self._status.set(f"Status: operation failed ({job.error})")
             return
         if job.result is not None:
             self._apply(job.result)

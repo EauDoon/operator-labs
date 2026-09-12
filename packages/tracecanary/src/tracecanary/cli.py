@@ -184,6 +184,34 @@ def build_parser() -> argparse.ArgumentParser:
     project_validate.add_argument("project", type=_cli_path)
     project_open = project_commands.add_parser("open", help="resolve a project and report missing or changed inputs")
     project_open.add_argument("project", type=_cli_path)
+    promote = project_commands.add_parser("promote-baseline", help="explicitly promote a passing candidate to the project baseline")
+    promote.add_argument("project", type=_cli_path)
+    promote.add_argument("--candidate", required=True, type=_cli_path, help="candidate export that must satisfy the contract first")
+
+    campaign = commands.add_parser("campaign", help="run a bounded synthetic regression campaign")
+    campaign_commands = campaign.add_subparsers(dest="campaign_command", required=True, parser_class=_ArgumentParser)
+    campaign_run = campaign_run_options(campaign_commands.add_parser("run", help="run a campaign from a saved project"))
+    campaign_run.add_argument("project", type=_cli_path, help="project directory or manifest path")
+    campaign_run.add_argument("--control", type=_cli_path, help="unsanitized synthetic positive control")
+    campaign_run.add_argument("--save-summary", type=_cli_path, help="explicitly save the value-free summary to this JSON path")
+    campaign_compare = campaign_commands.add_parser("compare", help="compare two saved value-free campaign summaries")
+    campaign_compare.add_argument("baseline_summary", type=_cli_path)
+    campaign_compare.add_argument("candidate_summary", type=_cli_path)
+    campaign_compare.add_argument("--format", choices=("human", "json"), default="human")
+    campaign_compare.add_argument("--output", type=_cli_path)
+    return parser
+
+
+def campaign_run_options(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    parser.add_argument("--contract", type=_cli_path, help="override the project contract")
+    parser.add_argument("--baseline", type=_cli_path, help="override the project baseline")
+    parser.add_argument("--candidate", type=_cli_path, help="additional named candidate")
+    parser.add_argument("--input-dir", type=_cli_path, help="override the project batch directory")
+    parser.add_argument("--recursive", action="store_true")
+    parser.add_argument("--include-paths", action="store_true")
+    parser.add_argument("--minimum-ratio", help="per-file coverage gate for named candidates")
+    parser.add_argument("--population-scope", choices=("resource", "scope", "span", "event", "link"))
+    parser.add_argument("--population-minimum", type=int)
     return parser
 
 
@@ -196,6 +224,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return EXIT_PASS
         if args.command == "project":
             return _project(args)
+        if args.command == "campaign":
+            return _campaign(args)
         protect_inputs(args.output, [getattr(args, name) for name in ("contract", "input", "baseline", "candidate") if getattr(args, name, None) is not None], getattr(args, "input_dir", None))
         contract = load_contract(args.contract)
         if args.command == "validate":
@@ -311,6 +341,8 @@ def _project(args: Any) -> int:
             for problem in loaded.problems:
                 print(f"TraceCanary: UNRESOLVED: {problem}", file=sys.stderr)
             return EXIT_PASS if loaded.ok else EXIT_UNRESOLVED
+        if command == "promote-baseline":
+            return _project_promote_baseline(args.project, args.candidate)
         raise InputError(f"unsupported project command: {command}")
     except (InputError, ValueError) as exc:
         print(f"TraceCanary: UNRESOLVED: {exc}", file=sys.stderr)
@@ -349,6 +381,126 @@ def _project_prepare(directory: Path, *, contract: Path, input: Path | None, bas
     if batch_target is not None:
         placed["batch directory"] = batch_target
     return placed
+
+
+def _project_promote_baseline(directory: Path, candidate: Path) -> int:
+    """Explicitly promote a candidate to the project baseline after it passes."""
+    from tracecanary.project import _copy_project_input, fingerprint_file, load_project, parse_manifest, write_report
+
+    loaded = load_project(directory)
+    if not loaded.ok:
+        for problem in loaded.problems:
+            print(f"TraceCanary: UNRESOLVED: {problem}", file=sys.stderr)
+        return EXIT_UNRESOLVED
+    contract = load_contract(loaded.resolved["contract"])
+    payload = _load_trace(candidate, contract)
+    if check_trace(contract, payload, mode="check")["status"] != "pass":
+        raise InputError("baseline promotion requires a candidate that satisfies the contract; failing candidates are never blessed")
+    project_dir = directory.resolve() if directory.is_dir() else directory.parent.resolve()
+    target = _copy_project_input(project_dir, candidate)
+    manifest = parse_manifest(load_json(loaded.path, max_bytes=contract.max_input_bytes, max_depth=contract.max_nesting))
+    document = load_json(loaded.path, max_bytes=contract.max_input_bytes, max_depth=contract.max_nesting)
+    document["baseline"] = {"path": manifest_text_relative(project_dir, target), "sha256": fingerprint_file(target)}
+    write_report(loaded.path, canonical_json_text(document))
+    print(f"Baseline promoted from {candidate.name}: the candidate satisfied the contract first.")
+    return EXIT_PASS
+
+
+def manifest_text_relative(project_dir: Path, target: Path) -> str:
+    from tracecanary.project import _validate_relative_path
+
+    return _validate_relative_path(target.relative_to(project_dir).as_posix(), "baseline.path")
+
+
+def canonical_json_text(value: Any) -> str:
+    from tracecanary.canonical import canonical_json
+
+    return canonical_json(value)
+
+
+def _campaign(args: Any) -> int:
+    from tracecanary.campaign import CAMPAIGN_VERSION, campaign_summary, compare_summaries, run_campaign
+    from tracecanary.project import load_project
+    from tracecanary.report import ensure_text_values_absent
+
+    command = args.campaign_command
+    try:
+        if command == "run":
+            loaded = load_project(args.project)
+            if not loaded.ok:
+                for problem in loaded.problems:
+                    print(f"TraceCanary: UNRESOLVED: {problem}", file=sys.stderr)
+                return EXIT_UNRESOLVED
+            manifest = loaded.manifest
+            contract_path = args.contract or loaded.resolved["contract"]
+            contract = load_contract(contract_path)
+            control = args.control
+            baseline = args.baseline or loaded.resolved.get("baseline")
+            candidates: list[tuple[str, Path]] = []
+            if args.candidate is not None:
+                candidates.append((args.candidate.name, args.candidate))
+            if manifest.input is not None:
+                candidates.append((manifest.input.path, loaded.resolved["input"]))
+            batch = args.input_dir or loaded.resolved.get("batch directory")
+            population_scope = args.population_scope or manifest.coverage.population_scope
+            population_minimum = args.population_minimum if args.population_minimum is not None else manifest.coverage.population_minimum
+            campaign = run_campaign(
+                contract,
+                control_payload=_load_trace(control, contract) if control is not None else None,
+                baseline_payload=_load_trace(baseline, contract) if baseline is not None else None,
+                candidates=candidates,
+                batch=batch,
+                batch_recursive=args.recursive or (manifest.batch.recursive if manifest.batch is not None else False),
+                batch_include_paths=args.include_paths or (manifest.batch.include_paths if manifest.batch is not None else False),
+                batch_minimum_ratio=args.minimum_ratio or (manifest.batch.minimum_ratio if manifest.batch is not None else None),
+                minimum_ratio=args.minimum_ratio,
+                population_scope=population_scope,
+                population_minimum=population_minimum,
+            )
+            output = render_json(campaign)
+            ensure_text_values_absent(output, tuple(canary.value for canary in contract.canaries))
+            _emit(output, args.output if hasattr(args, "output") else None)
+            summary_path = args.save_summary
+            if summary_path is not None:
+                summary = campaign_summary(campaign)
+                summary_text = render_json(summary)
+                protect_inputs(summary_path, [loaded.resolved["contract"]], loaded.path.parent)
+                write_report(summary_path, summary_text)
+                print(f"Value-free campaign summary saved to {summary_path}")
+            return _status_exit(campaign["status"])
+        if command == "compare":
+            baseline_summary = load_json(args.baseline_summary, max_bytes=MAX_CAMPAIGN_SUMMARY_BYTES, max_depth=32)
+            candidate_summary = load_json(args.candidate_summary, max_bytes=MAX_CAMPAIGN_SUMMARY_BYTES, max_depth=32)
+            comparison = compare_summaries(baseline_summary, candidate_summary)
+            output = render_json(comparison) if args.format == "json" else render_campaign_human(comparison)
+            _emit(output, args.output)
+            return EXIT_PASS
+        raise InputError(f"unsupported campaign command: {command}")
+    except (ContractError, InputError, OtlpError, ValueError) as exc:
+        print(f"TraceCanary: UNRESOLVED: {exc}", file=sys.stderr)
+        return EXIT_UNRESOLVED
+    except OSError:
+        print("TraceCanary: UNRESOLVED: input or output could not be accessed", file=sys.stderr)
+        return EXIT_UNRESOLVED
+
+
+MAX_CAMPAIGN_SUMMARY_BYTES = 1_000_000
+
+
+def render_campaign_human(comparison: dict[str, Any]) -> str:
+    lines = [
+        f"TraceCanary campaign comparison: {comparison['campaign_status_change'][0]} -> {comparison['campaign_status_change'][1]}",
+        f"Contract version: {comparison['contract_version']}",
+    ]
+    for name, phase in comparison["phases"].items():
+        lines.append(f"{name}: {phase['baseline_status']} -> {phase['candidate_status']}")
+        for label in ("persistent_findings", "resolved_findings", "new_findings"):
+            counts = phase[label]
+            if counts:
+                rendered = ", ".join(f"{code} x{count}" for code, count in counts.items())
+                lines.append(f"  {label.replace('_', ' ')}: {rendered}")
+    lines.append("Finding codes are aggregated by value-free code; no entity identity or causal attribution is implied.")
+    return "\n".join(lines) + "\n"
 
 
 def _load_trace(path: Path, contract: Contract) -> dict[str, Any]:
