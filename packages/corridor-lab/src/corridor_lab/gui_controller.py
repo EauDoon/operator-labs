@@ -12,6 +12,7 @@ from .canonical import (
     InputError,
     atomic_write_text,
     parse_json_bytes,
+    protect_report_output,
     read_bounded_bytes,
     require_decimal,
 )
@@ -105,16 +106,41 @@ class CorridorGuiController:
         self.scenario_draft_text = self.fictional_template_text()
         self.last_report: dict[str, object] | None = None
         self.last_error: str | None = None
+        self.scenario_file: Path | None = None
+        self.routes_path: Path | None = None
+        self.last_report_inputs: tuple[Path, ...] = ()
+        self.last_report_scanned_dirs: tuple[Path, ...] = ()
+
+    def _report_inputs(self, *, include_routes: bool) -> tuple[tuple[Path, ...], tuple[Path, ...]]:
+        inputs: list[Path] = []
+        scanned: list[Path] = []
+        if self.scenario_file is not None:
+            inputs.append(self.scenario_file)
+        if include_routes and self.routes_path is not None:
+            if self.routes_path.is_dir():
+                scanned.append(self.routes_path)
+            else:
+                inputs.append(self.routes_path)
+        return tuple(inputs), tuple(scanned)
+
+    def _success(
+        self,
+        report: dict[str, object],
+        *,
+        routes_inputs: bool = True,
+        extra_inputs: tuple[Path, ...] = (),
+    ) -> ActionResult:
+        self.last_report = report
+        base_inputs, base_scanned = self._report_inputs(include_routes=routes_inputs)
+        self.last_report_inputs = tuple(base_inputs) + tuple(extra_inputs)
+        self.last_report_scanned_dirs = base_scanned
+        self.last_error = None
+        return ActionResult(report, None)
 
     @staticmethod
     def fictional_template_text() -> str:
         """Return a deterministic editable template containing fictional values only."""
         return json.dumps(BUILTIN_DEMO_SCENARIO, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-
-    def _success(self, report: dict[str, object]) -> ActionResult:
-        self.last_report = report
-        self.last_error = None
-        return ActionResult(report, None)
 
     def _failure(self, error: Exception | str) -> ActionResult:
         self.last_error = str(error)
@@ -132,6 +158,7 @@ class CorridorGuiController:
             self.selected_routes = ()
             self.scenario_source = "Built-in fictional Amber to Birch demo"
             self.routes_source = "Using routes embedded in the built-in demo"
+            self.scenario_file = None
             self.last_report = None
             self.last_error = None
             return ActionResult({}, None)
@@ -146,6 +173,7 @@ class CorridorGuiController:
             self.selected_routes = ()
             self.scenario_source = str(Path(path))
             self.routes_source = "Using routes embedded in the scenario"
+            self.scenario_file = Path(path)
             self.last_report = None
             self.last_error = None
             return ActionResult({}, None)
@@ -169,6 +197,7 @@ class CorridorGuiController:
         self.selected_routes = ()
         self.scenario_source = "Validated in-memory fictional scenario"
         self.routes_source = "Using routes embedded in the validated scenario"
+        self.scenario_file = None
         self.last_report = None
         self.last_error = None
         return ActionResult({}, None)
@@ -197,6 +226,7 @@ class CorridorGuiController:
                 raise InputError("selected routes have duplicate route identifiers")
             self.selected_routes = routes
             self.routes_source = str(selected)
+            self.routes_path = selected
             self.last_report = None
             self.last_error = None
             return ActionResult({}, None)
@@ -206,6 +236,7 @@ class CorridorGuiController:
     def clear_route_selection(self) -> None:
         self.selected_routes = ()
         self.routes_source = "Using routes embedded in the scenario"
+        self.routes_path = None
         self.last_report = None
         self.last_error = None
 
@@ -220,7 +251,7 @@ class CorridorGuiController:
     def evaluate(self) -> ActionResult:
         try:
             scenario = self._require_scenario()
-            return self._success(evaluate_scenario(scenario))
+            return self._success(evaluate_scenario(scenario), routes_inputs=False)
         except (InputError, OSError, ValueError, DecimalException) as exc:
             return self._failure(exc)
 
@@ -231,7 +262,7 @@ class CorridorGuiController:
             if not chunks or not all(chunk.strip() for chunk in chunks):
                 raise InputError("sensitivity values must be comma-separated decimals")
             values: list[Decimal] = [require_decimal(chunk.strip(), "sensitivity value") for chunk in chunks]
-            return self._success(run_sensitivity(scenario, parameter.strip(), values))
+            return self._success(run_sensitivity(scenario, parameter.strip(), values), routes_inputs=False)
         except (InputError, OSError, ValueError, DecimalException) as exc:
             return self._failure(exc)
 
@@ -241,7 +272,7 @@ class CorridorGuiController:
             if not all(chunk.strip() for chunk in chunks):
                 raise InputError("transaction values must be comma-separated decimals")
             values = [require_decimal(chunk.strip(), "transaction value") for chunk in chunks]
-            return self._success(run_transaction_sweep(self._require_scenario(), parameter.strip(), values))
+            return self._success(run_transaction_sweep(self._require_scenario(), parameter.strip(), values), routes_inputs=False)
         except (InputError, OSError, ValueError, DecimalException) as exc:
             return self._failure(exc)
 
@@ -254,7 +285,7 @@ class CorridorGuiController:
                 raise InputError("stress values must be comma-separated decimals")
             values_a = [require_decimal(chunk.strip(), "stress value") for chunk in chunks_a]
             values_b = [require_decimal(chunk.strip(), "stress value") for chunk in chunks_b]
-            return self._success(run_stress_grid(scenario, parameter_a.strip(), values_a, parameter_b.strip(), values_b))
+            return self._success(run_stress_grid(scenario, parameter_a.strip(), values_a, parameter_b.strip(), values_b), routes_inputs=False)
         except (InputError, OSError, ValueError, DecimalException) as exc:
             return self._failure(exc)
 
@@ -286,8 +317,9 @@ class CorridorGuiController:
         if text is None:
             return ActionResult(None, self.last_error)
         try:
-            atomic_write_text(Path(path), text)
+            target = protect_report_output(path, self.last_report_inputs, self.last_report_scanned_dirs)
+            atomic_write_text(target, text)
             self.last_error = None
             return ActionResult(self.last_report, None)
-        except OSError as exc:
+        except (InputError, OSError) as exc:
             return self._failure(exc)

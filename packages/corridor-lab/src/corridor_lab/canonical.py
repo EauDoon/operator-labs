@@ -7,6 +7,7 @@ import os
 import re
 import tempfile
 from contextlib import AbstractContextManager
+from collections.abc import Sequence
 from decimal import ROUND_HALF_EVEN, Context, Decimal, DecimalException, localcontext
 from pathlib import Path
 from typing import Any
@@ -218,6 +219,27 @@ def require_integer(value: Any, path: str, *, minimum: int, maximum: int) -> int
     if Decimal(integer) != parsed or integer < minimum or integer > maximum:
         raise InputError(f"{path} must be an integer from {minimum} to {maximum}")
     return integer
+
+
+def protect_report_output(
+    target: str | Path,
+    inputs: Sequence[Path],
+    scanned_dirs: Sequence[Path] = (),
+) -> Path:
+    """Reject report destinations that would replace or nest inside inputs."""
+    output = Path(target)
+    resolved = output.resolve()
+    for source in inputs:
+        source_path = Path(source)
+        if resolved == source_path.resolve() or (
+            output.exists() and source_path.exists() and os.path.samefile(output, source_path)
+        ):
+            raise InputError("report output must not replace an input")
+    for directory in scanned_dirs:
+        directory_path = Path(directory)
+        if resolved.is_relative_to(directory_path.resolve()):
+            raise InputError("report output must be outside input directories")
+    return output
 
 
 def atomic_write_text(path: str | Path, text: str, *, max_bytes: int = MAX_REPORT_BYTES) -> None:

@@ -11,12 +11,14 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+from tracecanary.canonical import InputError
 from tracecanary.gui_controller import (
     EXIT_PASS,
     EXIT_UNRESOLVED,
     GuiResult,
     TraceCanaryController,
 )
+from tracecanary.output import protect_inputs, write_report
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -98,6 +100,18 @@ def _show_windows_error(message: str) -> None:
         ctypes.windll.user32.MessageBoxW(None, message, "TraceCanary", 0x10)
     except (AttributeError, OSError):
         return
+
+
+def save_gui_report(target: Path, result: GuiResult, view: str) -> None:
+    """Write a rendered GUI report under the same protection as CLI output.
+
+    The destination must not replace any input the result depends on and must
+    stay outside a scanned batch directory. The write itself is the bounded
+    atomic replacement used by the CLI, so a failed write preserves the
+    previous file and removes temporary files.
+    """
+    protect_inputs(target, list(result.inputs), result.input_dir)
+    write_report(target, result.json if view == "json" else result.human)
 
 
 class TraceCanaryWindow:
@@ -236,13 +250,16 @@ class TraceCanaryWindow:
         )
         if not selected:
             return
-        content = self._result.json if is_json else self._result.human
+        target = Path(selected)
         try:
-            Path(selected).write_text(content, encoding="utf-8", newline="\n")
+            save_gui_report(target, self._result, self._view)
+        except InputError as exc:
+            self._messagebox.showerror("TraceCanary", f"The report could not be saved: {exc}")
+            return
         except OSError:
             self._messagebox.showerror("TraceCanary", "The report could not be saved.")
             return
-        self._status.set("Status: report saved")
+        self._status.set(f"Status: report saved to {selected}")
 
 
 if __name__ == "__main__":

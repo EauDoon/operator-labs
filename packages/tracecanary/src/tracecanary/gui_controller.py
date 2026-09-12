@@ -46,6 +46,8 @@ class GuiResult:
     human: str
     json: str
     starter_paths: StarterPaths | None = None
+    inputs: tuple[Path, ...] = ()
+    input_dir: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -65,7 +67,7 @@ class TraceCanaryController:
         guidance = self._require("validate", (contract_path, GUI001, "Select a contract JSON file before validating."))
         if guidance is not None:
             return guidance
-        return self._run("validate", lambda: self._validate(Path(contract_path)))
+        return self._run("validate", lambda: self._validate(Path(contract_path)), inputs=(Path(contract_path),))
 
     def check(self, contract_path: str | Path, input_path: str | Path) -> GuiResult:
         guidance = self._require(
@@ -75,7 +77,11 @@ class TraceCanaryController:
         )
         if guidance is not None:
             return guidance
-        return self._run("check", lambda: self._check(Path(contract_path), Path(input_path)))
+        return self._run(
+            "check",
+            lambda: self._check(Path(contract_path), Path(input_path)),
+            inputs=(Path(contract_path), Path(input_path)),
+        )
 
     def coverage(self, contract_path: str | Path, input_path: str | Path) -> GuiResult:
         guidance = self._require(
@@ -85,7 +91,11 @@ class TraceCanaryController:
         )
         if guidance is not None:
             return guidance
-        return self._run("coverage", lambda: self._coverage(Path(contract_path), Path(input_path)))
+        return self._run(
+            "coverage",
+            lambda: self._coverage(Path(contract_path), Path(input_path)),
+            inputs=(Path(contract_path), Path(input_path)),
+        )
 
     def _coverage(self, contract_path: Path, input_path: Path) -> Report:
         contract = load_contract(contract_path)
@@ -100,7 +110,11 @@ class TraceCanaryController:
         )
         if guidance is not None:
             return guidance
-        return self._run("diff", lambda: self._diff(Path(contract_path), Path(baseline_path), Path(candidate_path)))
+        return self._run(
+            "diff",
+            lambda: self._diff(Path(contract_path), Path(baseline_path), Path(candidate_path)),
+            inputs=(Path(contract_path), Path(baseline_path), Path(candidate_path)),
+        )
 
     def built_in_demo(self) -> GuiResult:
         """Check a safe synthetic trace entirely in memory, with no file writes."""
@@ -170,6 +184,7 @@ class TraceCanaryController:
         operation: Callable[[], Report],
         *,
         starter_paths: StarterPaths | None = None,
+        inputs: tuple[Path, ...] = (),
         failure_code: str = GUI005,
         failure_message: str = "The selected files could not be analyzed. Check that they are readable supported JSON files.",
     ) -> GuiResult:
@@ -180,7 +195,14 @@ class TraceCanaryController:
         except (ContractError, InputError, OtlpError, OSError, ValueError):
             return self._guidance(mode, failure_code, failure_message)
         status = report["status"]
-        return GuiResult(status, _exit_code(status), render_human(report), render_json(report), starter_paths)
+        return GuiResult(
+            status,
+            _exit_code(status),
+            render_human(report),
+            render_json(report),
+            starter_paths,
+            inputs,
+        )
 
     @staticmethod
     def _guidance(mode: str, code: str, message: str) -> GuiResult:
