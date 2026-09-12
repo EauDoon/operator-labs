@@ -94,6 +94,27 @@ wait for CI, then start Milestone 3 (target and constraint analysis).
 Next: documentation checkpoint, push, wait for CI, then Milestone 4
 (TraceCanary regression campaigns).
 
+## Milestone 4: TraceCanary regression campaigns (implemented)
+
+- `campaign.py`: one bounded pass over existing checkers and the batch
+  engine. Phases with separate meanings (contract, control, baseline,
+  candidates, batch, population gate); a failing baseline is never used;
+  unresolved precedence preserved; the combined document is re-checked
+  against canary values. Value-free deterministic summaries save only
+  through explicit actions; `compare_summaries` performs strict
+  compatibility checks (same contract version, summary version) and
+  aggregates findings by value-free code as persistent/resolved/new with no
+  entity identity implied.
+- CLI: `campaign run [--save-summary]`, `campaign compare`, and
+  `project promote-baseline` (explicit, validated promotion only).
+- Desktop: new **Regression Campaign** tab (7) with background execution,
+  main-thread-only widget updates, a new Control (unsanitized) selector,
+  Save Summary As..., and Compare Saved Summaries.
+- TraceCanary tests: 174. Real-window drive passed on macOS arm64.
+
+Next: push, wait for CI, then Milestone 5 (contract development and
+diagnosis).
+
 ## Verification commands (authoritative)
 
 ```text
