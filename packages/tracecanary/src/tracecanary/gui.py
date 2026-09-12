@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import argparse
 import sys
-from collections.abc import Sequence
+import threading
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from tracecanary.canonical import InputError
@@ -30,6 +31,37 @@ TAB_TITLES = (
 )
 
 SCOPES = ("resource", "scope", "span", "event", "link")
+
+
+class BackgroundBatch:
+    """Run one bounded batch operation on a worker thread.
+
+    The worker only calls library functions and stores its result; every
+    widget update happens on the Tk main thread. A finished job is polled
+    exactly once per window, so a superseded or closed window can never
+    apply a stale result.
+    """
+
+    def __init__(self, operation: Callable[[], GuiResult]) -> None:
+        self.operation = operation
+        self.result: GuiResult | None = None
+        self.error: str | None = None
+        self._finished = threading.Event()
+        self._thread = threading.Thread(target=self._work, daemon=True)
+
+    def _work(self) -> None:
+        try:
+            self.result = self.operation()
+        except Exception as exc:  # belt and braces: controller methods already catch
+            self.error = str(exc) or type(exc).__name__
+        finally:
+            self._finished.set()
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def finished(self) -> bool:
+        return self._finished.is_set()
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -152,6 +184,7 @@ class TraceCanaryWindow:
         self._include_paths = tk.BooleanVar(value=False)
         self._require_zero = tk.BooleanVar(value=False)
         self._use_baseline = tk.BooleanVar(value=False)
+        self._batch_job: BackgroundBatch | None = None
         self._status = tk.StringVar(value="Status: awaiting input")
         for index in range(len(TAB_TITLES)):
             self._root.bind_all(f"<Control-Key-{index + 1}>", self._make_tab_shortcut(index), add="+")
@@ -200,10 +233,11 @@ class TraceCanaryWindow:
         scroll.grid(row=1, column=1, sticky="ns")
         self._report.configure(yscrollcommand=scroll.set)
 
-    def _add_selector(self, frame: object, row: int, label: str, variable: object) -> None:
+    def _add_selector(self, frame: object, row: int, label: str, variable: object, *, directory: bool = False) -> None:
         self._ttk.Label(frame, text=label).grid(row=row, column=0, sticky="w", padx=(0, 8), pady=2)
         self._ttk.Entry(frame, textvariable=variable).grid(row=row, column=1, sticky="ew", pady=2)
-        self._ttk.Button(frame, text="Browse", command=lambda: self._browse(variable)).grid(row=row, column=2, sticky="e", pady=2)
+        command = self._browse_directory if directory else self._browse
+        self._ttk.Button(frame, text="Browse", command=lambda: command(variable)).grid(row=row, column=2, sticky="e", pady=2)
 
     def _build_files_tab(self) -> None:
         tab = self._ttk.Frame(self._notebook, padding=10)
@@ -215,7 +249,7 @@ class TraceCanaryWindow:
         self._add_selector(tab, 2, "Input (trace)", self._input)
         self._add_selector(tab, 3, "Baseline (before)", self._baseline)
         self._add_selector(tab, 4, "Candidate (after)", self._candidate)
-        self._add_selector(tab, 5, "Batch directory", self._batch_dir)
+        self._add_selector(tab, 5, "Batch directory", self._batch_dir, directory=True)
 
         starters = self._ttk.LabelFrame(tab, text="Reproducible synthetic starters", padding=8)
         starters.grid(row=6, column=0, columnspan=3, sticky="ew", pady=(12, 0))
@@ -327,7 +361,8 @@ class TraceCanaryWindow:
         self._ttk.Checkbutton(options, text="Recursive", variable=self._recursive).grid(row=0, column=0, sticky="w")
         self._ttk.Checkbutton(options, text="Include paths (opt-in)", variable=self._include_paths).grid(row=0, column=1, sticky="w", padx=(10, 0))
         self._ttk.Checkbutton(options, text="Compare candidates against the passing Baseline from the Files tab", variable=self._use_baseline).grid(row=1, column=0, columnspan=2, sticky="w")
-        self._ttk.Button(tab, text="Run Batch Check", command=self._batch).grid(row=3, column=0, sticky="w", pady=(8, 0))
+        self._batch_button = self._ttk.Button(tab, text="Run Batch Check", command=self._batch)
+        self._batch_button.grid(row=3, column=0, sticky="w", pady=(8, 0))
 
         coverage = self._ttk.LabelFrame(tab, text="Aggregate coverage batch", padding=8)
         coverage.grid(row=4, column=0, sticky="ew", pady=(12, 0))
@@ -340,7 +375,8 @@ class TraceCanaryWindow:
         ratio_row.grid(row=1, column=0, sticky="w", pady=(6, 0))
         self._ttk.Label(ratio_row, text="Per-file minimum ratio (optional)").grid(row=0, column=0)
         self._ttk.Entry(ratio_row, textvariable=self._batch_ratio, width=10).grid(row=0, column=1, padx=(6, 0))
-        self._ttk.Button(ratio_row, text="Run Coverage Batch", command=self._coverage_batch).grid(row=0, column=2, padx=(6, 0))
+        self._coverage_batch_button = self._ttk.Button(ratio_row, text="Run Coverage Batch", command=self._coverage_batch)
+        self._coverage_batch_button.grid(row=0, column=2, padx=(6, 0))
 
     def _make_tab_shortcut(self, index: int):
         def handler(_event: object) -> str:
@@ -354,6 +390,11 @@ class TraceCanaryWindow:
 
     def _browse(self, variable: object) -> None:
         selected = self._filedialog.askopenfilename(title="Select JSON file", filetypes=[("JSON files", "*.json"), ("All files", "*")])
+        if selected:
+            variable.set(selected)
+
+    def _browse_directory(self, variable: object) -> None:
+        selected = self._filedialog.askdirectory(title="Select a directory of OTLP trace JSON exports")
         if selected:
             variable.set(selected)
 
@@ -391,26 +432,55 @@ class TraceCanaryWindow:
         self._apply(self._controller.population_gate(self._contract.get(), self._input.get(), self._population_scope.get(), self._population_minimum.get()))
 
     def _batch(self) -> None:
-        self._apply(
-            self._controller.batch(
+        self._run_background(
+            lambda: self._controller.batch(
                 self._contract.get(),
                 self._batch_dir.get() or self._input.get(),
                 recursive=bool(self._recursive.get()),
                 include_paths=bool(self._include_paths.get()),
                 baseline_path=self._baseline.get() if self._use_baseline.get() else None,
-            )
+            ),
+            "Status: batch running (bounded by the contract file limit); the window stays responsive.",
         )
 
     def _coverage_batch(self) -> None:
-        self._apply(
-            self._controller.coverage_batch(
+        self._run_background(
+            lambda: self._controller.coverage_batch(
                 self._contract.get(),
                 self._batch_dir.get() or self._input.get(),
                 recursive=bool(self._recursive.get()),
                 include_paths=bool(self._include_paths.get()),
                 minimum_ratio=self._batch_ratio.get() or None,
-            )
+            ),
+            "Status: coverage batch running (bounded by the contract file limit); the window stays responsive.",
         )
+
+    def _run_background(self, operation: Callable[[], GuiResult], pending_message: str) -> None:
+        if self._batch_job is not None and not self._batch_job.finished():
+            return
+        job = BackgroundBatch(operation)
+        self._batch_job = job
+        self._batch_button.configure(state="disabled")
+        self._coverage_batch_button.configure(state="disabled")
+        self._status.set(pending_message)
+        job.start()
+        self._root.after(50, lambda: self._poll_batch(job))
+
+    def _poll_batch(self, job: BackgroundBatch) -> None:
+        if self._batch_job is not job:
+            return
+        if not job.finished():
+            self._root.after(50, lambda: self._poll_batch(job))
+            return
+        self._batch_job = None
+        self._batch_button.configure(state="normal")
+        self._coverage_batch_button.configure(state="normal")
+        if job.error is not None:
+            self._messagebox.showerror("TraceCanary", f"The batch could not be run: {job.error}")
+            self._status.set(f"Status: batch failed ({job.error})")
+            return
+        if job.result is not None:
+            self._apply(job.result)
 
     def _demo(self) -> None:
         self._apply(self._controller.built_in_demo())
