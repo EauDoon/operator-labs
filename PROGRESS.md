@@ -135,6 +135,39 @@ M7/M8. Resumption note: branch `dev/scenario-experimentation` at
 base dev/program-cycle-1) open awaiting owner approval; M3-M5 commits are
 stacked on the same branch and will appear in PR #32 or follow-ups.
 
+## Milestone 6: evidence exports and find-in-report (implemented)
+
+- Corridor Lab `evidence.py`: Export Evidence bundles the current report
+  verbatim with tool version, analysis identity, declared input sources, and
+  standing limitations; atomic, size-bounded, input-collision protected.
+- TraceCanary: Save Evidence bundles the value-free campaign summary,
+  thresholds, tool version, limitations. The summary is rebuilt from known
+  fields, the protected-value check runs before any write, and contracts/
+  canaries/inputs are never bundled (hashes of protected values are not
+  treated as anonymization).
+- Both desktops gained find-in-report highlighting.
+- Charts deliberately deferred (documented in ROADMAP): text-first tables
+  keep exact values; no chart library is allowed beyond the standard
+  library, and an ASCII approximation would obscure rather than clarify.
+- Corridor 182 tests, TraceCanary 186 tests.
+
+## Milestone 7: cross-platform reliability and performance (implemented)
+
+- CI: macOS added to both package test matrices (ubuntu/windows/macos x
+  3.11/3.12). Portable Windows build workflows unchanged.
+- New display-guarded window tests: batch results applied on the main
+  thread, window closure during work leaves no crash or stale callback,
+  repeated batch runs re-enable and re-run.
+- Measured bounded workloads (macOS arm64, Python 3.11.16; observation only,
+  scripts in each package's tests/measure_workloads.py): corridor
+  transaction sweep (24 values x 6 routes) 0.0065 s, stress grid (2x24
+  cells x 6 routes) 0.0097 s, JSON render/parse ~0.4 ms each; tracecanary
+  batch (32 files x ~120 KB) 0.0625 s. Well inside all bounds; no
+  optimization required and none of the limits changed.
+
+Next: Milestone 8 (integrated journeys + release readiness), then the
+program report.
+
 ## Verification commands (authoritative)
 
 ```text
