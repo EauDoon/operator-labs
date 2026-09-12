@@ -53,6 +53,7 @@ from .scenario import Scenario, parse_scenario, parse_scenario_text
 from .scenario_diff import diff_scenarios
 from .sensitivity import run_sensitivity
 from .stress import run_stress_grid
+from .targeting import robustness_review, target_search
 from .transaction_sweep import (
     TRANSACTION_PARAMETERS,
     run_transaction_grid,
@@ -625,6 +626,43 @@ class CorridorGuiController:
 
     def variant_names(self) -> tuple[str, ...]:
         return tuple(sorted(self.derived_variants))
+
+    def _constraint_list(self, constraints_text: str) -> list[str]:
+        chunks = [chunk.strip() for chunk in constraints_text.split(";") if chunk.strip()]
+        if not chunks:
+            raise InputError("declare at least one constraint (NAME=THRESHOLD, semicolon separated)")
+        return chunks
+
+    def run_target_search(self, parameter: str, values_text: str, constraints_text: str) -> ActionResult:
+        """Find tested candidates satisfying declared constraints, with honest limits."""
+        try:
+            scenario = self._require_scenario()
+            chunks = values_text.split(",")
+            if not all(chunk.strip() for chunk in chunks):
+                raise InputError("target search values must be comma-separated decimals")
+            values = [require_decimal(chunk.strip(), "target search value") for chunk in chunks]
+            return self._success(
+                target_search(scenario, parameter.strip(), values, self._constraint_list(constraints_text)),
+                routes_inputs=False,
+            )
+        except (InputError, OSError, ValueError, DecimalException) as exc:
+            return self._failure(exc)
+
+    def robustness_over_variants(self, constraints_text: str) -> ActionResult:
+        """Constraint satisfaction across the base scenario and derived variants."""
+        try:
+            self._require_scenario()
+            if self.scenario_raw is None:
+                raise InputError("the active scenario has no declared base data")
+            constraints = self._constraint_list(constraints_text)
+            scenarios = [parse_scenario(self.scenario_raw)]
+            labels = [str(scenarios[0].scenario_id)]
+            for name in sorted(self.derived_variants):
+                scenarios.append(parse_scenario(materialize_variant(self.derived_variants[name], self.scenario_raw)))
+                labels.append(name)
+            return self._success(robustness_review(scenarios, labels, constraints), routes_inputs=False)
+        except (InputError, OSError, ValueError, DecimalException) as exc:
+            return self._failure(exc)
 
     @staticmethod
     def _parse_values(values_text: str, description: str) -> list[Decimal]:

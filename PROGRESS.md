@@ -74,6 +74,26 @@ stacked branch `dev/scenario-experimentation` (base: `dev/program-cycle-1`):
 Next: push the stacked branch, open the M2 PR (base dev/program-cycle-1),
 wait for CI, then start Milestone 3 (target and constraint analysis).
 
+## Milestone 3: target and constraint analysis (implemented)
+
+- `targeting.py`: strict constraint grammar (four kinds, op enforced per
+  kind, currencies attached to cost/amount units), `target_search` over
+  declared candidate sets with invalid-candidate reporting, per-route
+  summaries ("smallest tested feasible value" — explicitly not an optimum —
+  and `unreachable_within_tested_set`), row budget preserved; and
+  `robustness_review` across supplied scenarios with matching currencies and
+  first-failing-scenario per route. Declared cases, never forecasts.
+- CLI: `target-search` and `robustness-review` (multiple scenario files;
+  report-input protection extended to multi-file commands).
+- Desktop: Target Search and Robustness Across Project Scenarios in the
+  Investigate tab; the robustness case set is the base scenario plus derived
+  variants.
+- Hand-derived expected-cost check (fixed + percent + carry/volume + loss)
+  and boundary tests: corridor-lab at 182 tests. Real-window drive passed.
+
+Next: documentation checkpoint, push, wait for CI, then Milestone 4
+(TraceCanary regression campaigns).
+
 ## Verification commands (authoritative)
 
 ```text

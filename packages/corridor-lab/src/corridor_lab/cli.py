@@ -46,10 +46,11 @@ from .projects import (
 )
 from .report import render_report
 from .route import SENSITIVITY_PARAMETERS, Route, load_route, load_route_folder
-from .scenario import load_scenario, parse_scenario
+from .scenario import Scenario, load_scenario, parse_scenario
 from .scenario_diff import diff_scenarios
 from .sensitivity import run_sensitivity
 from .stress import run_stress_grid
+from .targeting import robustness_review, target_search
 from .variants import apply_variant, parse_derived_variant, parse_variant_changes_argument, variant_comparison, variant_diff_report
 from .transaction_sweep import (
     TRANSACTION_PARAMETERS,
@@ -58,6 +59,10 @@ from .transaction_sweep import (
 )
 
 SCENARIO_HELP = "path to a fictional scenario JSON file"
+TARGET_CONSTRAINT_HELP = (
+    "NAME=THRESHOLD from expected_sender_cost_at_most, expected_recipient_amount_at_least, "
+    "probability_by_deadline_at_least, tail_completion_time_hours_at_most"
+)
 PARAMETER_HELP = "one of " + ", ".join(SENSITIVITY_PARAMETERS)
 VALUES_HELP = "comma-separated decimal values"
 DEFAULT_REPORT_FORMAT = "json"
@@ -189,6 +194,18 @@ def build_parser() -> argparse.ArgumentParser:
     crossing = commands.add_parser("break-even-check", help="verify whole-volume costs near declared break-even points")
     _add_scenario_argument(crossing)
     _add_output_options(crossing)
+    target = commands.add_parser("target-search", help="find tested candidates satisfying declared constraints")
+    _add_scenario_argument(target)
+    target.add_argument("--parameter", required=True, choices=TRANSACTION_PARAMETERS)
+    target.add_argument("--values", required=True, help=VALUES_HELP)
+    target.add_argument("--constraint", action="append", required=True,
+                        help="NAME=THRESHOLD from expected_sender_cost_at_most, expected_recipient_amount_at_least, "
+                             "probability_by_deadline_at_least, tail_completion_time_hours_at_most")
+    _add_output_options(target)
+    robustness = commands.add_parser("robustness-review", help="review constraint satisfaction across declared scenarios")
+    robustness.add_argument("scenario", nargs="+", help="one or more fictional scenario JSON files")
+    robustness.add_argument("--constraint", action="append", required=True, help=TARGET_CONSTRAINT_HELP)
+    _add_output_options(robustness)
 
     diff = commands.add_parser("diff", help="compare two fictional scenario evaluations")
     _add_scenario_argument(diff)
@@ -618,11 +635,13 @@ def _protect_report_inputs(args: argparse.Namespace) -> None:
         raw = getattr(args, name, None)
         if raw is None:
             continue
-        source = Path(raw)
-        if source.is_dir():
-            scanned.append(source)
-        else:
-            inputs.append(source)
+        sources = raw if isinstance(raw, (list, tuple)) else [raw]
+        for source_text in sources:
+            source = Path(source_text)
+            if source.is_dir():
+                scanned.append(source)
+            else:
+                inputs.append(source)
     protect_report_output(target, inputs, scanned)
 
 
@@ -751,6 +770,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         if args.command == "project":
             return _project(args)
+        if args.command == "robustness-review":
+            labels: list[str] = []
+            scenarios: list[Scenario] = []
+            for raw in args.scenario:
+                path = _require_cli_text(raw, "scenario")
+                labels.append(path)
+                scenarios.append(load_scenario(path))
+            report = robustness_review(scenarios, labels, list(args.constraint))
+            output_format = resolve_report_format(args.format, args.output, TABULAR_REPORT_FORMATS)
+            _emit(render_report(report, output_format), args.output)
+            return 0
         scenario = load_scenario(_require_cli_text(args.scenario, "scenario"))
         report: dict[str, object]
         if args.command == "cost-ledger":
@@ -771,6 +801,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             report = deadline_profile(scenario)
         elif args.command == "break-even-check":
             report = break_even_check(scenario)
+        elif args.command == "target-search":
+            report = target_search(scenario, args.parameter, _parse_values(args.values), list(args.constraint))
         elif args.command == "diff":
             report = diff_scenarios(load_scenario(_require_cli_text(args.baseline, "--baseline")), scenario)
         elif args.command == "evaluate":

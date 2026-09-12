@@ -121,6 +121,9 @@ class CorridorLabApp:
         self.selected_experiment_var = tk_module.StringVar()
         self.variants_var = tk_module.StringVar(value="No derived variants")
         self.selected_variant_var = tk_module.StringVar()
+        self.target_parameter_var = tk_module.StringVar(value="send_amount")
+        self.target_values_var = tk_module.StringVar(value="50,100,200")
+        self.constraints_var = tk_module.StringVar(value="expected_sender_cost_at_most=20;probability_by_deadline_at_least=0.8")
         self.format_var = tk_module.StringVar(value="markdown")
         self.scenario_var = tk_module.StringVar(value=self.controller.scenario_source)
         self.routes_var = tk_module.StringVar(value=self.controller.routes_source)
@@ -333,6 +336,27 @@ class CorridorLabApp:
         self.ttk.Button(variant_row, text="Apply Variant", command=self._apply_variant).grid(row=0, column=2, padx=(6, 0))
         self.ttk.Button(variant_row, text="Compare Variants", command=self._compare_variants).grid(row=0, column=3, padx=(6, 0))
         self.ttk.Label(variants, textvariable=self.variants_var, wraplength=760, anchor="w").grid(row=1, column=0, sticky="ew", pady=(6, 0))
+
+        targets = self.ttk.LabelFrame(tab, text="Target and constraint analysis (bounded, declared candidate sets)", padding=8)
+        targets.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+        self.ttk.Label(
+            targets,
+            text="Target search evaluates every declared candidate against every declared constraint. The smallest tested feasible value is not a mathematical optimum. Constraints, semicolon separated, from: expected_sender_cost_at_most, expected_recipient_amount_at_least, probability_by_deadline_at_least, tail_completion_time_hours_at_most.",
+            wraplength=760,
+        ).grid(row=0, column=0, columnspan=2, sticky="w")
+        target_row = self.ttk.Frame(targets)
+        target_row.grid(row=1, column=0, sticky="w", pady=(4, 0))
+        self.ttk.Label(target_row, text="Parameter").grid(row=0, column=0)
+        self.ttk.Combobox(target_row, textvariable=self.target_parameter_var, values=("send_amount", "deadline_hours", "volume_per_period"), state="readonly", width=18).grid(row=0, column=1, padx=(4, 8))
+        self.ttk.Label(target_row, text="Candidates").grid(row=0, column=2)
+        self.ttk.Entry(target_row, textvariable=self.target_values_var, width=20).grid(row=0, column=3, padx=(4, 8))
+        self.ttk.Label(target_row, text="Constraints").grid(row=0, column=4)
+        self.ttk.Entry(target_row, textvariable=self.constraints_var, width=42).grid(row=0, column=5, padx=(4, 8))
+        self.ttk.Button(target_row, text="Target Search", command=self._target_search).grid(row=0, column=6)
+        robust_row = self.ttk.Frame(targets)
+        robust_row.grid(row=2, column=0, sticky="w", pady=(4, 0))
+        self.ttk.Button(robust_row, text="Robustness Across Project Scenarios", command=self._robustness).grid(row=0, column=0)
+        self.ttk.Label(robust_row, text="uses the base scenario plus every derived variant as declared cases").grid(row=0, column=1, padx=(6, 0))
 
     def _build_report_tab(self, notebook: object) -> None:
         tab = self.ttk.Frame(notebook, padding=10)
@@ -705,6 +729,18 @@ class CorridorLabApp:
 
     def _compare_variants(self) -> None:
         self._complete(self.controller.compare_variants(), "Variant comparison complete: one declared case per variant, no composite score.")
+
+    def _target_search(self) -> None:
+        self._complete(
+            self.controller.run_target_search(self.target_parameter_var.get(), self.target_values_var.get(), self.constraints_var.get()),
+            "Target search complete over the declared candidate set; results identify the smallest tested feasible value.",
+        )
+
+    def _robustness(self) -> None:
+        self._complete(
+            self.controller.robustness_over_variants(self.constraints_var.get()),
+            "Robustness review complete across the base scenario and derived variants as declared cases.",
+        )
 
     def _run_saved_experiment(self) -> None:
         name = self.selected_experiment_var.get()
