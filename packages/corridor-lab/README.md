@@ -19,6 +19,7 @@ python -m pip install .
 corridorlab validate examples/fictional-corridor/scenario.json
 corridorlab compare examples/fictional-corridor/scenario.json --routes examples/fictional-corridor/routes
 corridorlab evaluate examples/fictional-corridor/embedded-scenario.json --format markdown
+corridorlab cost-ledger examples/fictional-corridor/embedded-scenario.json --format markdown
 corridorlab sensitivity examples/fictional-corridor/embedded-scenario.json --parameter fx_spread_bps --values 10,25,50,100
 corridorlab stress-grid examples/fictional-corridor/embedded-scenario.json --parameter-a fx_rate --values-a 1.7,1.8 --parameter-b fx_spread_bps --values-b 25,50
 corridorlab pareto examples/fictional-corridor/embedded-scenario.json --format markdown
@@ -34,7 +35,7 @@ On Windows, use `py -3.11 -m pip install --user .` when `python` is not on
 Each result is deterministic. JSON reports are canonical, UTF-8, sorted-key
 documents with an LF terminator. Compare, evaluate, sensitivity, and
 stress-grid also accept `--format csv` or `--format markdown`. Pareto and batch
-accept `--format markdown` only, not csv. Use `--output FILE` to write a report.
+accept JSON or Markdown but not CSV. Use `--output FILE` to write a report.
 If `--format` is omitted, it is inferred from `--output` (`.json`, `.md` /
 `.markdown`, `.csv`) or from `CORRIDOR_LAB_FORMAT`; otherwise JSON is the
 default. An explicit `--format` always wins.
@@ -80,20 +81,32 @@ fictional assumptions, not observed costs or route recommendations.
 
 ## First screen
 
-`corridorlab-gui` opens a standard-library Tkinter desktop interface. Start
-with **Load Built-in Fictional Demo** for an immediate, installed-package demo
-that has no repository file dependency. The screen then provides:
+`corridorlab-gui` opens a standard-library Tkinter desktop interface in four
+tabs sized for ordinary laptops. Start with **Load Built-in Fictional Demo**
+in the Scenario tab for an immediate, installed-package demo that has no
+repository file dependency. The tabs are:
 
-- A scenario JSON selector and route JSON or route-folder selectors.
-- An editable in-memory scenario JSON window with a fictional template, strict
-  **Validate and Use**, and explicit **Save Scenario As...** controls.
-- Compare, Evaluate Embedded, and one-parameter Sensitivity actions.
-- A Pareto Frontier action that shows expected recipient amount and expected sender cost as separate metrics.
-- A bounded 2D Grid action for two declared parameters, with no hidden composite score.
-- Markdown, JSON, and CSV previews plus a text-first **Explain Report** view
-  that defines currencies, outcome metrics, timing, ranking, and break-even.
-- **Save Scenario As...** and **Save Report...**, the only GUI actions that
-  write files; each requires a path chosen in the save dialog.
+- **Scenario:** scenario selector, the built-in demo, a structured transaction
+  editor for send amount, deadline hours, and volume per period (empty fields
+  keep declared values; exact decimal digits are preserved and never pass
+  through binary floats), and the raw JSON editor with strict **Validate and
+  Use** plus explicit **Save Scenario As...**. Applied edits are in-memory and
+  clearly marked unsaved; rejected drafts leave the active scenario and
+  current report untouched.
+- **Compare Routes:** compare selected route files or folders against the
+  transaction, evaluate embedded routes, and show the Pareto frontier as
+  separate metrics with no composite score.
+- **Investigate:** sensitivity, transaction sweep and grid, two-parameter
+  stress grid, cost ledger, deadline profile, outcome ledger, guardrail
+  headroom, loss profile, feasible amount, break-even check, deadline target,
+  resolution quantiles, and a baseline scenario diff with explicit before and
+  after direction.
+- **Report:** Markdown, JSON, and CSV previews for the current report, the
+  text-first **Explain Report** view (`Ctrl+H`), and **Save Report...**, one
+  of only two GUI actions that write files (the other is **Save Scenario
+  As...**); both require a path chosen in a save dialog. Report destinations
+  that would replace a tracked input are rejected, including symlinks, hard
+  links, and paths inside a selected route folder.
 
 For a checkout on Windows, double-click `CorridorLab.pyw` to launch the same
 interface without installation. The GUI imports the calculation library

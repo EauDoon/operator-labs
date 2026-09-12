@@ -249,7 +249,7 @@ class ReportTests(unittest.TestCase):
                 "--format",
                 "json",
             ]
-            with patch("tracecanary.cli.check_trace", side_effect=ValueError("sensitive per-item detail")), contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
+            with patch("tracecanary.batching.check_trace", side_effect=ValueError("sensitive per-item detail")), contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
                 status = main(command)
             self.assertEqual(status, EXIT_UNRESOLVED)
             self.assertEqual(error.getvalue(), "")

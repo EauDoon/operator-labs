@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from tracecanary.canonical import InputError, load_json
+from tracecanary.batching import _load_trace, run_batch
 from tracecanary.checker import check_trace
 from tracecanary.comparison import diff_traces
 from tracecanary.contract import Contract, ContractError, load_contract
@@ -38,6 +39,7 @@ from tracecanary.report import (
     ensure_object_values_absent,
     ensure_text_values_absent,
     ensure_values_absent,
+    render_batch_human,
     render_human,
     render_json,
     render_junit,
@@ -230,85 +232,8 @@ def _load_trace(path: Path, contract: Contract) -> dict[str, Any]:
 
 
 def _run_batch(contract: Contract, input_dir: Path, recursive: bool, include_paths: bool, baseline: dict[str, Any] | None = None, *, coverage: bool = False, minimum_ratio: str | None = None) -> BatchReport:
-    if minimum_ratio is not None:
-        _parse_minimum_ratio(minimum_ratio)
-        if not coverage:
-            raise InputError("minimum ratio is only supported for coverage batches")
-    if coverage and baseline is not None:
-        raise InputError("batch coverage does not accept a baseline")
-    if baseline is not None and check_trace(contract, baseline)["status"] != "pass":
-        raise InputError("batch baseline does not satisfy the contract")
-    try:
-        if not input_dir.is_dir():
-            raise InputError("--input-dir must be a directory")
-        root = input_dir.resolve()
-        iterator = root.rglob("*.json") if recursive else root.glob("*.json")
-        paths: list[Path] = []
-        for item in iterator:
-            if item.is_file() and not item.is_symlink() and item.resolve().is_relative_to(root):
-                paths.append(item)
-                if len(paths) > contract.max_batch_files:
-                    break
-        paths.sort(
-            key=lambda item: (
-                item.relative_to(root).as_posix().casefold(),
-                item.relative_to(root).as_posix(),
-            ),
-        )
-    except InputError:
-        raise
-    except OSError as exc:
-        raise InputError("batch input cannot be read") from exc
-    if not paths:
-        raise InputError("batch input contains no JSON files")
-    if len(paths) > contract.max_batch_files:
-        raise InputError(f"batch input exceeds the {contract.max_batch_files}-file limit")
-    items: list[BatchItem] = []
-    for index, path in enumerate(paths, start=1):
-        item_id = f"item-{index:04d}"
-        relative = path.relative_to(root).as_posix()
-        try:
-            payload = _load_trace(path, contract)
-            if minimum_ratio is not None:
-                report = coverage_gate(contract, payload, minimum_ratio)
-            else:
-                report = coverage_report(contract, payload) if coverage else check_trace(contract, payload, mode="batch") if baseline is None else diff_traces(contract, baseline, payload)
-        except UnsafeReportError:
-            raise
-        except (InputError, OtlpError, ValueError):
-            report = build_report(
-                contract.contract_version,
-                "unresolved",
-                [Violation("TC006", "", "input could not be validated")],
-                mode="batch",
-            )
-        item: BatchItem = {"id": item_id, "status": report["status"], "report": report}
-        if include_paths:
-            item["path"] = relative
-        items.append(item)
-    statuses = {item["status"] for item in items}
-    status: Status = "unresolved" if "unresolved" in statuses else "regression" if "regression" in statuses else "pass"
-    batch_report: BatchReport = {"batch_version": "tracecanary.batch/v1", "contract_version": contract.contract_version, "status": status, "items": items}
-    if coverage:
-        valid = [item["report"]["coverage"] for item in items if "coverage" in item["report"]]
-        fields = []
-        for index, field in enumerate(contract.required_retained_fields):
-            present = sum(item["required_fields"][index]["present"] for item in valid)
-            entities = sum(item["required_fields"][index]["entities"] for item in valid)
-            fields.append({"id": f"required-{index + 1:04d}", "scope": field.scope,
-                           "present": present, "entities": entities,
-                           "ratio": str(Fraction(present, entities)) if entities else None})
-        batch_report["coverage_summary"] = {"validated_items": len(valid),
-                                             "unresolved_items": sum(item["status"] == "unresolved" for item in items),
-                                             "excluded_items": len(items) - len(valid),
-                                             "required_fields": fields}
-        if minimum_ratio is not None:
-            batch_report["coverage_summary"]["minimum_ratio_per_file"] = minimum_ratio
-    ensure_object_values_absent(
-        batch_report,
-        tuple(canary.value for canary in contract.canaries),
-    )
-    return batch_report
+    """Compatibility wrapper; the shared engine lives in batching.run_batch."""
+    return run_batch(contract, input_dir, recursive, include_paths, baseline, coverage=coverage, minimum_ratio=minimum_ratio)
 
 
 def _emit(text: str, output: Path | None) -> None:
@@ -330,15 +255,7 @@ def _print_batch(report: BatchReport, output_format: str, redacted_values: tuple
     elif output_format == "junit":
         output = render_junit(report)
     else:
-        lines = [f"TraceCanary batch: {report['status'].upper()} ({len(report['items'])} file(s))"]
-        lines.extend(f"- {item['id']}: {item['status']}" for item in report["items"])
-        if "coverage_summary" in report:
-            summary = report["coverage_summary"]
-            lines.append(f"Coverage: {summary['validated_items']} validated item(s); {summary['unresolved_items']} unresolved item(s); {summary['excluded_items']} invalid item(s) excluded.")
-            if "minimum_ratio_per_file" in summary:
-                lines.append(f"Explicit retained-field ratio required in every file: {summary['minimum_ratio_per_file']}.")
-            lines.extend(f"{field['id']}: {field['present']}/{field['entities']} ({field['ratio']})" for field in summary["required_fields"])
-        output = "\n".join(lines) + "\n"
+        output = render_batch_human(report)
     ensure_text_values_absent(output, redacted_values)
     _emit(output, output_path)
 

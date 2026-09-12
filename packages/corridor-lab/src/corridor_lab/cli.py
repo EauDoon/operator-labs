@@ -27,6 +27,7 @@ from .canonical import (
     InputError,
     atomic_write_text,
     parse_json_bytes,
+    protect_report_output,
     require_decimal_values,
 )
 from .comparison import compare_routes, evaluate_scenario, pareto_frontier
@@ -266,16 +267,18 @@ def _protect_report_inputs(args: argparse.Namespace) -> None:
     if not getattr(args, "output", None):
         return
     target = Path(_require_cli_text(args.output, "--output"))
-    resolved = target.resolve()
+    inputs: list[Path] = []
+    scanned: list[Path] = []
     for name in ("scenario", "baseline", "routes", "input_dir"):
         raw = getattr(args, name, None)
         if raw is None:
             continue
         source = Path(raw)
-        if resolved == source.resolve() or (target.exists() and source.exists() and os.path.samefile(target, source)):
-            raise InputError("report output must not replace an input")
-        if source.is_dir() and resolved.is_relative_to(source.resolve()):
-            raise InputError("report output must be outside input directories")
+        if source.is_dir():
+            scanned.append(source)
+        else:
+            inputs.append(source)
+    protect_report_output(target, inputs, scanned)
 
 
 def _emit(text: str, output: str | None) -> None:

@@ -140,6 +140,19 @@ def render_json(report: Report | BatchReport) -> str:
     return canonical_json(report)
 
 
+def render_batch_human(report: BatchReport) -> str:
+    """Render the per-item batch rollup shared by CLI and desktop output."""
+    lines = [f"TraceCanary batch: {report['status'].upper()} ({len(report['items'])} file(s))"]
+    lines.extend(f"- {item['id']}: {item['status']}" for item in report["items"])
+    if "coverage_summary" in report:
+        summary = report["coverage_summary"]
+        lines.append(f"Coverage: {summary['validated_items']} validated item(s); {summary['unresolved_items']} unresolved item(s); {summary['excluded_items']} invalid item(s) excluded.")
+        if "minimum_ratio_per_file" in summary:
+            lines.append(f"Explicit retained-field ratio required in every file: {summary['minimum_ratio_per_file']}.")
+        lines.extend(f"{field['id']}: {field['present']}/{field['entities']} ({field['ratio']})" for field in summary["required_fields"])
+    return "\n".join(lines) + "\n"
+
+
 def render_human(report: Report) -> str:
     headline = f"TraceCanary: {report['status'].upper()} ({report['summary']['total']} finding(s))"
     lines = [headline]
