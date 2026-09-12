@@ -14,10 +14,12 @@ superseded by the merged `improve/product-cycle-*` work on main.
 | c0874b4 | TraceCanary guided desktop investigation: six question-driven tabs, contract inspection, positive control (CONTROL PASS is not a privacy pass), leak checks, coverage gates/diff, retention matrix, dropped telemetry, population gate, batch and coverage-batch over selected directories; shared batch engine; starter bundle gains positive-control, partial-coverage, and invalid-export cases | `tests/test_gui_investigation.py` (13 tests) |
 | 619f5f3 | Docs: both READMEs and GUI.md around the finished workflows; shipped the missing documented portfolio example; corrected the batch format note | every documented command executed |
 | 7c8a33b | Structured edits after a file load no longer crash on bare JSON numbers (Decimal round-trip) | `test_structured_edits_after_file_load_round_trip` |
+| 68941ec | Development status refreshed | this file |
+| 1f2972c | TraceCanary batch tabs run in bounded background execution (measured 13 s for a legal bounded directory); batch-directory selector browses directories; stale-result protection and main-thread-only widget updates | `tests/test_gui_background.py` (incl. a real-window test, display-guarded) |
 
 ## Verification executed (all green)
 
-- Unit suites: corridor-lab 141 tests, tracecanary 148 tests; compile checks clean.
+- Unit suites: corridor-lab 141 tests, tracecanary 151 tests; compile checks clean.
 - `corridorlab-gui --smoke-test` and `tracecanary-gui --smoke-test` from a
   checkout and from both installed packages with `PYTHONPATH` unset.
 - Clean-environment installs outside the checkout (`~/.venvs/corridor-clean`,
