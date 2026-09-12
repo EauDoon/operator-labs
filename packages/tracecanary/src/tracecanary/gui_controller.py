@@ -9,6 +9,7 @@ from typing import Any
 
 import json
 
+from tracecanary.authoring import empty_template, render_review_human, review_contract, validate_draft
 from tracecanary.batching import run_batch
 from tracecanary.campaign import (
     campaign_summary,
@@ -17,7 +18,7 @@ from tracecanary.campaign import (
     render_comparison_human,
     run_campaign as run_campaign_engine,
 )
-from tracecanary.canonical import InputError, load_json
+from tracecanary.canonical import InputError, canonical_json, load_json
 from tracecanary.checker import check_trace
 from tracecanary.comparison import diff_traces
 from tracecanary.contract import Contract, ContractError, load_contract, parse_contract
@@ -105,6 +106,53 @@ class ProjectPaths:
 
 class TraceCanaryController:
     """Run TraceCanary library operations without subprocesses or Tk imports."""
+
+    def review_contract(self, contract_path: str | Path) -> GuiResult:
+        """Conservative value-free diagnostics for a contract draft."""
+        guidance = self._require("contract-review", (contract_path, GUI001, "Select a contract JSON file before reviewing it."))
+        if guidance is not None:
+            return guidance
+        try:
+            raw = load_json(Path(contract_path), max_bytes=5_000_000, max_depth=100)
+            report = review_contract(raw)
+        except (ContractError, InputError, OSError, ValueError) as exc:
+            return self._guidance("contract-review", GUI001, f"The contract could not be reviewed. ({exc})")
+        status = report["status"]
+        return GuiResult(status, _exit_code(status), render_review_human(report), render_json(report),
+                         None, (Path(contract_path),), None, "contract-review")
+
+    def contract_template_text(self) -> str:
+        """A minimal valid synthetic contract for the editor draft."""
+        return canonical_json(validate_draft(empty_template()))
+
+    def save_contract_draft(self, text: str, path: str | Path) -> GuiResult:
+        """Explicitly save a contract draft, clearly separate from report exports.
+
+        This is the one GUI action that writes canary configuration to disk;
+        it is validated first and refuses to replace an existing file.
+        """
+        try:
+            raw = json.loads(text)
+            validate_draft(raw)
+        except (json.JSONDecodeError, TypeError) as exc:
+            return self._guidance("contract-save", GUI001, f"The contract draft is not valid JSON. ({exc})")
+        except (ContractError, ValueError) as exc:
+            return self._guidance("contract-save", GUI001, f"The contract draft failed validation. ({exc})")
+        try:
+            target = Path(path)
+            if target.exists():
+                raise InputError("contract export must not replace an existing file; choose a new name")
+            write_report(target, text)
+        except (InputError, OSError) as exc:
+            return self._guidance("contract-save", GUI001, f"The contract could not be saved. ({exc})")
+        report = build_report("tracecanary/v1", "pass", [], mode="contract-save")
+        human = f"Contract saved to {target}. This file contains canary configuration, unlike value-free report exports."
+        return GuiResult("pass", EXIT_PASS, human, render_json(report), None, (), None, "contract-save")
+
+    def validate_draft_text(self, text: str) -> dict:
+        """Validate a contract draft strictly; raises ContractError on failure."""
+        raw = json.loads(text)
+        return validate_draft(raw)
 
     def validate(self, contract_path: str | Path) -> GuiResult:
         guidance = self._require("validate", (contract_path, GUI001, "Select a contract JSON file before validating."))

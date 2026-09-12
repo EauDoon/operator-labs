@@ -199,6 +199,15 @@ def build_parser() -> argparse.ArgumentParser:
     campaign_compare.add_argument("candidate_summary", type=_cli_path)
     campaign_compare.add_argument("--format", choices=("human", "json"), default="human")
     campaign_compare.add_argument("--output", type=_cli_path)
+
+    contract_cmd = commands.add_parser("contract", help="authoring helpers for synthetic contracts")
+    contract_commands = contract_cmd.add_subparsers(dest="contract_command", required=True, parser_class=_ArgumentParser)
+    contract_review = contract_commands.add_parser("review", help="conservative value-free diagnostics for a contract draft")
+    contract_review.add_argument("contract_path", type=_cli_path)
+    contract_review.add_argument("--format", choices=("human", "json"), default="human")
+    contract_review.add_argument("--output", type=_cli_path)
+    contract_template = contract_commands.add_parser("template", help="write a minimal valid synthetic contract template")
+    contract_template.add_argument("--output", required=True, type=_cli_path, help="new file, never overwritten")
     return parser
 
 
@@ -226,6 +235,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _project(args)
         if args.command == "campaign":
             return _campaign(args)
+        if args.command == "contract":
+            return _contract_authoring(args)
         protect_inputs(args.output, [getattr(args, name) for name in ("contract", "input", "baseline", "candidate") if getattr(args, name, None) is not None], getattr(args, "input_dir", None))
         contract = load_contract(args.contract)
         if args.command == "validate":
@@ -501,6 +512,44 @@ def render_campaign_human(comparison: dict[str, Any]) -> str:
                 lines.append(f"  {label.replace('_', ' ')}: {rendered}")
     lines.append("Finding codes are aggregated by value-free code; no entity identity or causal attribution is implied.")
     return "\n".join(lines) + "\n"
+
+
+def _contract_authoring(args: Any) -> int:
+    from tracecanary.authoring import empty_template, review_contract, validate_draft
+    from tracecanary.canonical import canonical_json
+
+    command = args.contract_command
+    try:
+        if command == "review":
+            raw = load_json(args.contract_path, max_bytes=MAX_CAMPAIGN_SUMMARY_BYTES, max_depth=MAX_CAMPAIGN_SUMMARY_DEPTH)
+            report = review_contract(raw)
+            output = render_json(report) if args.format == "json" else render_contract_review_human(report)
+            _emit(output, args.output)
+            return _status_exit(report["status"])
+        if command == "template":
+            template = empty_template()
+            text = canonical_json(validate_draft(template))
+            if args.output.exists():
+                raise InputError("template output must not replace an existing file")
+            write_report(args.output, text)
+            print(f"Synthetic contract template written to {args.output}; replace the placeholder canary value before use.")
+            return EXIT_PASS
+        raise InputError(f"unsupported contract command: {command}")
+    except (ContractError, InputError, ValueError) as exc:
+        print(f"TraceCanary: UNRESOLVED: {exc}", file=sys.stderr)
+        return EXIT_UNRESOLVED
+    except OSError:
+        print("TraceCanary: UNRESOLVED: input or output could not be accessed", file=sys.stderr)
+        return EXIT_UNRESOLVED
+
+
+MAX_CAMPAIGN_SUMMARY_DEPTH = 32
+
+
+def render_contract_review_human(report: dict[str, Any]) -> str:
+    from tracecanary.authoring import render_review_human
+
+    return render_review_human(report)
 
 
 def _load_trace(path: Path, contract: Contract) -> dict[str, Any]:

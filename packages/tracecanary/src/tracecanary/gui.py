@@ -188,6 +188,9 @@ class TraceCanaryWindow:
         self._require_zero = tk.BooleanVar(value=False)
         self._use_baseline = tk.BooleanVar(value=False)
         self._batch_job: BackgroundBatch | None = None
+        self._contract_editor = None
+        self._contract_text = None
+        self._contract_editor_status = None
         self._status = tk.StringVar(value="Status: awaiting input")
         for index in range(len(TAB_TITLES)):
             self._root.bind_all(f"<Control-Key-{index + 1}>", self._make_tab_shortcut(index), add="+")
@@ -283,13 +286,21 @@ class TraceCanaryWindow:
         self._ttk.Label(tab, text="Is the contract usable?", font=("TkDefaultFont", 12, "bold")).grid(row=0, column=0, sticky="w")
         self._ttk.Label(
             tab,
-            text="Validate confirms the contract parses under its strict version pinning. Inspect Contract inventories the effective value-free checks, limits, and direct retention conflicts without exposing canary values.",
+            text="Validate confirms the contract parses under its strict version pinning. Inspect Contract inventories the effective value-free checks, limits, and direct retention conflicts without exposing canary values. Review Contract adds conservative, actionable diagnostics for malformed or ineffective rules.",
             wraplength=760,
         ).grid(row=1, column=0, sticky="w", pady=(4, 10))
         buttons = self._ttk.Frame(tab)
         buttons.grid(row=2, column=0, sticky="w")
         self._ttk.Button(buttons, text="Validate", command=self._validate).grid(row=0, column=0, padx=(0, 6))
-        self._ttk.Button(buttons, text="Inspect Contract", command=self._inspect).grid(row=0, column=1)
+        self._ttk.Button(buttons, text="Inspect Contract", command=self._inspect).grid(row=0, column=1, padx=(0, 6))
+        self._ttk.Button(buttons, text="Review Contract", command=self._review_contract).grid(row=0, column=2, padx=(0, 6))
+        self._ttk.Button(buttons, text="Edit Contract JSON...", command=self._open_contract_editor).grid(row=0, column=3)
+
+        self._ttk.Label(
+            tab,
+            text="Authoring: start from the template, revise retention rules, forbidden keys and paths, and limits, then validate before use. Saving a contract writes canary configuration and is always an explicit, clearly labeled action — different from value-free report exports.",
+            wraplength=760,
+        ).grid(row=3, column=0, sticky="w", pady=(12, 6))
 
     def _build_control_tab(self) -> None:
         tab = self._ttk.Frame(self._notebook, padding=10)
@@ -542,6 +553,98 @@ class TraceCanaryWindow:
         self._apply(result)
         if result.status == "pass":
             self._status.set(f"Status: project saved. Settings and synthetic inputs were copied explicitly; reports stay separate.")
+
+    def _review_contract(self) -> None:
+        self._apply(self._controller.review_contract(self._contract.get()))
+
+    def _open_contract_editor(self) -> None:
+        if self._contract_editor is not None and self._contract_editor.winfo_exists():
+            self._contract_editor.deiconify()
+            self._contract_editor.lift()
+            self._contract_text.focus_set()
+            return
+        editor = self._tk.Toplevel(self._root)
+        editor.title("Edit Synthetic Contract JSON")
+        editor.minsize(760, 560)
+        editor.columnconfigure(0, weight=1)
+        editor.rowconfigure(2, weight=1)
+        self._contract_editor = editor
+        self._contract_editor_status = self._tk.StringVar(
+            value="Validate checks the draft without applying it. Save Contract As... writes canary configuration and is explicit."
+        )
+        self._ttk.Label(
+            editor,
+            text="Edit only synthetic configuration. Canary values stay in this draft; Validate never writes a file.",
+            wraplength=700,
+        ).grid(row=0, column=0, sticky="w", padx=12, pady=(12, 6))
+        controls = self._ttk.Frame(editor, padding=(12, 0, 12, 6))
+        controls.grid(row=1, column=0, sticky="ew")
+        self._ttk.Button(controls, text="Load Minimal Template", command=self._load_contract_template).grid(row=0, column=0, padx=(0, 6))
+        self._ttk.Button(controls, text="Load Selected Contract", command=self._load_selected_contract).grid(row=0, column=1, padx=6)
+        self._ttk.Button(controls, text="Validate", command=self._validate_contract_draft).grid(row=0, column=2, padx=6)
+        self._ttk.Button(controls, text="Save Contract As...", command=self._save_contract_draft).grid(row=0, column=3, padx=6)
+        self._ttk.Label(controls, textvariable=self._contract_editor_status, wraplength=330).grid(row=0, column=4, sticky="w", padx=(12, 0))
+        self._contract_text = self._tk.Text(editor, wrap="none", undo=True, font=("TkDefaultFont", 11))
+        self._contract_text.grid(row=2, column=0, sticky="nsew", padx=12, pady=(0, 8))
+        selected = self._contract.get().strip()
+        if selected:
+            try:
+                self._contract_text.insert("1.0", Path(selected).read_text(encoding="utf-8"))
+            except OSError:
+                self._contract_text.insert("1.0", self._controller.contract_template_text())
+        else:
+            self._contract_text.insert("1.0", self._controller.contract_template_text())
+        editor.protocol("WM_DELETE_WINDOW", self._close_contract_editor)
+        self._contract_text.focus_set()
+
+    def _close_contract_editor(self) -> None:
+        if self._contract_editor is not None:
+            self._contract_editor.destroy()
+        self._contract_editor = None
+        self._contract_text = None
+        self._contract_editor_status = None
+
+    def _load_contract_template(self) -> None:
+        self._contract_text.delete("1.0", "end")
+        self._contract_text.insert("1.0", self._controller.contract_template_text())
+        self._contract_editor_status.set("Minimal template loaded into the draft. Replace the placeholder canary value before use.")
+
+    def _load_selected_contract(self) -> None:
+        selected = self._contract.get().strip()
+        if not selected:
+            self._contract_editor_status.set("Select a contract file first, then Load Selected Contract.")
+            return
+        try:
+            self._contract_text.delete("1.0", "end")
+            self._contract_text.insert("1.0", Path(selected).read_text(encoding="utf-8"))
+            self._contract_editor_status.set("Selected contract loaded into the draft; changes are not applied until saved.")
+        except OSError as exc:
+            self._contract_editor_status.set(f"The selected contract could not be read. ({exc})")
+
+    def _validate_contract_draft(self) -> None:
+        text = self._contract_text.get("1.0", "end-1c")
+        try:
+            self._controller.validate_draft_text(text)
+            self._contract_editor_status.set("Draft validates strictly. Nothing was written; use Save Contract As... to keep it.")
+        except Exception as exc:
+            self._contract_editor_status.set(f"Validation failed: {exc}")
+
+    def _save_contract_draft(self) -> None:
+        text = self._contract_text.get("1.0", "end-1c")
+        selected = self._filedialog.asksaveasfilename(
+            parent=self._contract_editor,
+            title="Save synthetic contract (includes canary configuration)",
+            defaultextension=".json",
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+        )
+        if not selected:
+            return
+        result = self._controller.save_contract_draft(text, selected)
+        self._contract_editor_status.set(result.human if result.status == "pass" else result.human)
+        if result.status != "pass":
+            self._messagebox.showerror("TraceCanary", result.human)
+            return
+        self._status.set(f"Status: contract saved to {selected} (canary configuration, not a value-free report).")
 
     def _validate(self) -> None:
         self._apply(self._controller.validate(self._contract.get()))
