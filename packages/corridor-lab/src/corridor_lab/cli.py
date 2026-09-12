@@ -10,6 +10,7 @@ import sys
 from collections.abc import Mapping, Sequence
 from decimal import Decimal, DecimalException
 from pathlib import Path
+from typing import Any
 
 from .analysis import (
     break_even_check,
@@ -29,6 +30,7 @@ from .canonical import (
     atomic_write_text,
     parse_json_bytes,
     protect_report_output,
+    read_bounded_bytes,
     require_decimal_values,
 )
 from .comparison import compare_routes, evaluate_scenario, pareto_frontier
@@ -44,10 +46,12 @@ from .projects import (
 )
 from .report import render_report
 from .route import SENSITIVITY_PARAMETERS, Route, load_route, load_route_folder
-from .scenario import load_scenario, parse_scenario
+from .scenario import Scenario, load_scenario, parse_scenario
 from .scenario_diff import diff_scenarios
 from .sensitivity import run_sensitivity
 from .stress import run_stress_grid
+from .targeting import robustness_review, target_search
+from .variants import apply_variant, parse_derived_variant, parse_variant_changes_argument, variant_comparison, variant_diff_report
 from .transaction_sweep import (
     TRANSACTION_PARAMETERS,
     run_transaction_grid,
@@ -55,6 +59,10 @@ from .transaction_sweep import (
 )
 
 SCENARIO_HELP = "path to a fictional scenario JSON file"
+TARGET_CONSTRAINT_HELP = (
+    "NAME=THRESHOLD from expected_sender_cost_at_most, expected_recipient_amount_at_least, "
+    "probability_by_deadline_at_least, tail_completion_time_hours_at_most"
+)
 PARAMETER_HELP = "one of " + ", ".join(SENSITIVITY_PARAMETERS)
 VALUES_HELP = "comma-separated decimal values"
 DEFAULT_REPORT_FORMAT = "json"
@@ -186,6 +194,18 @@ def build_parser() -> argparse.ArgumentParser:
     crossing = commands.add_parser("break-even-check", help="verify whole-volume costs near declared break-even points")
     _add_scenario_argument(crossing)
     _add_output_options(crossing)
+    target = commands.add_parser("target-search", help="find tested candidates satisfying declared constraints")
+    _add_scenario_argument(target)
+    target.add_argument("--parameter", required=True, choices=TRANSACTION_PARAMETERS)
+    target.add_argument("--values", required=True, help=VALUES_HELP)
+    target.add_argument("--constraint", action="append", required=True,
+                        help="NAME=THRESHOLD from expected_sender_cost_at_most, expected_recipient_amount_at_least, "
+                             "probability_by_deadline_at_least, tail_completion_time_hours_at_most")
+    _add_output_options(target)
+    robustness = commands.add_parser("robustness-review", help="review constraint satisfaction across declared scenarios")
+    robustness.add_argument("scenario", nargs="+", help="one or more fictional scenario JSON files")
+    robustness.add_argument("--constraint", action="append", required=True, help=TARGET_CONSTRAINT_HELP)
+    _add_output_options(robustness)
 
     diff = commands.add_parser("diff", help="compare two fictional scenario evaluations")
     _add_scenario_argument(diff)
@@ -250,6 +270,26 @@ def build_parser() -> argparse.ArgumentParser:
     add_experiment = project_commands.add_parser("add-experiment", help="add saved experiments (explicit save)")
     add_experiment.add_argument("project")
     add_experiment.add_argument("--experiment", action="append", required=True)
+    add_variant = project_commands.add_parser("add-variant", help="add a named derived scenario variant (explicit save)")
+    add_variant.add_argument("project")
+    add_variant.add_argument("--variant", required=True, help="variant name")
+    add_variant.add_argument("--changes", required=True, help="transaction.FIELD=VALUE;route.ROUTE_ID.FIELD=VALUE;...")
+    show_variant = project_commands.add_parser("show-variant", help="show the assumption diff of a derived variant")
+    show_variant.add_argument("project")
+    show_variant.add_argument("--variant", required=True)
+    show_variant.add_argument("--format", choices=("json", "markdown"), default="markdown")
+    show_variant.add_argument("--output", help="write the diff to this UTF-8 path outside the project")
+    compare_variants = project_commands.add_parser("compare-variants", help="compare route performance across named variants")
+    compare_variants.add_argument("project")
+    compare_variants.add_argument("--variant", action="append", help="include only these derived variants")
+    compare_variants.add_argument("--format", choices=("json", "csv", "markdown"), default=None)
+    compare_variants.add_argument("--output")
+    run_variants = project_commands.add_parser("run-variants", help="run one saved experiment across named variants")
+    run_variants.add_argument("project")
+    run_variants.add_argument("--experiment", required=True)
+    run_variants.add_argument("--variant", action="append", help="run only these derived variants")
+    run_variants.add_argument("--format", choices=("json", "markdown"), default=None)
+    run_variants.add_argument("--output")
     run_project = project_commands.add_parser("run", help="run saved experiments against the project inputs")
     run_project.add_argument("project", help="project directory or manifest JSON path")
     run_project.add_argument("--experiment", action="append", help="run only these named experiments")
@@ -338,6 +378,67 @@ def _project_inputs_for_protection(loaded) -> tuple[list[Path], list[Path]]:
     return inputs, scanned
 
 
+def _project_compare_variants(args: argparse.Namespace) -> int:
+    loaded = load_project(_require_cli_text(args.project, "project"))
+    if loaded.problems:
+        for problem in loaded.problems:
+            _write_error(problem)
+        return 2
+    base_raw, derived = _project_variant_state(loaded)
+    chosen = _project_variant_arguments(args, derived)
+    report = variant_comparison(base_raw, {name: derived[name] for name in chosen}, loaded.manifest.project_id)
+    output_format = resolve_report_format(args.format, args.output, ("json", "csv", "markdown"))
+    text = render_report(report, output_format)
+    if args.output is None:
+        sys.stdout.write(text)
+        return 0
+    target = Path(_require_cli_text(args.output, "--output"))
+    inputs, scanned = _project_inputs_for_protection(loaded)
+    protect_report_output(target, inputs, scanned)
+    atomic_write_text(target, text)
+    return 0
+
+
+def _project_run_variants(args: argparse.Namespace) -> int:
+    loaded = load_project(_require_cli_text(args.project, "project"))
+    if loaded.problems:
+        for problem in loaded.problems:
+            _write_error(problem)
+        return 2
+    scenario = load_scenario(loaded.resolved["scenario"])
+    base_raw, derived = _project_variant_state(loaded)
+    experiment = next((item for item in loaded.manifest.experiments if item.name == args.experiment), None)
+    if experiment is None:
+        raise InputError(f"no saved experiment named {args.experiment}")
+    chosen = _project_variant_arguments(args, derived)
+    items: list[dict[str, object]] = []
+    for index, name in enumerate(chosen, start=1):
+        try:
+            variant = derived[name]
+            variant_scenario = parse_scenario(apply_variant(variant, base_raw))
+            report = execute_experiment(experiment, variant_scenario)
+            status = "pass"
+        except (InputError, OSError, ValueError, DecimalException) as exc:
+            report = {"status": "unresolved", "error": _failure_text(exc)}
+            status = "unresolved"
+        items.append({"id": f"variant-{index:04d}", "variant": name, "experiment": experiment.name,
+                      "status": status, "report": report})
+    combined = {"report_version": "corridor-lab.project-run/v1", "project_id": loaded.manifest.project_id,
+                "fictional": True,
+                "status": "unresolved" if any(item["status"] == "unresolved" for item in items) else "pass",
+                "items": items}
+    output_format = resolve_report_format(args.format, args.output, ("json", "markdown"))
+    text = render_report(combined, output_format) if output_format == "markdown" else json.dumps(combined, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    if args.output is None:
+        sys.stdout.write(text)
+        return 0 if combined["status"] == "pass" else 2
+    target = Path(_require_cli_text(args.output, "--output"))
+    inputs, scanned = _project_inputs_for_protection(loaded)
+    protect_report_output(target, inputs, scanned)
+    atomic_write_text(target, text)
+    return 0 if combined["status"] == "pass" else 2
+
+
 def _project_run(args: argparse.Namespace) -> int:
     loaded = load_project(_require_cli_text(args.project, "project"))
     if loaded.problems:
@@ -375,6 +476,34 @@ def _project_run(args: argparse.Namespace) -> int:
     text = render_report(combined, output_format) if output_format == "markdown" else json.dumps(combined, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
     atomic_write_text(target, text)
     return 0 if combined["status"] == "pass" else 2
+
+
+def _manifest_with_variants(loaded, derived_variants) -> ProjectManifest:
+    return ProjectManifest(
+        project_id=loaded.manifest.project_id,
+        description=loaded.manifest.description,
+        scenario=loaded.manifest.scenario,
+        routes=loaded.manifest.routes,
+        baseline=loaded.manifest.baseline,
+        variants=loaded.manifest.variants,
+        derived_variants=derived_variants,
+        experiments=loaded.manifest.experiments,
+    )
+
+
+def _project_variant_state(loaded) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Return (base raw scenario, derived variants) for variant actions."""
+    base_raw = parse_json_bytes(read_bounded_bytes(loaded.resolved["scenario"]))
+    derived = dict(loaded.manifest.derived_variants or {})
+    return base_raw, derived
+
+
+def _project_variant_arguments(args: argparse.Namespace, derived: dict[str, Any]) -> list[str]:
+    chosen = args.variant or sorted(derived)
+    unknown = sorted(set(chosen) - set(derived))
+    if unknown:
+        raise InputError(f"no derived variant named {', '.join(unknown)}")
+    return chosen
 
 
 def _project(args: argparse.Namespace) -> int:
@@ -444,11 +573,53 @@ def _project(args: argparse.Namespace) -> int:
             routes=loaded.manifest.routes,
             baseline=loaded.manifest.baseline,
             variants=loaded.manifest.variants,
+            derived_variants=loaded.manifest.derived_variants,
             experiments=loaded.manifest.experiments + tuple(additions),
         )
-        write_project(loaded.path, manifest)
+        write_project(loaded.path, manifest, replace=True)
         sys.stdout.write(f"experiments saved: {', '.join(experiment.name for experiment in additions)}\n")
         return 0
+    if command == "add-variant":
+        loaded = load_project(_require_cli_text(args.project, "project"))
+        if loaded.problems:
+            for problem in loaded.problems:
+                _write_error(problem)
+            return 2
+        _, derived = _project_variant_state(loaded)
+        if args.variant.strip() in derived:
+            raise InputError(f"add-variant must not replace an existing derived variant: {args.variant}")
+        transaction, routes = parse_variant_changes_argument(args.changes)
+        variant = parse_derived_variant(args.variant.strip(), {"base": "scenario", "changes": {"transaction": transaction, "routes": routes}})
+        derived[args.variant.strip()] = variant
+        write_project(loaded.path, _manifest_with_variants(loaded, derived), replace=True)
+        sys.stdout.write(f"variant saved: {args.variant.strip()}\n")
+        return 0
+    if command == "show-variant":
+        loaded = load_project(_require_cli_text(args.project, "project"))
+        if loaded.problems:
+            for problem in loaded.problems:
+                _write_error(problem)
+            return 2
+        base_raw, derived = _project_variant_state(loaded)
+        variant = derived.get(args.variant.strip())
+        if variant is None:
+            raise InputError(f"no derived variant named {args.variant.strip()}")
+        scenario_id = parse_scenario(base_raw).scenario_id if "scenario_id" in base_raw else loaded.manifest.project_id
+        report = variant_diff_report(variant, base_raw, scenario_id)
+        output_format = resolve_report_format(args.format, args.output, ("json", "markdown"))
+        text = render_report(report, output_format)
+        if args.output is None:
+            sys.stdout.write(text)
+            return 0
+        target = Path(_require_cli_text(args.output, "--output"))
+        inputs, scanned = _project_inputs_for_protection(loaded)
+        protect_report_output(target, inputs, scanned)
+        atomic_write_text(target, text)
+        return 0
+    if command == "compare-variants":
+        return _project_compare_variants(args)
+    if command == "run-variants":
+        return _project_run_variants(args)
     if command == "run":
         return _project_run(args)
     raise InputError(f"unsupported project command: {command}")
@@ -464,11 +635,13 @@ def _protect_report_inputs(args: argparse.Namespace) -> None:
         raw = getattr(args, name, None)
         if raw is None:
             continue
-        source = Path(raw)
-        if source.is_dir():
-            scanned.append(source)
-        else:
-            inputs.append(source)
+        sources = raw if isinstance(raw, (list, tuple)) else [raw]
+        for source_text in sources:
+            source = Path(source_text)
+            if source.is_dir():
+                scanned.append(source)
+            else:
+                inputs.append(source)
     protect_report_output(target, inputs, scanned)
 
 
@@ -597,6 +770,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         if args.command == "project":
             return _project(args)
+        if args.command == "robustness-review":
+            labels: list[str] = []
+            scenarios: list[Scenario] = []
+            for raw in args.scenario:
+                path = _require_cli_text(raw, "scenario")
+                labels.append(path)
+                scenarios.append(load_scenario(path))
+            report = robustness_review(scenarios, labels, list(args.constraint))
+            output_format = resolve_report_format(args.format, args.output, TABULAR_REPORT_FORMATS)
+            _emit(render_report(report, output_format), args.output)
+            return 0
         scenario = load_scenario(_require_cli_text(args.scenario, "scenario"))
         report: dict[str, object]
         if args.command == "cost-ledger":
@@ -617,6 +801,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             report = deadline_profile(scenario)
         elif args.command == "break-even-check":
             report = break_even_check(scenario)
+        elif args.command == "target-search":
+            report = target_search(scenario, args.parameter, _parse_values(args.values), list(args.constraint))
         elif args.command == "diff":
             report = diff_scenarios(load_scenario(_require_cli_text(args.baseline, "--baseline")), scenario)
         elif args.command == "evaluate":

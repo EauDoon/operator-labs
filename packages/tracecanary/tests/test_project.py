@@ -150,6 +150,24 @@ class ProjectCliTests(unittest.TestCase):
             self.assertEqual(main(["project", "validate", str(project)]), 0)
             self.assertEqual(main(["project", "open", str(project)]), 0)
 
+    def test_promote_baseline_validates_first_and_updates_the_manifest(self):
+        with tempfile.TemporaryDirectory() as temporary, redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+            from tracecanary.cli import main
+
+            root = Path(temporary)
+            manifest_path = make_project(root)
+            leaked = root / "leaked.json"
+            leaked.write_text(json.dumps(bundle()["leaked-prompt.json"]), encoding="utf-8")
+            self.assertEqual(main(["project", "promote-baseline", str(root), "--candidate", str(leaked)]), 2)
+            baseline_before = json.loads(manifest_path.read_text(encoding="utf-8"))["baseline"]["sha256"]
+            safe = root / "safe.json"
+            safe.write_text(json.dumps(bundle()["safe-export.json"]), encoding="utf-8")
+            self.assertEqual(main(["project", "promote-baseline", str(root), "--candidate", str(safe)]), 0)
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(manifest["baseline"]["path"], "safe.json")
+            self.assertEqual(manifest["baseline"]["sha256"], __import__("hashlib").sha256(safe.read_bytes()).hexdigest())
+            self.assertEqual(main(["project", "validate", str(root)]), 0)
+
     def test_project_cli_rejects_unknown_analysis_and_reports_missing_inputs(self):
         with tempfile.TemporaryDirectory() as temporary, redirect_stdout(StringIO()), redirect_stderr(StringIO()):
             from tracecanary.cli import main

@@ -7,13 +7,24 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import json
+
+from tracecanary.authoring import empty_template, render_review_human, review_contract, validate_draft
 from tracecanary.batching import run_batch
-from tracecanary.canonical import InputError, load_json
+from tracecanary.campaign import (
+    campaign_summary,
+    compare_summaries as compare_summaries_engine,
+    render_campaign_human,
+    render_comparison_human,
+    run_campaign as run_campaign_engine,
+)
+from tracecanary.canonical import InputError, canonical_json, load_json
 from tracecanary.checker import check_trace
 from tracecanary.comparison import diff_traces
 from tracecanary.contract import Contract, ContractError, load_contract, parse_contract
 from tracecanary.coverage import coverage_report
 from tracecanary.fixture import bundle, write_bundle
+from tracecanary.output import protect_inputs, write_report
 from tracecanary.project import _copy_project_input, build_manifest, load_project, write_project
 from tracecanary.inspection import (
     control_check,
@@ -32,6 +43,7 @@ from tracecanary.report import (
     UnsafeReportError,
     Violation,
     build_report,
+    ensure_text_values_absent,
     ensure_values_absent,
     render_batch_human,
     render_human,
@@ -94,6 +106,53 @@ class ProjectPaths:
 
 class TraceCanaryController:
     """Run TraceCanary library operations without subprocesses or Tk imports."""
+
+    def review_contract(self, contract_path: str | Path) -> GuiResult:
+        """Conservative value-free diagnostics for a contract draft."""
+        guidance = self._require("contract-review", (contract_path, GUI001, "Select a contract JSON file before reviewing it."))
+        if guidance is not None:
+            return guidance
+        try:
+            raw = load_json(Path(contract_path), max_bytes=5_000_000, max_depth=100)
+            report = review_contract(raw)
+        except (ContractError, InputError, OSError, ValueError) as exc:
+            return self._guidance("contract-review", GUI001, f"The contract could not be reviewed. ({exc})")
+        status = report["status"]
+        return GuiResult(status, _exit_code(status), render_review_human(report), render_json(report),
+                         None, (Path(contract_path),), None, "contract-review")
+
+    def contract_template_text(self) -> str:
+        """A minimal valid synthetic contract for the editor draft."""
+        return canonical_json(validate_draft(empty_template()))
+
+    def save_contract_draft(self, text: str, path: str | Path) -> GuiResult:
+        """Explicitly save a contract draft, clearly separate from report exports.
+
+        This is the one GUI action that writes canary configuration to disk;
+        it is validated first and refuses to replace an existing file.
+        """
+        try:
+            raw = json.loads(text)
+            validate_draft(raw)
+        except (json.JSONDecodeError, TypeError) as exc:
+            return self._guidance("contract-save", GUI001, f"The contract draft is not valid JSON. ({exc})")
+        except (ContractError, ValueError) as exc:
+            return self._guidance("contract-save", GUI001, f"The contract draft failed validation. ({exc})")
+        try:
+            target = Path(path)
+            if target.exists():
+                raise InputError("contract export must not replace an existing file; choose a new name")
+            write_report(target, text)
+        except (InputError, OSError) as exc:
+            return self._guidance("contract-save", GUI001, f"The contract could not be saved. ({exc})")
+        report = build_report("tracecanary/v1", "pass", [], mode="contract-save")
+        human = f"Contract saved to {target}. This file contains canary configuration, unlike value-free report exports."
+        return GuiResult("pass", EXIT_PASS, human, render_json(report), None, (), None, "contract-save")
+
+    def validate_draft_text(self, text: str) -> dict:
+        """Validate a contract draft strictly; raises ContractError on failure."""
+        raw = json.loads(text)
+        return validate_draft(raw)
 
     def validate(self, contract_path: str | Path) -> GuiResult:
         guidance = self._require("validate", (contract_path, GUI001, "Select a contract JSON file before validating."))
@@ -441,6 +500,93 @@ class TraceCanaryController:
                          ProjectPaths(project_dir / "inputs" / Path(contract_path).name, None, None, None, None,
                                       (minimum_ratio or "", population_scope or "", population_minimum)))
 
+    def run_campaign_selections(
+        self,
+        *,
+        contract_path: str | Path,
+        input_path: str | Path | None,
+        baseline_path: str | Path | None,
+        batch_path: str | Path | None,
+        control_path: str | Path | None = None,
+        minimum_ratio: str | None = None,
+        population_scope: str | None = None,
+        population_minimum: int | None = None,
+    ) -> GuiResult:
+        """Run the regression campaign from plain selector values in one bounded pass.
+
+        The window captures all values on the main thread; this method never
+        touches Tk. Input paths are recorded on the result so saved summaries
+        and reports stay protected.
+        """
+        inputs: list[Path] = [Path(contract_path)]
+        if baseline_path and str(baseline_path).strip():
+            inputs.append(Path(baseline_path))
+        if control_path and str(control_path).strip():
+            inputs.append(Path(control_path))
+        batch = Path(batch_path) if batch_path and str(batch_path).strip() else None
+        input_dir = batch
+        if input_path and str(input_path).strip() and Path(input_path) not in inputs:
+            inputs.append(Path(input_path))
+        if batch_path and str(batch_path).strip():
+            candidates_from_batch = True
+
+        def operation() -> dict[str, Any]:
+            contract = load_contract(Path(contract_path))
+            control_payload = self._load_trace(Path(control_path), contract) if control_path and str(control_path).strip() else None
+            baseline_payload = self._load_trace(Path(baseline_path), contract) if baseline_path and str(baseline_path).strip() else None
+            candidates = [(Path(input_path).name, Path(input_path))] if input_path and str(input_path).strip() else []
+            return run_campaign_engine(
+                contract,
+                control_payload=control_payload,
+                baseline_payload=baseline_payload,
+                candidates=candidates,
+                batch=batch,
+                minimum_ratio=minimum_ratio,
+                population_scope=population_scope,
+                population_minimum=population_minimum,
+            )
+
+        try:
+            campaign = operation()
+        except UnsafeReportError:
+            return GuiResult("unresolved", EXIT_UNRESOLVED, "", "", None, tuple(inputs), input_dir, "campaign")
+        except (ContractError, InputError, OtlpError, OSError, ValueError) as exc:
+            return self._guidance("campaign", GUI005, f"The campaign could not run. ({exc})")
+        status = campaign["status"]
+        return GuiResult(status, _exit_code(status), render_campaign_human(campaign), render_json(campaign),
+                         None, tuple(inputs), input_dir, "campaign")
+
+    def save_campaign_evidence(self, evidence_path: str | Path, result: GuiResult) -> GuiResult:
+        """Explicitly save a value-free evidence document for a finished campaign.
+
+        Evidence bundles the campaign summary, the configured thresholds, the
+        tool version, and the standing limitations. It never contains canary
+        values, contracts, or trace inputs, and it is not a privacy guarantee.
+        """
+        try:
+            summary = campaign_summary(json.loads(result.json))
+            evidence = {
+                "evidence_version": "tracecanary.evidence/v1",
+                "tool": {"name": "tracecanary", "version": "0.2.0"},
+                "summary": summary,
+                "meaning": (
+                    "Deterministic value-free evidence for a synthetic regression campaign. "
+                    "Canary values, contracts, and trace inputs are not bundled; hashes of "
+                    "protected values are not treated as anonymization. Detection is bounded "
+                    "by the declared contract and does not claim absence of all sensitive data."
+                ),
+            }
+            text = render_json(evidence)
+            ensure_text_values_absent(text, self._redacted_values(Path(result.inputs[0])))
+            protect_inputs(Path(evidence_path), list(result.inputs), result.input_dir)
+            write_report(Path(evidence_path), text)
+            return GuiResult("pass", EXIT_PASS, f"Value-free evidence saved to {evidence_path}", text,
+                             None, tuple(result.inputs), result.input_dir, "campaign-evidence")
+        except UnsafeReportError:
+            return self._guidance("campaign-evidence", GUI005, "The evidence failed the protected-value check and was not saved.")
+        except (InputError, OSError, ValueError) as exc:
+            return self._guidance("campaign-evidence", GUI005, f"The evidence could not be saved. ({exc})")
+
     def _validate(self, contract_path: Path) -> Report:
         contract = load_contract(contract_path)
         report = build_report(contract.contract_version, "pass", [], mode="validate")
@@ -461,6 +607,42 @@ class TraceCanaryController:
         payload = fixtures["safe-export.json"]
         validate_trace(payload)
         return check_trace(contract, payload, mode="demo")
+
+    def save_campaign_summary(self, summary_path: str | Path, result: GuiResult) -> GuiResult:
+        """Explicitly save the value-free campaign summary for a finished run.
+
+        The destination cannot replace a campaign input or sit inside a
+        scanned batch directory, and the summary text is re-checked against
+        the contract's canary values before the bounded atomic write.
+        """
+        try:
+            target = Path(summary_path)
+            protect_inputs(target, list(result.inputs), result.input_dir)
+            summary = campaign_summary(json.loads(result.json))
+            text = render_json(summary)
+            ensure_text_values_absent(text, self._redacted_values(Path(result.inputs[0])))
+            write_report(target, text)
+            return GuiResult("pass", EXIT_PASS, f"Value-free campaign summary saved to {target}", text,
+                             None, tuple(result.inputs), result.input_dir, "campaign-summary")
+        except UnsafeReportError:
+            return self._guidance("campaign-summary", GUI005, "The summary failed the protected-value check and was not saved.")
+        except (InputError, OSError, ValueError) as exc:
+            return self._guidance("campaign-summary", GUI005, f"The summary could not be saved. ({exc})")
+
+    def _redacted_values(self, contract_path: Path) -> tuple[str, ...]:
+        contract = load_contract(contract_path)
+        return tuple(canary.value for canary in contract.canaries)
+
+    def compare_saved_summaries(self, baseline_path: str | Path, candidate_path: str | Path) -> GuiResult:
+        """Compare two saved summaries with strict value-free compatibility checks."""
+        try:
+            baseline_summary = load_json(Path(baseline_path), max_bytes=1_000_000, max_depth=32)
+            candidate_summary = load_json(Path(candidate_path), max_bytes=1_000_000, max_depth=32)
+            comparison = compare_summaries_engine(baseline_summary, candidate_summary)
+        except (InputError, OSError, ValueError) as exc:
+            return self._guidance("campaign-compare", GUI005, f"The comparison could not run. ({exc})")
+        return GuiResult("pass", EXIT_PASS, render_comparison_human(comparison), render_json(comparison), None,
+                         (Path(baseline_path), Path(candidate_path)), None, "campaign-compare")
 
     @staticmethod
     def _create_starter(destination: Path) -> Report:

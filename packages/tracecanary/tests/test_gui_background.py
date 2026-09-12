@@ -94,6 +94,59 @@ class BatchWindowBackgroundTests(unittest.TestCase):
             self.assertTrue(all(item.get("path", "").endswith(".json") for item in report["items"]))
             root.destroy()
 
+    def test_window_closure_during_work_leaves_no_crash_or_callback(self):
+        import tkinter as tk
+        from tkinter import filedialog, messagebox, ttk
+
+        filedialog.askopenfilename = lambda *a, **k: ""
+        filedialog.askdirectory = lambda *a, **k: ""
+        filedialog.asksaveasfilename = lambda *a, **k: ""
+        messagebox.showerror = lambda *a, **k: None
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root_path = Path(temporary)
+            _write_bundle(root_path)
+            root = tk.Tk()
+            window = TraceCanaryWindow(tk, ttk, filedialog, messagebox)
+            window._contract.set(str(root_path / "contract.json"))
+            window._batch_dir.set(str(root_path))
+            window._batch()
+            self.assertIsNotNone(window._batch_job)
+            root.destroy()  # close the window while the worker runs
+            deadline = time.monotonic() + 30
+            while window._batch_job is not None and not window._batch_job.finished() and time.monotonic() < deadline:
+                time.sleep(0.02)
+            # The worker finishes harmlessly; the window is gone and no
+            # after-callback can apply the stale result to a closed window.
+            self.assertTrue(window._batch_job is None or window._batch_job.finished())
+
+    def test_repeated_batch_runs_re_enable_and_rerun(self):
+        import tkinter as tk
+        from tkinter import filedialog, messagebox, ttk
+
+        filedialog.askopenfilename = lambda *a, **k: ""
+        filedialog.askdirectory = lambda *a, **k: ""
+        filedialog.asksaveasfilename = lambda *a, **k: ""
+        messagebox.showerror = lambda *a, **k: None
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root_path = Path(temporary)
+            _write_bundle(root_path)
+            root = tk.Tk()
+            window = TraceCanaryWindow(tk, ttk, filedialog, messagebox)
+            window._contract.set(str(root_path / "contract.json"))
+            window._batch_dir.set(str(root_path))
+            for index in range(3):
+                window._batch()
+                deadline = time.monotonic() + 30
+                while window._batch_job is not None and time.monotonic() < deadline:
+                    root.update()
+                    time.sleep(0.02)
+                self.assertIsNone(window._batch_job, f"run {index} did not finish")
+                self.assertEqual(str(window._batch_button.cget("state")), "normal")
+                self.assertEqual(window._result.status, "unresolved")
+            root.destroy()
+
 
 if __name__ == "__main__":
     unittest.main()

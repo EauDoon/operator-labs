@@ -28,6 +28,7 @@ from .canonical import (
     read_bounded_bytes,
     require_decimal,
 )
+from .evidence import build_evidence, write_evidence
 from .comparison import compare_routes, evaluate_scenario, pareto_frontier
 from .model import evaluate_route
 from .projects import (
@@ -40,11 +41,20 @@ from .projects import (
     write_project,
 )
 from .report import render_report
+from .variants import (
+    DerivedVariant,
+    apply_variant as materialize_variant,
+    parse_derived_variant,
+    validate_changes,
+    variant_comparison,
+    variant_diff_report,
+)
 from .route import Route, load_route, load_route_folder
 from .scenario import Scenario, parse_scenario, parse_scenario_text
 from .scenario_diff import diff_scenarios
 from .sensitivity import run_sensitivity
 from .stress import run_stress_grid
+from .targeting import robustness_review, target_search
 from .transaction_sweep import (
     TRANSACTION_PARAMETERS,
     run_transaction_grid,
@@ -155,7 +165,11 @@ class CorridorGuiController:
         self.baseline_file: Path | None = None
         self.project_source: str | None = None
         self.project_path: Path | None = None
+        self.project_id: str | None = None
         self.experiments: tuple[Experiment, ...] = ()
+        self.derived_variants: dict[str, DerivedVariant] = {}
+        self.active_variant: str | None = None
+        self.project_base_raw: dict | None = None
         self.last_report_inputs: tuple[Path, ...] = ()
         self.last_report_scanned_dirs: tuple[Path, ...] = ()
 
@@ -459,8 +473,12 @@ class CorridorGuiController:
                 self.clear_route_selection()
             self.baseline_file = loaded.resolved.get("baseline")
             self.experiments = loaded.manifest.experiments
+            self.derived_variants = dict(loaded.manifest.derived_variants or {})
+            self.active_variant = None
+            self.project_base_raw = copy.deepcopy(self.scenario_raw)
             self.project_source = str(loaded.path)
             self.project_path = loaded.path.parent
+            self.project_id = loaded.manifest.project_id
             return ActionResult(
                 {
                     "project_id": loaded.manifest.project_id,
@@ -489,10 +507,12 @@ class CorridorGuiController:
                 routes=placed.get("routes"),
                 baseline=placed.get("baseline"),
                 experiments=self.experiments,
+                derived_variants=self.derived_variants or None,
             )
             write_project(target, manifest)
             self.project_source = str(target / "corridor-lab.project.json")
             self.project_path = target
+            self.project_id = manifest.project_id
             return ActionResult({}, None)
         except (InputError, OSError, ValueError, DecimalException) as exc:
             return self._failure(exc)
@@ -529,6 +549,131 @@ class CorridorGuiController:
 
     def saved_experiment_names(self) -> tuple[str, ...]:
         return tuple(experiment.name for experiment in self.experiments)
+
+    def _variant_base_raw(self) -> dict:
+        """Variants always derive from the project's declared base scenario.
+
+        Applying a variant changes the active scenario but never the base,
+        so assumption diffs stay truthful after applications.
+        """
+        return self.project_base_raw if self.project_base_raw is not None else self.scenario_raw
+
+    def add_variant(self, name: str, changes: dict[str, object]) -> ActionResult:
+        """Stage a named derived variant; persisted by the next project save."""
+        try:
+            if self.scenario is None or self.scenario_raw is None:
+                raise InputError("load a fictional scenario before adding a variant")
+            variant = parse_derived_variant(name.strip(), {"base": "scenario", "changes": changes})
+            if variant.name in self.derived_variants:
+                raise InputError(f"a variant named {variant.name} already exists; choose a new name")
+            # Prove the variant materializes against the declared base before staging it.
+            parse_scenario(materialize_variant(variant, self._variant_base_raw()))
+            self.derived_variants[variant.name] = variant
+            self.last_error = None
+            return ActionResult({}, None)
+        except (InputError, ValueError, DecimalException) as exc:
+            return self._failure(exc)
+
+    def apply_variant(self, name: str) -> ActionResult:
+        """Install a derived variant as the active scenario (in memory, unsaved)."""
+        try:
+            scenario = self._require_scenario()
+            if self.scenario_raw is None:
+                raise InputError("the active scenario has no editable baseline data; load it from a file")
+            variant = self.derived_variants.get(name)
+            if variant is None:
+                raise InputError(f"no derived variant named {name}; open or create a project first")
+            raw = materialize_variant(variant, self._variant_base_raw())
+            candidate = parse_scenario(copy.deepcopy(raw))
+        except (InputError, ValueError, DecimalException) as exc:
+            return self._failure(exc)
+        previous_source = self.scenario_source
+        self._install_scenario(
+            candidate,
+            raw,
+            f"Variant {name} applied to {self.scenario_source}",
+            unsaved=True,
+            draft_text=json.dumps(raw, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        )
+        self.active_variant = name
+        self.last_report = None
+        return ActionResult({"variant": name, "previous_source": previous_source}, None)
+
+    def show_variant_diff(self, name: str) -> ActionResult:
+        """Show exactly what a derived variant changes before any results."""
+        try:
+            self._require_scenario()
+            if self.scenario_raw is None:
+                raise InputError("the active scenario has no declared base data")
+            variant = self.derived_variants.get(name)
+            if variant is None:
+                raise InputError(f"no derived variant named {name}")
+            return self._success(
+                variant_diff_report(variant, self._variant_base_raw(), self.scenario.scenario_id if self.scenario else "fictional-scenario"),
+                routes_inputs=False,
+            )
+        except (InputError, ValueError, DecimalException) as exc:
+            return self._failure(exc)
+
+    def compare_variants(self, names: tuple[str, ...] | None = None) -> ActionResult:
+        """Compare route performance across the declared variant set."""
+        try:
+            self._require_scenario()
+            if self.scenario_raw is None:
+                raise InputError("the active scenario has no declared base data")
+            missing = sorted(set(names or ()) - set(self.derived_variants))
+            if missing:
+                raise InputError(f"no derived variant named {', '.join(missing)}")
+            chosen = self.derived_variants if names is None else {name: self.derived_variants[name] for name in names}
+            return self._success(
+                variant_comparison(self._variant_base_raw(), chosen, self.project_id_or_scenario()),
+                routes_inputs=False,
+            )
+        except (InputError, ValueError, DecimalException) as exc:
+            return self._failure(exc)
+
+    def project_id_or_scenario(self) -> str:
+        return self.project_id or (self.scenario.scenario_id if self.scenario is not None else "fictional-scenario")
+
+    def variant_names(self) -> tuple[str, ...]:
+        return tuple(sorted(self.derived_variants))
+
+    def _constraint_list(self, constraints_text: str) -> list[str]:
+        chunks = [chunk.strip() for chunk in constraints_text.split(";") if chunk.strip()]
+        if not chunks:
+            raise InputError("declare at least one constraint (NAME=THRESHOLD, semicolon separated)")
+        return chunks
+
+    def run_target_search(self, parameter: str, values_text: str, constraints_text: str) -> ActionResult:
+        """Find tested candidates satisfying declared constraints, with honest limits."""
+        try:
+            scenario = self._require_scenario()
+            chunks = values_text.split(",")
+            if not all(chunk.strip() for chunk in chunks):
+                raise InputError("target search values must be comma-separated decimals")
+            values = [require_decimal(chunk.strip(), "target search value") for chunk in chunks]
+            return self._success(
+                target_search(scenario, parameter.strip(), values, self._constraint_list(constraints_text)),
+                routes_inputs=False,
+            )
+        except (InputError, OSError, ValueError, DecimalException) as exc:
+            return self._failure(exc)
+
+    def robustness_over_variants(self, constraints_text: str) -> ActionResult:
+        """Constraint satisfaction across the base scenario and derived variants."""
+        try:
+            self._require_scenario()
+            if self.scenario_raw is None:
+                raise InputError("the active scenario has no declared base data")
+            constraints = self._constraint_list(constraints_text)
+            scenarios = [parse_scenario(self._variant_base_raw())]
+            labels = [str(scenarios[0].scenario_id)]
+            for name in sorted(self.derived_variants):
+                scenarios.append(parse_scenario(materialize_variant(self.derived_variants[name], self._variant_base_raw())))
+                labels.append(name)
+            return self._success(robustness_review(scenarios, labels, constraints), routes_inputs=False)
+        except (InputError, OSError, ValueError, DecimalException) as exc:
+            return self._failure(exc)
 
     @staticmethod
     def _parse_values(values_text: str, description: str) -> list[Decimal]:
@@ -617,4 +762,22 @@ class CorridorGuiController:
             self.last_error = None
             return ActionResult(self.last_report, None)
         except (InputError, OSError) as exc:
+            return self._failure(exc)
+
+    def export_evidence(self, path: str | Path, notes: str = "") -> ActionResult:
+        """Export the current report as a self-explaining evidence document."""
+        try:
+            if self.last_report is None:
+                raise InputError("run an analysis before exporting evidence")
+            document = build_evidence(
+                self.last_report,
+                scenario_source=self.scenario_source,
+                routes_source=self.routes_source,
+                project_source=self.project_source or "",
+                notes=notes,
+            )
+            target = write_evidence(path, document, inputs=self.last_report_inputs, scanned_dirs=self.last_report_scanned_dirs)
+            self.last_error = None
+            return ActionResult({"path": str(target), "analysis": document["analysis"]}, None)
+        except (InputError, OSError, ValueError, DecimalException) as exc:
             return self._failure(exc)

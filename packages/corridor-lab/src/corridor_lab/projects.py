@@ -23,6 +23,7 @@ from decimal import Decimal, DecimalException
 from pathlib import Path, PurePosixPath
 
 from .analysis import deadline_target, resolution_quantiles
+from .variants import DerivedVariant, parse_derived_variant
 from .canonical import (
     InputError,
     atomic_write_text,
@@ -79,6 +80,13 @@ class ProjectManifest:
     baseline: InputRef | None
     variants: dict[str, InputRef]
     experiments: tuple[Experiment, ...]
+    derived_variants: dict[str, DerivedVariant] | None = None
+
+    @property
+    def all_variants(self) -> dict[str, object]:
+        combined: dict[str, object] = dict(self.variants)
+        combined.update(self.derived_variants or {})
+        return combined
 
 
 @dataclass(frozen=True)
@@ -226,12 +234,19 @@ def parse_manifest(value: object) -> ProjectManifest:
     routes = _parse_input_ref(manifest["routes"], "routes") if "routes" in manifest else None
     baseline = _parse_input_ref(manifest["baseline"], "baseline") if "baseline" in manifest else None
     variants: dict[str, InputRef] = {}
+    derived_variants: dict[str, DerivedVariant] = {}
     if "variants" in manifest:
         variant_value = require_object(manifest["variants"], "variants")
         if len(variant_value) > MAX_VARIANTS:
             raise InputError(f"variants exceed the {MAX_VARIANTS}-variant budget")
         for name, ref in variant_value.items():
-            variants[require_identifier(name, "variants name")] = _parse_input_ref(ref, f"variants[{name}]")
+            variant_name = require_identifier(name, "variants name")
+            if isinstance(ref, dict) and "base" in ref:
+                derived_variants[variant_name] = parse_derived_variant(variant_name, ref)
+            else:
+                variants[variant_name] = _parse_input_ref(ref, f"variants[{name}]")
+        if len(variants) + len(derived_variants) > MAX_VARIANTS:
+            raise InputError(f"variants exceed the {MAX_VARIANTS}-variant budget")
     experiment_values = require_object(manifest, "project manifest").get("experiments")
     if not isinstance(experiment_values, list):
         raise InputError("project manifest.experiments must be a list")
@@ -248,6 +263,7 @@ def parse_manifest(value: object) -> ProjectManifest:
         routes=routes,
         baseline=baseline,
         variants=variants,
+        derived_variants=derived_variants,
         experiments=experiments,
     )
 
@@ -407,6 +423,16 @@ def manifest_document(manifest: ProjectManifest) -> dict[str, object]:
         document["baseline"] = ref_document(manifest.baseline)
     if manifest.variants:
         document["variants"] = {name: ref_document(ref) for name, ref in manifest.variants.items()}
+    if manifest.derived_variants:
+        document["variants"] = document.get("variants", {})
+        for name, variant in manifest.derived_variants.items():
+            document["variants"][name] = {
+                "base": "scenario",
+                "changes": {
+                    "transaction": dict(variant.transaction),
+                    "routes": {route_id: dict(fields) for route_id, fields in variant.routes.items()},
+                },
+            }
     return document
 
 
@@ -423,6 +449,7 @@ def build_manifest(
     routes: Path | None = None,
     baseline: Path | None = None,
     variants: dict[str, Path] | None = None,
+    derived_variants: dict[str, DerivedVariant] | None = None,
     experiments: tuple[Experiment, ...] = (),
 ) -> ProjectManifest:
     """Fingerprint the chosen inputs and assemble a validated manifest."""
@@ -446,19 +473,20 @@ def build_manifest(
         routes=make_input_ref(project_dir, Path(routes)) if routes is not None else None,
         baseline=make_input_ref(project_dir, Path(baseline)) if baseline is not None else None,
         variants={name: make_input_ref(project_dir, path) for name, path in sorted((variants or {}).items())},
+        derived_variants=dict(sorted((derived_variants or {}).items())),
         experiments=tuple(experiments),
     )
     return manifest
 
 
-def write_project(manifest_path: Path, manifest: ProjectManifest) -> None:
-    """Explicitly write a manifest; refuses to replace an existing project file."""
+def write_project(manifest_path: Path, manifest: ProjectManifest, *, replace: bool = False) -> None:
+    """Explicitly write a manifest; create refuses replacement, updates replace atomically."""
     target = Path(manifest_path)
     if target.is_dir():
         target = target / PROJECT_MANIFEST_NAME
     elif target.suffix != ".json":
         raise InputError("project manifest must be a .json file path or an existing directory")
-    if target.exists():
+    if target.exists() and not replace:
         raise InputError(f"project manifest already exists: {target}")
     atomic_write_text(target, manifest_text(manifest))
 
