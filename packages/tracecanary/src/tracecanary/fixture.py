@@ -40,18 +40,32 @@ def bundle() -> dict[str, Any]:
     arguments = _with_attribute(safe, "gen_ai.tool.call.arguments", TOOL_ARGUMENTS)
     result = _with_attribute(safe, "gen_ai.tool.call.result", TOOL_RESULT)
     identifier = _with_attribute(safe, "enduser.id", USER_IDENTIFIER)
+    positive = _with_attribute(_with_attribute(_with_attribute(_with_attribute(safe, "gen_ai.prompt", PROMPT), "gen_ai.tool.call.arguments", TOOL_ARGUMENTS), "gen_ai.tool.call.result", TOOL_RESULT), "enduser.id", USER_IDENTIFIER)
     missing = deepcopy(safe)
     missing["resourceSpans"][0]["scopeSpans"][0]["spans"][0]["events"] = []
     forbidden_path = _with_attribute(safe, "synthetic.binary", "not-a-canary", value_kind="bytesValue")
+    sparse = deepcopy(safe)
+    sparse_spans = sparse["resourceSpans"][0]["scopeSpans"][0]["spans"]
+    sparse_spans.append(
+        {
+            "name": "synthetic.gen_ai.request.sparse",
+            "attributes": [_attribute("server.address", "offline.test")],
+            "events": [{"name": "telemetry.exported", "attributes": [_attribute("telemetry.event.class", "synthetic")]}],
+        }
+    )
+    invalid = {"resourceSpans": {"unexpected": True}}
     return {
         "contract.json": contract,
         "safe-export.json": safe,
+        "positive-control.json": positive,
         "leaked-prompt.json": prompt,
         "leaked-tool-arguments.json": arguments,
         "leaked-tool-result.json": result,
         "leaked-user-identifier.json": identifier,
         "missing-operational-fields.json": missing,
         "forbidden-path.json": forbidden_path,
+        "sparse-retention.json": sparse,
+        "invalid-export.json": invalid,
     }
 
 
