@@ -55,9 +55,24 @@ and GUI smoke tests green at commit `2569645`.
 
 ## Next action
 
-Open the M1 PR checkpoint, then start Milestone 2 (Corridor Lab scenario
-experimentation: named derived variants with assumption diffs) on a stacked
-branch.
+Milestone 2 (Corridor Lab scenario experimentation) is implemented on the
+stacked branch `dev/scenario-experimentation` (base: `dev/program-cycle-1`):
+- `variants.py`: derived variants with strict change validation (transaction
+  fields plus declared route fee/spread/liquidity fields), materialization
+  that preserves every unchanged field, exact-decimal assumption diffs, and
+  a variant-comparison analysis table with currencies, units, guardrail
+  satisfaction, and an explicit not-a-distribution note. No composite score.
+- Manifest variants section accepts file references (existing) or derived
+  specs (`base: "scenario"` only; chained bases deferred).
+- CLI: `project add-variant | show-variant | compare-variants | run-variants`
+  with the same input protection as other project commands.
+- Desktop: variants section on the Investigate tab (Show Assumption Diff,
+  Apply Variant, Compare Variants); applied variants are in-memory, unsaved,
+  and clearly labeled; controller/CLI agreement asserted.
+- Corridor tests: 171. Real-window drive passed on macOS arm64.
+
+Next: push the stacked branch, open the M2 PR (base dev/program-cycle-1),
+wait for CI, then start Milestone 3 (target and constraint analysis).
 
 ## Verification commands (authoritative)
 
