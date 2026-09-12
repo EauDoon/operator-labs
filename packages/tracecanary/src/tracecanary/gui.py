@@ -234,11 +234,37 @@ class TraceCanaryWindow:
         self._ttk.Button(report_controls, text="Show Human", command=lambda: self._show("human")).grid(row=0, column=1, padx=(12, 4))
         self._ttk.Button(report_controls, text="Show JSON", command=lambda: self._show("json")).grid(row=0, column=2, padx=4)
         self._ttk.Button(report_controls, text="Save Report", command=self._save).grid(row=0, column=3, padx=(4, 0))
+        self._ttk.Label(report_controls, text="Find").grid(row=0, column=4, padx=(12, 2))
+        self._find_var = self._tk.StringVar()
+        self._find_entry = self._ttk.Entry(report_controls, textvariable=self._find_var, width=24)
+        self._find_entry.grid(row=0, column=5)
+        self._find_entry.bind("<Return>", lambda _event: self._find_in_result())
+        self._ttk.Button(report_controls, text="Highlight", command=self._find_in_result).grid(row=0, column=6, padx=(4, 0))
         self._report = self._tk.Text(report_frame, wrap="word", height=14, state="disabled")
         self._report.grid(row=1, column=0, sticky="ew")
+        self._report.tag_configure("find", background="#f7e08a")
         scroll = self._ttk.Scrollbar(report_frame, orient="vertical", command=self._report.yview)
         scroll.grid(row=1, column=1, sticky="ns")
         self._report.configure(yscrollcommand=scroll.set)
+
+    def _find_in_result(self) -> None:
+        needle = self._find_var.get().strip()
+        self._report.tag_remove("find", "1.0", "end")
+        if not needle:
+            return
+        start = "1.0"
+        count = 0
+        while True:
+            position = self._report.search(needle, start, stopindex="end", nocase=True)
+            if not position:
+                break
+            end = f"{position}+{len(needle)}c"
+            self._report.tag_add("find", position, end)
+            start = end
+            count += 1
+        self._status.set(
+            f"Status: {count} match(es) for {needle!r} highlighted." if count else f"Status: no match for {needle!r}."
+        )
 
     def _add_selector(self, frame: object, row: int, label: str, variable: object, *, directory: bool = False) -> None:
         self._ttk.Label(frame, text=label).grid(row=row, column=0, sticky="w", padx=(0, 8), pady=2)
@@ -419,7 +445,8 @@ class TraceCanaryWindow:
         self._campaign_button = self._ttk.Button(campaign_row, text="Run Campaign", command=self._campaign)
         self._campaign_button.grid(row=0, column=0)
         self._ttk.Button(campaign_row, text="Save Summary As...", command=self._save_campaign_summary).grid(row=0, column=1, padx=(6, 0))
-        self._ttk.Button(campaign_row, text="Compare Saved Summaries...", command=self._compare_summaries).grid(row=0, column=2, padx=(6, 0))
+        self._ttk.Button(campaign_row, text="Save Evidence As...", command=self._save_campaign_evidence).grid(row=0, column=2, padx=(6, 0))
+        self._ttk.Button(campaign_row, text="Compare Saved Summaries...", command=self._compare_summaries).grid(row=0, column=3, padx=(6, 0))
         self._ttk.Label(
             tab,
             text="Saved summaries are deterministic and value-free; comparison aggregates findings by value-free code and never implies matched entity identity.",
@@ -468,6 +495,22 @@ class TraceCanaryWindow:
             return
         result = self._controller.save_campaign_summary(selected, self._result)
         self._apply(result)
+
+    def _save_campaign_evidence(self) -> None:
+        if self._result is None or self._result.mode != "campaign":
+            self._messagebox.showerror("TraceCanary", "Run a campaign before exporting evidence.")
+            return
+        selected = self._filedialog.asksaveasfilename(
+            title="Export value-free campaign evidence",
+            defaultextension=".json",
+            filetypes=[("Evidence document", "*.json"), ("All files", "*.*")],
+        )
+        if not selected:
+            return
+        result = self._controller.save_campaign_evidence(selected, self._result)
+        self._apply(result)
+        if result.status == "pass":
+            self._status.set("Status: evidence exported. Value-free: no canary values, contracts, or trace inputs are bundled.")
 
     def _compare_summaries(self) -> None:
         baseline = self._filedialog.askopenfilename(title="Select the baseline campaign summary", filetypes=[("JSON summaries", "*.json")])

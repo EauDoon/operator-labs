@@ -556,6 +556,37 @@ class TraceCanaryController:
         return GuiResult(status, _exit_code(status), render_campaign_human(campaign), render_json(campaign),
                          None, tuple(inputs), input_dir, "campaign")
 
+    def save_campaign_evidence(self, evidence_path: str | Path, result: GuiResult) -> GuiResult:
+        """Explicitly save a value-free evidence document for a finished campaign.
+
+        Evidence bundles the campaign summary, the configured thresholds, the
+        tool version, and the standing limitations. It never contains canary
+        values, contracts, or trace inputs, and it is not a privacy guarantee.
+        """
+        try:
+            summary = campaign_summary(json.loads(result.json))
+            evidence = {
+                "evidence_version": "tracecanary.evidence/v1",
+                "tool": {"name": "tracecanary", "version": "0.2.0"},
+                "summary": summary,
+                "meaning": (
+                    "Deterministic value-free evidence for a synthetic regression campaign. "
+                    "Canary values, contracts, and trace inputs are not bundled; hashes of "
+                    "protected values are not treated as anonymization. Detection is bounded "
+                    "by the declared contract and does not claim absence of all sensitive data."
+                ),
+            }
+            text = render_json(evidence)
+            ensure_text_values_absent(text, self._redacted_values(Path(result.inputs[0])))
+            protect_inputs(Path(evidence_path), list(result.inputs), result.input_dir)
+            write_report(Path(evidence_path), text)
+            return GuiResult("pass", EXIT_PASS, f"Value-free evidence saved to {evidence_path}", text,
+                             None, tuple(result.inputs), result.input_dir, "campaign-evidence")
+        except UnsafeReportError:
+            return self._guidance("campaign-evidence", GUI005, "The evidence failed the protected-value check and was not saved.")
+        except (InputError, OSError, ValueError) as exc:
+            return self._guidance("campaign-evidence", GUI005, f"The evidence could not be saved. ({exc})")
+
     def _validate(self, contract_path: Path) -> Report:
         contract = load_contract(contract_path)
         report = build_report(contract.contract_version, "pass", [], mode="validate")

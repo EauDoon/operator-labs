@@ -28,6 +28,7 @@ from .canonical import (
     read_bounded_bytes,
     require_decimal,
 )
+from .evidence import build_evidence, write_evidence
 from .comparison import compare_routes, evaluate_scenario, pareto_frontier
 from .model import evaluate_route
 from .projects import (
@@ -751,4 +752,22 @@ class CorridorGuiController:
             self.last_error = None
             return ActionResult(self.last_report, None)
         except (InputError, OSError) as exc:
+            return self._failure(exc)
+
+    def export_evidence(self, path: str | Path, notes: str = "") -> ActionResult:
+        """Export the current report as a self-explaining evidence document."""
+        try:
+            if self.last_report is None:
+                raise InputError("run an analysis before exporting evidence")
+            document = build_evidence(
+                self.last_report,
+                scenario_source=self.scenario_source,
+                routes_source=self.routes_source,
+                project_source=self.project_source or "",
+                notes=notes,
+            )
+            target = write_evidence(path, document, inputs=self.last_report_inputs, scanned_dirs=self.last_report_scanned_dirs)
+            self.last_error = None
+            return ActionResult({"path": str(target), "analysis": document["analysis"]}, None)
+        except (InputError, OSError, ValueError, DecimalException) as exc:
             return self._failure(exc)

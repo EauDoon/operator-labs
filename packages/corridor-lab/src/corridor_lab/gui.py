@@ -138,6 +138,7 @@ class CorridorLabApp:
         self.deadline_target_var = tk_module.StringVar(value="0.95")
         self.quantiles_var = tk_module.StringVar(value="0.5,0.95,1")
         self.baseline_var = tk_module.StringVar()
+        self.find_var = tk_module.StringVar()
         self.send_amount_var = tk_module.StringVar()
         self.deadline_var = tk_module.StringVar()
         self.volume_var = tk_module.StringVar()
@@ -362,7 +363,7 @@ class CorridorLabApp:
         tab = self.ttk.Frame(notebook, padding=10)
         notebook.add(tab, text=TAB_TITLES[3])
         tab.columnconfigure(0, weight=1)
-        tab.rowconfigure(2, weight=1)
+        tab.rowconfigure(4, weight=1)
 
         report_controls = self.ttk.Frame(tab)
         report_controls.grid(row=0, column=0, sticky="ew", pady=(0, 6))
@@ -373,10 +374,18 @@ class CorridorLabApp:
         self.ttk.Button(report_controls, text="Refresh Preview", command=self._refresh_preview).grid(row=0, column=2)
         self.ttk.Button(report_controls, text="Explain Report", command=self._explain_report, underline=7).grid(row=0, column=3, padx=6)
         self.ttk.Button(report_controls, text="Save Report...", command=self._save_report).grid(row=0, column=4, padx=(6, 0))
+        self.ttk.Button(report_controls, text="Export Evidence...", command=self._export_evidence).grid(row=0, column=5, padx=(6, 0))
 
-        self.ttk.Label(tab, text="The preview shows the formats the selected analysis supports; unsupported formats explain themselves instead of exporting.").grid(row=1, column=0, sticky="w")
+        find_row = self.ttk.Frame(tab)
+        find_row.grid(row=1, column=0, sticky="ew", pady=(4, 0))
+        self.ttk.Label(find_row, text="Find in report").grid(row=0, column=0)
+        self.find_var = self.tk.StringVar(value="")
+        self.ttk.Entry(find_row, textvariable=self.find_var, width=30).grid(row=0, column=1, padx=(4, 6))
+        self.ttk.Button(find_row, text="Highlight", command=self._find_in_report).grid(row=0, column=2)
+        self.ttk.Button(find_row, text="Clear", command=self._clear_find).grid(row=0, column=3, padx=(4, 0))
+        self.ttk.Label(tab, text="The preview shows the formats the selected analysis supports; unsupported formats explain themselves instead of exporting.").grid(row=3, column=0, sticky="w", pady=(4, 0))
         self.preview = self.scrolledtext.ScrolledText(tab, wrap="word", font=("TkFixedFont", 10))
-        self.preview.grid(row=2, column=0, sticky="nsew")
+        self.preview.grid(row=4, column=0, sticky="nsew")
         self.preview.insert("1.0", "No report yet. Built-in demo values are entirely fictional.\n")
         self.preview.configure(state="disabled")
 
@@ -846,6 +855,49 @@ class CorridorLabApp:
             self.controller.diff_against_baseline(self.baseline_var.get()),
             "Scenario diff complete: candidate minus baseline for matched routes.",
         )
+
+    def _find_in_report(self) -> None:
+        needle = self.find_var.get().strip()
+        self.preview.tag_remove("find", "1.0", "end")
+        if not needle:
+            return
+        start = "1.0"
+        count = 0
+        while True:
+            position = self.preview.search(needle, start, stopindex="end", nocase=True)
+            if not position:
+                break
+            end = f"{position}+{len(needle)}c"
+            self.preview.tag_add("find", position, end)
+            start = end
+            count += 1
+        self.preview.tag_configure("find", background="#f7e08a")
+        self.status_var.set(
+            f"{count} match(es) for {needle!r} highlighted in the current report." if count else f"No match for {needle!r} in the current report."
+        )
+
+    def _clear_find(self) -> None:
+        self.preview.tag_remove("find", "1.0", "end")
+        self.find_var.set("")
+        self.status_var.set("Search cleared.")
+
+    def _export_evidence(self) -> None:
+        if self.controller.last_report is None:
+            self._show_error("Run an analysis before exporting evidence.")
+            return
+        path = self.filedialog.asksaveasfilename(
+            parent=self.root,
+            title="Export evidence document",
+            defaultextension=".json",
+            filetypes=(("Evidence document", "*.json"), ("All files", "*.*")),
+        )
+        if not path:
+            return
+        result = self.controller.export_evidence(path)
+        if result.error is not None:
+            self._show_error(result.error)
+            return
+        self.status_var.set(f"Evidence exported to {result.report['path']} ({result.report['analysis']}).")
 
     def _save_report(self) -> None:
         if self.controller.last_report is None:
