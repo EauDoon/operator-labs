@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import stat as stat_module
 import sys
@@ -32,6 +33,15 @@ from .canonical import (
 )
 from .comparison import compare_routes, evaluate_scenario, pareto_frontier
 from .model import evaluate_route
+from .projects import (
+    ProjectManifest,
+    build_manifest,
+    execute_experiment,
+    load_project,
+    parse_experiment_argument,
+    prepare_project_directory,
+    write_project,
+)
 from .report import render_report
 from .route import SENSITIVITY_PARAMETERS, Route, load_route, load_route_folder
 from .scenario import load_scenario, parse_scenario
@@ -221,6 +231,31 @@ def build_parser() -> argparse.ArgumentParser:
     batch.add_argument("--recursive", action="store_true", help="include JSON files in subdirectories")
     batch.add_argument("--include-paths", action="store_true", help="add each scenario's relative path to the batch report")
     _add_output_options(batch, formats=FRONTIER_REPORT_FORMATS)
+
+    project = commands.add_parser("project", help="manage a saved, portable local project")
+    project_commands = project.add_subparsers(dest="project_command", required=True)
+    create = project_commands.add_parser("create", help="create a project manifest from explicit inputs")
+    create.add_argument("--directory", required=True, help="project directory that will contain the manifest")
+    create.add_argument("--project-id", required=True, help="stable project identifier")
+    create.add_argument("--description", help="optional human-readable description")
+    create.add_argument("--scenario", required=True, help="scenario JSON inside the project directory")
+    create.add_argument("--routes", help="route JSON file or folder inside the project directory")
+    create.add_argument("--baseline", help="baseline scenario JSON inside the project directory")
+    create.add_argument("--variant", action="append", help="NAME=PATH named scenario reference")
+    create.add_argument("--experiment", action="append", help="NAME:ANALYSIS:KEY=VALUE;... saved experiment")
+    validate_project = project_commands.add_parser("validate", help="validate a project manifest and inputs")
+    validate_project.add_argument("project", help="project directory or manifest JSON path")
+    open_project = project_commands.add_parser("open", help="resolve a project and report missing or changed inputs")
+    open_project.add_argument("project")
+    add_experiment = project_commands.add_parser("add-experiment", help="add saved experiments (explicit save)")
+    add_experiment.add_argument("project")
+    add_experiment.add_argument("--experiment", action="append", required=True)
+    run_project = project_commands.add_parser("run", help="run saved experiments against the project inputs")
+    run_project.add_argument("project", help="project directory or manifest JSON path")
+    run_project.add_argument("--experiment", action="append", help="run only these named experiments")
+    run_project.add_argument("--format", choices=("json", "markdown"), default=None,
+                             help="combined project-run report format (default: json)")
+    run_project.add_argument("--output", help="write the combined report to this UTF-8 path outside the project")
     return parser
 
 
@@ -261,6 +296,162 @@ def _parse_values(raw: str, flag: str = "--values") -> list[Decimal]:
     if not all(chunk.strip() for chunk in chunks):
         raise InputError(f"{flag} must be a comma-separated list of decimals")
     return require_decimal_values([chunk.strip() for chunk in chunks], flag)
+
+
+def _variants_from_cli(pairs: list[str] | None) -> dict[str, Path]:
+    variants: dict[str, Path] = {}
+    for pair in pairs or []:
+        name, separator, value = pair.partition("=")
+        if not separator or not name.strip() or not value.strip():
+            raise InputError("--variant must be NAME=PATH")
+        if name.strip() in variants:
+            raise InputError(f"--variant name repeated: {name.strip()}")
+        variants[name.strip()] = Path(value.strip())
+    return variants
+
+
+def _project_experiment_args(raws: list[str] | None) -> tuple:
+    if raws is None:
+        return ()
+    experiments = [parse_experiment_argument(raw) for raw in raws]
+    names = [experiment.name for experiment in experiments]
+    if len(names) != len(set(names)):
+        raise InputError("experiment names must be unique")
+    return tuple(experiments)
+
+
+def _project_inputs_for_protection(loaded) -> tuple[list[Path], list[Path]]:
+    inputs: list[Path] = []
+    scanned: list[Path] = [loaded.path.parent]
+    manifest = loaded.manifest
+    if manifest.scenario.folder:
+        scanned.append(loaded.path.parent / manifest.scenario.path)
+    else:
+        inputs.append(loaded.path.parent / manifest.scenario.path)
+    for ref in (manifest.routes, manifest.baseline):
+        if ref is not None:
+            target = loaded.path.parent / ref.path
+            (scanned if ref.folder else inputs).append(target)
+    for ref in manifest.variants.values():
+        target = loaded.path.parent / ref.path
+        (scanned if ref.folder else inputs).append(target)
+    return inputs, scanned
+
+
+def _project_run(args: argparse.Namespace) -> int:
+    loaded = load_project(_require_cli_text(args.project, "project"))
+    if loaded.problems:
+        for problem in loaded.problems:
+            _write_error(problem)
+        return 2
+    scenario = load_scenario(loaded.resolved["scenario"])
+    chosen = args.experiment or [experiment.name for experiment in loaded.manifest.experiments]
+    selected = [experiment for experiment in loaded.manifest.experiments if experiment.name in chosen]
+    if len(selected) != len(chosen):
+        missing = sorted(set(chosen) - {experiment.name for experiment in selected})
+        raise InputError(f"no saved experiment named {', '.join(missing)}")
+    items: list[dict[str, object]] = []
+    for index, experiment in enumerate(selected, start=1):
+        try:
+            report = execute_experiment(experiment, scenario)
+            status = "pass"
+        except (InputError, OSError, ValueError, DecimalException) as exc:
+            report = {"status": "unresolved", "error": _failure_text(exc)}
+            status = "unresolved"
+        items.append({"id": f"experiment-{index:04d}", "name": experiment.name, "analysis": experiment.analysis,
+                      "status": status, "report": report})
+    combined = {"report_version": "corridor-lab.project-run/v1", "project_id": loaded.manifest.project_id,
+                "fictional": True,
+                "status": "unresolved" if any(item["status"] == "unresolved" for item in items) else "pass",
+                "items": items}
+    output_format = resolve_report_format(args.format, args.output, ("json", "markdown"))
+    if args.output is None:
+        text = render_report(combined, output_format) if output_format == "markdown" else json.dumps(combined, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+        sys.stdout.write(text)
+        return 0 if combined["status"] == "pass" else 2
+    target = Path(_require_cli_text(args.output, "--output"))
+    inputs, scanned = _project_inputs_for_protection(loaded)
+    protect_report_output(target, inputs, scanned)
+    text = render_report(combined, output_format) if output_format == "markdown" else json.dumps(combined, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    atomic_write_text(target, text)
+    return 0 if combined["status"] == "pass" else 2
+
+
+def _project(args: argparse.Namespace) -> int:
+    command = args.project_command
+    if command == "create":
+        directory = Path(_require_cli_text(args.directory, "--directory"))
+        if not directory.is_dir():
+            raise InputError(f"--directory must be an existing project directory: {directory}")
+        scenario_path = Path(_require_cli_text(args.scenario, "--scenario"))
+        routes_path = Path(args.routes) if args.routes else None
+        baseline_path = Path(args.baseline) if args.baseline else None
+        variants = _variants_from_cli(args.variant)
+        placed = prepare_project_directory(directory, scenario_path, routes_path, baseline_path, variants)
+        experiments = _project_experiment_args(args.experiment)
+        manifest = build_manifest(
+            directory,
+            project_id=_require_cli_text(args.project_id, "--project-id"),
+            description=args.description or "",
+            scenario=placed["scenario"],
+            routes=placed.get("routes"),
+            baseline=placed.get("baseline"),
+            variants={name: placed[f"variant {name}"] for name in variants},
+            experiments=experiments,
+        )
+        write_project(directory, manifest)
+        sys.stdout.write(f"project created: {directory / 'corridor-lab.project.json'}\n")
+        return 0
+    if command == "validate":
+        loaded = load_project(_require_cli_text(args.project, "project"))
+        if loaded.problems:
+            for problem in loaded.problems:
+                _write_error(problem)
+            return 2
+        sys.stdout.write("valid\n")
+        return 0
+    if command == "open":
+        loaded = load_project(_require_cli_text(args.project, "project"))
+        sys.stdout.write(f"project: {loaded.manifest.project_id}\n")
+        sys.stdout.write(f"scenario: {loaded.manifest.scenario.path}\n")
+        if loaded.manifest.routes is not None:
+            sys.stdout.write(f"routes: {loaded.manifest.routes.path}\n")
+        if loaded.manifest.baseline is not None:
+            sys.stdout.write(f"baseline: {loaded.manifest.baseline.path}\n")
+        for name, ref in loaded.manifest.variants.items():
+            sys.stdout.write(f"variant {name}: {ref.path}\n")
+        for experiment in loaded.manifest.experiments:
+            sys.stdout.write(f"experiment {experiment.name}: {experiment.analysis}\n")
+        if loaded.problems:
+            for problem in loaded.problems:
+                _write_error(problem)
+            return 2
+        return 0
+    if command == "add-experiment":
+        loaded = load_project(_require_cli_text(args.project, "project"))
+        if loaded.problems:
+            for problem in loaded.problems:
+                _write_error(problem)
+            return 2
+        additions = _project_experiment_args(args.experiment)
+        existing = {experiment.name for experiment in loaded.manifest.experiments}
+        if any(experiment.name in existing for experiment in additions):
+            raise InputError("add-experiment must not replace an existing saved experiment name")
+        manifest = ProjectManifest(
+            project_id=loaded.manifest.project_id,
+            description=loaded.manifest.description,
+            scenario=loaded.manifest.scenario,
+            routes=loaded.manifest.routes,
+            baseline=loaded.manifest.baseline,
+            variants=loaded.manifest.variants,
+            experiments=loaded.manifest.experiments + tuple(additions),
+        )
+        write_project(loaded.path, manifest)
+        sys.stdout.write(f"experiments saved: {', '.join(experiment.name for experiment in additions)}\n")
+        return 0
+    if command == "run":
+        return _project_run(args)
+    raise InputError(f"unsupported project command: {command}")
 
 
 def _protect_report_inputs(args: argparse.Namespace) -> None:
@@ -404,6 +595,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return 0
             _emit_unresolved_batch_errors(batch_report)
             return 2
+        if args.command == "project":
+            return _project(args)
         scenario = load_scenario(_require_cli_text(args.scenario, "scenario"))
         report: dict[str, object]
         if args.command == "cost-ledger":

@@ -50,9 +50,9 @@ def _write_smoke_status() -> None:
 
 def _load_tk_modules():
     import tkinter as tk
-    from tkinter import filedialog, messagebox, scrolledtext, ttk
+    from tkinter import filedialog, messagebox, scrolledtext, simpledialog, ttk
 
-    return tk, filedialog, messagebox, scrolledtext, ttk
+    return tk, filedialog, messagebox, scrolledtext, simpledialog, ttk
 
 
 def run_smoke_test() -> int:
@@ -108,14 +108,16 @@ def run_smoke_test() -> int:
 class CorridorLabApp:
     """Tabbed desktop workbench around the headless controller."""
 
-    def __init__(self, root: object, tk_module: object, ttk_module: object, filedialog: object, messagebox: object, scrolledtext_module: object) -> None:
+    def __init__(self, root: object, tk_module: object, ttk_module: object, filedialog: object, messagebox: object, scrolledtext_module: object, simpledialog_module: object) -> None:
         self.root = root
         self.tk = tk_module
         self.ttk = ttk_module
         self.filedialog = filedialog
         self.messagebox = messagebox
         self.scrolledtext = scrolledtext_module
+        self.simpledialog = simpledialog_module
         self.controller = CorridorGuiController()
+        self.experiments_var = tk_module.StringVar(value="No saved experiments")
         self.format_var = tk_module.StringVar(value="markdown")
         self.scenario_var = tk_module.StringVar(value=self.controller.scenario_source)
         self.routes_var = tk_module.StringVar(value=self.controller.routes_source)
@@ -130,6 +132,7 @@ class CorridorLabApp:
         self.deadline_target_var = tk_module.StringVar(value="0.95")
         self.quantiles_var = tk_module.StringVar(value="0.5,0.95,1")
         self.baseline_var = tk_module.StringVar()
+        self.selected_experiment_var = tk_module.StringVar()
         self.send_amount_var = tk_module.StringVar()
         self.deadline_var = tk_module.StringVar()
         self.volume_var = tk_module.StringVar()
@@ -198,6 +201,16 @@ class CorridorLabApp:
         self.ttk.Entry(fields, textvariable=self.volume_var, width=12).grid(row=0, column=5, padx=(4, 12))
         self.ttk.Button(fields, text="Refresh Fields", command=self._refresh_transaction_fields).grid(row=0, column=6, padx=(0, 6))
         self.ttk.Button(fields, text="Apply Edits", command=self._apply_transaction_edits).grid(row=0, column=7)
+
+        projects = self.ttk.LabelFrame(tab, text="Saved local projects", padding=8)
+        projects.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(14, 0))
+        self.ttk.Label(
+            projects,
+            text="A project bundles the scenario file, route selection, baseline, and saved experiments into one portable directory. Opening a project reports missing or modified inputs; reports stay separate from project settings.",
+            wraplength=760,
+        ).grid(row=0, column=0, columnspan=2, sticky="w")
+        self.ttk.Button(projects, text="Open Project...", command=self._open_project).grid(row=1, column=0, sticky="w", pady=(6, 0))
+        self.ttk.Button(projects, text="Save Project As...", command=self._save_project).grid(row=1, column=1, sticky="w", padx=6, pady=(6, 0))
 
     def _build_compare_tab(self, notebook: object) -> None:
         tab = self.ttk.Frame(notebook, padding=10)
@@ -297,6 +310,16 @@ class CorridorLabApp:
         self.ttk.Entry(diff_row, textvariable=self.baseline_var).grid(row=0, column=0, sticky="ew", padx=(0, 6))
         self.ttk.Button(diff_row, text="Browse...", command=self._choose_baseline).grid(row=0, column=1)
         self.ttk.Button(diff_row, text="Run Diff", command=self._scenario_diff).grid(row=0, column=2, padx=(6, 0))
+
+        saved = self.ttk.LabelFrame(tab, text="Saved experiments (rerunnable configurations from a project)", padding=8)
+        saved.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+        saved_row = self.ttk.Frame(saved)
+        saved_row.grid(row=0, column=0, sticky="ew", pady=(2, 0))
+        self.experiment_choice = self.ttk.Combobox(saved_row, textvariable=self.selected_experiment_var, state="readonly", width=28)
+        self.experiment_choice.grid(row=0, column=0, sticky="w")
+        self.ttk.Button(saved_row, text="Run Saved", command=self._run_saved_experiment).grid(row=0, column=1, padx=(6, 0))
+        self.ttk.Button(saved_row, text="Save Current Settings...", command=self._save_experiment_dialog).grid(row=0, column=2, padx=(6, 0))
+        self.ttk.Label(saved, textvariable=self.experiments_var, wraplength=760, anchor="w").grid(row=1, column=0, sticky="ew", pady=(6, 0))
 
     def _build_report_tab(self, notebook: object) -> None:
         tab = self.ttk.Frame(notebook, padding=10)
@@ -588,6 +611,154 @@ class CorridorLabApp:
         if path:
             self.baseline_var.set(path)
 
+    def _open_project(self) -> None:
+        path = self.filedialog.askopenfilename(
+            parent=self.root,
+            title="Open corridor-lab project manifest",
+            filetypes=(("Corridor Lab project", "corridor-lab.project.json"), ("JSON files", "*.json"), ("All files", "*.*")),
+        )
+        if not path:
+            return
+        result = self.controller.open_project(path)
+        if result.error is not None:
+            self._show_error(result.error)
+            return
+        self._refresh_transaction_fields()
+        self.scenario_var.set(self.controller.scenario_source)
+        self.routes_var.set(self.controller.routes_source)
+        if self.controller.baseline_file is not None:
+            self.baseline_var.set(str(self.controller.baseline_file))
+        self._refresh_saved_experiments()
+        experiments = result.report["experiments"]
+        self.status_var.set(
+            f"Project {result.report['project_id']} opened with {len(experiments)} saved experiment(s). "
+            "The previous report was cleared; project inputs were validated as present and unchanged."
+        )
+
+    def _save_project(self) -> None:
+        if self.controller.scenario_file is None:
+            self._show_error("Load a scenario from a file (not only the in-memory demo) before saving a project.")
+            return
+        destination = self.filedialog.askdirectory(parent=self.root, title="Choose an existing empty project directory")
+        if not destination:
+            return
+        project_id = self.simpledialog.askstring(
+            "Save project", "Project identifier (letters, numbers, dot, underscore, colon, slash, hyphen):", parent=self.root
+        )
+        if not project_id or not project_id.strip():
+            return
+        description = self.simpledialog.askstring("Save project", "Optional description:", parent=self.root) or ""
+        result = self.controller.save_project(destination, project_id.strip(), description.strip())
+        if result.error is not None:
+            self._show_error(result.error)
+            return
+        self.status_var.set(f"Project saved to {self.controller.project_source}. Settings and inputs were copied explicitly.")
+
+    def _refresh_saved_experiments(self) -> None:
+        names = self.controller.saved_experiment_names()
+        self.experiment_choice.configure(values=names)
+        self.experiments_var.set(
+            ", ".join(names) if names else "No saved experiments yet. Open a project or save current settings."
+        )
+        if names and self.selected_experiment_var.get() not in names:
+            self.selected_experiment_var.set(names[0])
+
+    def _run_saved_experiment(self) -> None:
+        name = self.selected_experiment_var.get()
+        if not name:
+            self._show_error("Choose a saved experiment to run, or save current settings first.")
+            return
+        self._complete(self.controller.run_saved_experiment(name), f"Saved experiment {name} complete using the shared library executor.")
+
+    def _save_experiment_dialog(self) -> None:
+        if self.controller.scenario is None:
+            self._show_error("Load a fictional scenario before saving an experiment configuration.")
+            return
+        dialog = self.tk.Toplevel(self.root)
+        dialog.title("Save experiment configuration")
+        dialog.minsize(560, 260)
+        dialog.columnconfigure(1, weight=1)
+        analysis_var = self.tk.StringVar(value="transaction-sweep")
+        name_var = self.tk.StringVar()
+        field_a_var = self.tk.StringVar()
+        field_b_var = self.tk.StringVar()
+        field_c_var = self.tk.StringVar()
+        field_d_var = self.tk.StringVar()
+        labels = {
+            "sensitivity": ("Parameter", "Values"),
+            "transaction-sweep": ("Parameter", "Values"),
+            "transaction-grid": ("Parameter A", "Values A", "Parameter B", "Values B"),
+            "stress-grid": ("Parameter A", "Values A", "Parameter B", "Values B"),
+            "deadline-target": ("Probability", ""),
+            "resolution-quantiles": ("", "Probabilities"),
+        }
+        row = 0
+        name_label = self.ttk.Label(dialog, text="Name")
+        name_label.grid(row=row, column=0, sticky="w")
+        self.ttk.Entry(dialog, textvariable=name_var, width=30).grid(row=row, column=1, sticky="w", padx=6)
+        row += 1
+        self.ttk.Label(dialog, text="Analysis").grid(row=row, column=0, sticky="w")
+        analysis_box = self.ttk.Combobox(dialog, textvariable=analysis_var, values=tuple(labels), state="readonly", width=28)
+        analysis_box.grid(row=row, column=1, sticky="w", padx=6)
+        row += 1
+        label_a = self.ttk.Label(dialog, text="Parameter")
+        label_a.grid(row=row, column=0, sticky="w")
+        entry_a = self.ttk.Entry(dialog, textvariable=field_a_var, width=28)
+        entry_a.grid(row=row, column=1, sticky="w", padx=6)
+        row += 1
+        label_b = self.ttk.Label(dialog, text="Values")
+        label_b.grid(row=row, column=0, sticky="w")
+        entry_b = self.ttk.Entry(dialog, textvariable=field_b_var, width=28)
+        entry_b.grid(row=row, column=1, sticky="w", padx=6)
+        row += 1
+        label_c = self.ttk.Label(dialog, text="Parameter B")
+        label_c.grid(row=row, column=0, sticky="w")
+        entry_c = self.ttk.Entry(dialog, textvariable=field_c_var, width=28)
+        entry_c.grid(row=row, column=1, sticky="w", padx=6)
+        row += 1
+        label_d = self.ttk.Label(dialog, text="Values B")
+        label_d.grid(row=row, column=0, sticky="w")
+        entry_d = self.ttk.Entry(dialog, textvariable=field_d_var, width=28)
+        entry_d.grid(row=row, column=1, sticky="w", padx=6)
+        status_var = self.tk.StringVar(value="Save Current Settings stages the experiment in memory; Save Project writes it.")
+
+        def refresh_labels(*_args: object) -> None:
+            layout = labels[analysis_var.get()]
+            label_a.configure(text=layout[0])
+            label_b.configure(text=layout[1] if len(layout) > 1 else "")
+            label_c.configure(text=layout[2] if len(layout) > 2 else "Parameter B")
+            label_d.configure(text=layout[3] if len(layout) > 3 else "Values B")
+
+        analysis_box.bind("<<ComboboxSelected>>", refresh_labels)
+        self.ttk.Label(dialog, textvariable=status_var, wraplength=520).grid(row=row, column=0, columnspan=2, sticky="w", pady=(8, 0))
+
+        def save() -> None:
+            analysis = analysis_var.get()
+            layout = labels[analysis]
+            fields: dict[str, str] = {}
+            if analysis in ("transaction-grid", "stress-grid"):
+                fields = {"parameter_a": field_a_var.get(), "values_a": field_b_var.get(),
+                          "parameter_b": field_c_var.get(), "values_b": field_d_var.get()}
+            elif analysis == "deadline-target":
+                fields = {"probability": field_a_var.get()}
+            elif analysis == "resolution-quantiles":
+                fields = {"probabilities": field_b_var.get()}
+            else:
+                fields = {"parameter": field_a_var.get(), "values": field_b_var.get()}
+            result = self.controller.add_saved_experiment(name_var.get(), analysis, fields)
+            if result.error is not None:
+                status_var.set(f"Not saved: {result.error}")
+                self._show_error(result.error)
+                return
+            self._refresh_saved_experiments()
+            dialog.destroy()
+            self.status_var.set(f"Experiment {name_var.get().strip()} staged in memory. Save Project As... persists it.")
+
+        buttons = self.ttk.Frame(dialog)
+        buttons.grid(row=row + 1, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        self.ttk.Button(buttons, text="Save Current Settings", command=save).grid(row=0, column=0)
+        self.ttk.Button(buttons, text="Cancel", command=dialog.destroy).grid(row=0, column=1, padx=6)
+
     def _scenario_diff(self) -> None:
         if not self.baseline_var.get().strip():
             self._show_error("Select a baseline scenario file before diffing.")
@@ -621,7 +792,7 @@ class CorridorLabApp:
 def launch_gui() -> int:
     """Open the Tk desktop interface only when a graphical session is requested."""
     try:
-        tk, filedialog, messagebox, scrolledtext, ttk = _load_tk_modules()
+        tk, filedialog, messagebox, scrolledtext, simpledialog, ttk = _load_tk_modules()
     except ImportError:
         return _startup_failure()
 
@@ -629,7 +800,7 @@ def launch_gui() -> int:
         root = tk.Tk()
     except tk.TclError:
         return _startup_failure()
-    CorridorLabApp(root, tk, ttk, filedialog, messagebox, scrolledtext)
+    CorridorLabApp(root, tk, ttk, filedialog, messagebox, scrolledtext, simpledialog)
     root.mainloop()
     return 0
 

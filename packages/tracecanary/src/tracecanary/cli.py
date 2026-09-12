@@ -28,6 +28,7 @@ from tracecanary.inspection import (
 )
 from tracecanary.otlp import OtlpError, validate_trace
 from tracecanary.output import protect_inputs, write_report
+from tracecanary.project import build_manifest, load_project, write_project
 from tracecanary.report import (
     BatchItem,
     BatchReport,
@@ -161,6 +162,28 @@ def build_parser() -> argparse.ArgumentParser:
     fixture_commands = fixture.add_subparsers(dest="fixture_command", required=True, parser_class=_ArgumentParser)
     create = fixture_commands.add_parser("create", help="write the synthetic fixture bundle")
     create.add_argument("--output", required=True, type=_cli_path, help="empty directory for the synthetic fixture bundle")
+
+    project = commands.add_parser("project", help="manage a saved, portable local project")
+    project_commands = project.add_subparsers(dest="project_command", required=True, parser_class=_ArgumentParser)
+    project_create = project_commands.add_parser("create", help="create a project manifest from explicit synthetic inputs")
+    project_create.add_argument("--directory", required=True, type=_cli_path, help="project directory that will contain the manifest")
+    project_create.add_argument("--project-id", required=True, help="stable project identifier")
+    project_create.add_argument("--description")
+    project_create.add_argument("--contract", required=True, type=_cli_path, help="contract JSON inside the project directory")
+    project_create.add_argument("--input", type=_cli_path, help="synthetic trace JSON inside the project directory")
+    project_create.add_argument("--baseline", type=_cli_path)
+    project_create.add_argument("--candidate", type=_cli_path)
+    project_create.add_argument("--batch-dir", type=_cli_path, help="directory of synthetic exports")
+    project_create.add_argument("--batch-recursive", action="store_true")
+    project_create.add_argument("--batch-include-paths", action="store_true")
+    project_create.add_argument("--batch-minimum-ratio", help="per-file coverage gate for the saved batch configuration")
+    project_create.add_argument("--minimum-ratio", help="saved coverage threshold")
+    project_create.add_argument("--population-scope", choices=("resource", "scope", "span", "event", "link"))
+    project_create.add_argument("--population-minimum", type=int)
+    project_validate = project_commands.add_parser("validate", help="validate a project manifest and inputs")
+    project_validate.add_argument("project", type=_cli_path)
+    project_open = project_commands.add_parser("open", help="resolve a project and report missing or changed inputs")
+    project_open.add_argument("project", type=_cli_path)
     return parser
 
 
@@ -171,6 +194,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             write_bundle(args.output)
             print(f"Synthetic fixture bundle created at {args.output}")
             return EXIT_PASS
+        if args.command == "project":
+            return _project(args)
         protect_inputs(args.output, [getattr(args, name) for name in ("contract", "input", "baseline", "candidate") if getattr(args, name, None) is not None], getattr(args, "input_dir", None))
         contract = load_contract(args.contract)
         if args.command == "validate":
@@ -223,6 +248,107 @@ def main(argv: Sequence[str] | None = None) -> int:
     except OSError:
         print("TraceCanary: UNRESOLVED: input or output could not be accessed", file=sys.stderr)
         return EXIT_UNRESOLVED
+
+
+def _project(args: Any) -> int:
+    command = args.project_command
+    try:
+        if command == "create":
+            directory = args.directory
+            if not directory.is_dir():
+                raise InputError(f"--directory must be an existing project directory: {directory}")
+            placed = _project_prepare(
+                directory,
+                contract=args.contract,
+                input=args.input,
+                baseline=args.baseline,
+                candidate=args.candidate,
+                batch=args.batch_dir,
+            )
+            manifest = build_manifest(
+                directory,
+                project_id=args.project_id,
+                description=args.description or "",
+                contract=placed["contract"],
+                input=placed.get("input"),
+                baseline=placed.get("baseline"),
+                candidate=placed.get("candidate"),
+                batch=placed.get("batch directory"),
+                batch_recursive=bool(args.batch_recursive),
+                batch_include_paths=bool(args.batch_include_paths),
+                batch_minimum_ratio=args.batch_minimum_ratio,
+                minimum_ratio=args.minimum_ratio,
+                population_scope=args.population_scope,
+                population_minimum=args.population_minimum,
+            )
+            write_project(directory, manifest)
+            print(f"Project created: {directory / 'tracecanary.project.json'}")
+            return EXIT_PASS
+        if command == "validate":
+            loaded = load_project(args.project)
+            if not loaded.ok:
+                for problem in loaded.problems:
+                    print(f"TraceCanary: UNRESOLVED: {problem}", file=sys.stderr)
+                return EXIT_UNRESOLVED
+            print("valid")
+            return EXIT_PASS
+        if command == "open":
+            loaded = load_project(args.project)
+            print(f"project: {loaded.manifest.project_id}")
+            print(f"contract: {loaded.manifest.contract.path}")
+            if loaded.manifest.input is not None:
+                print(f"input: {loaded.manifest.input.path}")
+            if loaded.manifest.baseline is not None:
+                print(f"baseline: {loaded.manifest.baseline.path}")
+            if loaded.manifest.candidate is not None:
+                print(f"candidate: {loaded.manifest.candidate.path}")
+            if loaded.manifest.batch is not None:
+                print(f"batch directory: {loaded.manifest.batch.path} (recursive={loaded.manifest.batch.recursive}, include_paths={loaded.manifest.batch.include_paths}, minimum_ratio={loaded.manifest.batch.minimum_ratio})")
+            if loaded.manifest.coverage.minimum_ratio is not None:
+                print(f"coverage threshold: {loaded.manifest.coverage.minimum_ratio}")
+            if loaded.manifest.coverage.population_scope is not None:
+                print(f"population gate: {loaded.manifest.coverage.population_scope} >= {loaded.manifest.coverage.population_minimum}")
+            for problem in loaded.problems:
+                print(f"TraceCanary: UNRESOLVED: {problem}", file=sys.stderr)
+            return EXIT_PASS if loaded.ok else EXIT_UNRESOLVED
+        raise InputError(f"unsupported project command: {command}")
+    except (InputError, ValueError) as exc:
+        print(f"TraceCanary: UNRESOLVED: {exc}", file=sys.stderr)
+        return EXIT_UNRESOLVED
+    except OSError:
+        print("TraceCanary: UNRESOLVED: input or output could not be accessed", file=sys.stderr)
+        return EXIT_UNRESOLVED
+
+
+def _project_prepare(directory: Path, *, contract: Path, input: Path | None, baseline: Path | None, candidate: Path | None, batch: Path | None) -> dict[str, Path]:
+    """Make the chosen synthetic inputs self-contained inside the project directory."""
+    from tracecanary.project import _copy_project_input
+
+    project_dir = directory.resolve()
+    if not project_dir.is_dir():
+        raise InputError(f"--directory must be an existing project directory: {directory}")
+    placed: dict[str, Path] = {}
+    copied_sources: dict[Path, Path] = {}
+
+    def place(source: Path | None, *, folder: bool = False) -> Path | None:
+        if source is None:
+            return None
+        resolved_source = source.resolve()
+        if resolved_source in copied_sources:
+            return copied_sources[resolved_source]
+        target = _copy_project_input(project_dir, source, folder=folder)
+        copied_sources[resolved_source] = target
+        return target
+
+    placed["contract"] = place(contract)
+    for label, source in (("input", input), ("baseline", baseline), ("candidate", candidate)):
+        target = place(source)
+        if target is not None:
+            placed[label] = target
+    batch_target = place(batch, folder=True)
+    if batch_target is not None:
+        placed["batch directory"] = batch_target
+    return placed
 
 
 def _load_trace(path: Path, contract: Contract) -> dict[str, Any]:

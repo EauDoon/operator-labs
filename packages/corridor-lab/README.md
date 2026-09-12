@@ -227,6 +227,12 @@ shortfall. It requires an explicit objective and never infers missing guardrails
 
 Stress grids now evaluate declared objective guardrails at every cell. JSON and CSV expose pass/failure details; Markdown summarizes passing cells per route. These counts apply only to sampled assumptions and are not probabilities or implicit rankings. Scenarios without objectives retain unranked metric-only grids.
 
+## Saved local projects
+
+`corridorlab project create --directory investigation --project-id fictional-investigation --scenario scenario.json [--routes ROUTES] [--baseline BASELINE] [--variant NAME=PATH ...] [--experiment "NAME:ANALYSIS:KEY=VALUE;..."]` saves a self-contained investigation: the manifest `corridor-lab.project.json` plus explicitly copied inputs. Manifest settings are versioned (`corridor-lab.project/v1`), strictly validated, and reference inputs by relative paths with SHA-256 fingerprints, so you can close the application, move the whole directory, and reopen it: `project validate` and `project open` explain missing or modified inputs instead of accepting them silently. Results are never stored in the manifest; reports stay separate from project settings.
+
+`corridorlab project run [DIR] [--experiment NAME ...] [--format json|markdown] [--output FILE]` reruns saved experiments (sensitivity, transaction sweep/grid, stress grid, deadline target, resolution quantiles) through the same library functions as the standalone commands. Reports cannot replace project inputs or land inside the project directory. `project add-experiment` extends an existing manifest explicitly. The GUI offers the same actions under **Open Project...** and **Save Project As...**, with a saved-experiment section on the Investigate tab.
+
 ## Start outside a checkout
 
 After installation, `corridorlab init --output fictional.json` creates a complete, deterministic synthetic scenario with two embedded routes. It refuses an existing file and requires an existing parent directory. Then run `corridorlab evaluate fictional.json`, `corridorlab transaction-sweep fictional.json --parameter volume_per_period --values 10,100,1000`, or open the file in the GUI. This starter does not fetch data or require repository fixtures.

@@ -103,12 +103,12 @@ def launch_window() -> int:
     """Import Tkinter lazily and start the interactive desktop window."""
     try:
         import tkinter as tk
-        from tkinter import filedialog, messagebox, ttk
+        from tkinter import filedialog, messagebox, simpledialog, ttk
     except ImportError:
         _startup_error("TraceCanary GUI is unavailable because Tkinter is not installed.")
         return EXIT_UNRESOLVED
     try:
-        window = TraceCanaryWindow(tk, ttk, filedialog, messagebox)
+        window = TraceCanaryWindow(tk, ttk, filedialog, messagebox, simpledialog)
     except tk.TclError:
         _startup_error("TraceCanary GUI could not open a window in this environment.")
         return EXIT_UNRESOLVED
@@ -160,11 +160,12 @@ def save_gui_report(target: Path, result: GuiResult, view: str) -> None:
 class TraceCanaryWindow:
     """Guided local UI that delegates all analysis to TraceCanaryController."""
 
-    def __init__(self, tk: object, ttk: object, filedialog: object, messagebox: object) -> None:
+    def __init__(self, tk: object, ttk: object, filedialog: object, messagebox: object, simpledialog: object | None = None) -> None:
         self._tk = tk
         self._ttk = ttk
         self._filedialog = filedialog
         self._messagebox = messagebox
+        self._simpledialog = simpledialog
         self._controller = TraceCanaryController()
         self._result: GuiResult | None = None
         self._view = "human"
@@ -250,6 +251,16 @@ class TraceCanaryWindow:
         self._add_selector(tab, 3, "Baseline (before)", self._baseline)
         self._add_selector(tab, 4, "Candidate (after)", self._candidate)
         self._add_selector(tab, 5, "Batch directory", self._batch_dir, directory=True)
+
+        projects = self._ttk.LabelFrame(tab, text="Saved local projects", padding=8)
+        projects.grid(row=7, column=0, columnspan=3, sticky="ew", pady=(12, 0))
+        self._ttk.Label(
+            projects,
+            text="A project bundles the contract, synthetic input selections, coverage thresholds, and batch configuration into one portable directory. Opening a project reports missing or modified inputs; saved settings are separate from result evidence.",
+            wraplength=760,
+        ).grid(row=0, column=0, columnspan=2, sticky="w")
+        self._ttk.Button(projects, text="Open Project...", command=self._open_project).grid(row=1, column=0, sticky="w", pady=(6, 0))
+        self._ttk.Button(projects, text="Save Project As...", command=self._save_project).grid(row=1, column=1, sticky="w", padx=6, pady=(6, 0))
 
         starters = self._ttk.LabelFrame(tab, text="Reproducible synthetic starters", padding=8)
         starters.grid(row=6, column=0, columnspan=3, sticky="ew", pady=(12, 0))
@@ -397,6 +408,62 @@ class TraceCanaryWindow:
         selected = self._filedialog.askdirectory(title="Select a directory of OTLP trace JSON exports")
         if selected:
             variable.set(selected)
+
+    def _open_project(self) -> None:
+        selected = self._filedialog.askopenfilename(
+            title="Open tracecanary project manifest",
+            filetypes=[("TraceCanary project", "tracecanary.project.json"), ("JSON files", "*.json"), ("All files", "*")],
+        )
+        if not selected:
+            return
+        result = self._controller.open_project(selected)
+        if result.project_paths is not None:
+            paths = result.project_paths
+            self._contract.set(str(paths.contract))
+            self._input.set(str(paths.input) if paths.input else "")
+            self._baseline.set(str(paths.baseline) if paths.baseline else "")
+            self._candidate.set(str(paths.candidate) if paths.candidate else "")
+            self._batch_dir.set(str(paths.batch_dir) if paths.batch_dir else "")
+            minimum_ratio, scope, minimum = paths.coverage
+            self._minimum_ratio.set(minimum_ratio or "0.95")
+            self._batch_ratio.set(minimum_ratio or "0.95")
+            self._population_scope.set(scope or "span")
+            self._population_minimum.set(str(minimum) if minimum is not None else "1")
+        self._apply(result)
+        if result.project_paths is not None:
+            self._status.set("Status: project opened. Saved settings are applied; run an action before results apply to them.")
+
+    def _save_project(self) -> None:
+        contract = self._contract.get().strip()
+        if not contract:
+            self._messagebox.showerror("TraceCanary", "Select a contract JSON file before saving a project.")
+            return
+        destination = self._filedialog.askdirectory(title="Choose an existing project directory", mustexist=True)
+        if not destination:
+            return
+        project_id = self._simpledialog.askstring("Save project", "Project identifier (letters, numbers, dot, underscore, colon, slash, hyphen):", parent=self._root)
+        if not project_id or not project_id.strip():
+            return
+        description = self._simpledialog.askstring("Save project", "Optional description:", parent=self._root) or ""
+        result = self._controller.save_project(
+            destination,
+            project_id=project_id.strip(),
+            description=description.strip(),
+            contract_path=contract,
+            input_path=self._input.get(),
+            baseline_path=self._baseline.get(),
+            candidate_path=self._candidate.get(),
+            batch_dir=self._batch_dir.get(),
+            batch_recursive=bool(self._recursive.get()),
+            batch_include_paths=bool(self._include_paths.get()),
+            batch_minimum_ratio=self._batch_ratio.get() or None,
+            minimum_ratio=self._minimum_ratio.get() or None,
+            population_scope=self._population_scope.get() if self._population_minimum.get().strip() else None,
+            population_minimum=int(self._population_minimum.get()) if self._population_minimum.get().strip().isdigit() else None,
+        )
+        self._apply(result)
+        if result.status == "pass":
+            self._status.set(f"Status: project saved. Settings and synthetic inputs were copied explicitly; reports stay separate.")
 
     def _validate(self) -> None:
         self._apply(self._controller.validate(self._contract.get()))

@@ -14,6 +14,7 @@ from tracecanary.comparison import diff_traces
 from tracecanary.contract import Contract, ContractError, load_contract, parse_contract
 from tracecanary.coverage import coverage_report
 from tracecanary.fixture import bundle, write_bundle
+from tracecanary.project import _copy_project_input, build_manifest, load_project, write_project
 from tracecanary.inspection import (
     control_check,
     coverage_diff,
@@ -63,6 +64,7 @@ class GuiResult:
     inputs: tuple[Path, ...] = ()
     input_dir: Path | None = None
     mode: str | None = None
+    project_paths: ProjectPaths | None = None
 
 
 @dataclass(frozen=True)
@@ -76,6 +78,18 @@ class StarterPaths:
     sparse: Path
     invalid: Path
     batch_dir: Path
+
+
+@dataclass(frozen=True)
+class ProjectPaths:
+    """Resolved project selections the GUI may place into its selectors."""
+
+    contract: Path
+    input: Path | None
+    baseline: Path | None
+    candidate: Path | None
+    batch_dir: Path | None
+    coverage: tuple[str, str, int | None]
 
 
 class TraceCanaryController:
@@ -302,6 +316,130 @@ class TraceCanaryController:
         contract = load_contract(contract_path)
         baseline = self._load_trace(Path(baseline_path), contract) if baseline_path is not None and str(baseline_path).strip() else None
         return run_batch(contract, input_dir, recursive, include_paths, baseline)
+
+    def open_project(self, path: str | Path) -> GuiResult:
+        """Load a saved project: report selection statuses without implying old results apply."""
+        guidance = self._require("project-open", (path, GUI006, "Select a tracecanary project manifest or directory before opening."))
+        if guidance is not None:
+            return guidance
+        try:
+            loaded = load_project(Path(path))
+        except (InputError, OSError, ValueError) as exc:
+            return self._guidance("project-open", GUI006, f"The selected project could not be opened. ({exc})")
+        if not loaded.ok:
+            problems = "; ".join(loaded.problems)
+            return self._guidance("project-open", GUI006, f"The project references missing or modified inputs. ({problems})")
+        manifest = loaded.manifest
+        lines = [
+            f"TraceCanary project {manifest.project_id} opened.",
+            f"Contract: {manifest.contract.path}",
+        ]
+        if manifest.input is not None:
+            lines.append(f"Input: {manifest.input.path}")
+        if manifest.baseline is not None:
+            lines.append(f"Baseline: {manifest.baseline.path}")
+        if manifest.candidate is not None:
+            lines.append(f"Candidate: {manifest.candidate.path}")
+        if manifest.batch is not None:
+            options = f"recursive={manifest.batch.recursive}, include_paths={manifest.batch.include_paths}"
+            if manifest.batch.minimum_ratio is not None:
+                options += f", minimum_ratio={manifest.batch.minimum_ratio}"
+            lines.append(f"Batch directory: {manifest.batch.path} ({options})")
+        if manifest.coverage.minimum_ratio is not None:
+            lines.append(f"Saved coverage threshold: {manifest.coverage.minimum_ratio}")
+        if manifest.coverage.population_scope is not None:
+            lines.append(f"Saved population gate: {manifest.coverage.population_scope} >= {manifest.coverage.population_minimum}")
+        lines.append("Saved settings are applied to the selectors; previous results do not describe these inputs until you run them.")
+        human = "\n".join(lines) + "\n"
+        project_paths = ProjectPaths(
+            contract=loaded.resolved["contract"],
+            input=loaded.resolved.get("input"),
+            baseline=loaded.resolved.get("baseline"),
+            candidate=loaded.resolved.get("candidate"),
+            batch_dir=loaded.resolved.get("batch directory"),
+            coverage=(manifest.coverage.minimum_ratio or "",
+                      manifest.coverage.population_scope or "",
+                      manifest.coverage.population_minimum),
+        )
+        return GuiResult("pass", EXIT_PASS, human, human, None, (loaded.path,), None, "project-open", project_paths)
+
+    def save_project(
+        self,
+        destination: str | Path,
+        *,
+        project_id: str,
+        description: str,
+        contract_path: str | Path,
+        input_path: str | Path | None,
+        baseline_path: str | Path | None,
+        candidate_path: str | Path | None,
+        batch_dir: str | Path | None,
+        batch_recursive: bool,
+        batch_include_paths: bool,
+        batch_minimum_ratio: str | None,
+        minimum_ratio: str | None,
+        population_scope: str | None,
+        population_minimum: int | None,
+    ) -> GuiResult:
+        """Explicitly save the current selections as a portable project."""
+        guidance = self._require(
+            "project-save",
+            (destination, GUI006, "Select an existing project directory before saving."),
+            (contract_path, GUI001, "Select a contract JSON file before saving a project."),
+            (project_id, GUI006, "Provide a stable project identifier before saving."),
+        )
+        if guidance is not None:
+            return guidance
+        try:
+            project_dir = Path(destination).resolve()
+            if not project_dir.is_dir():
+                raise InputError(f"the project destination must be an existing directory: {destination}")
+            placed: dict[str, Path] = {}
+            copied: dict[Path, Path] = {}
+            copied_sources: dict[Path, Path] = {}
+
+            def place(source: Path | None, *, folder: bool = False) -> Path | None:
+                if source is None or not str(source).strip():
+                    return None
+                resolved_source = Path(source).resolve()
+                if resolved_source in copied_sources:
+                    return copied_sources[resolved_source]
+                target = _copy_project_input(project_dir, Path(source), folder=folder)
+                copied_sources[resolved_source] = target
+                return target
+
+            placed["contract"] = place(Path(contract_path))
+            for label, source in (("input", input_path), ("baseline", baseline_path), ("candidate", candidate_path)):
+                target = place(Path(source) if source is not None else None)
+                if target is not None:
+                    placed[label] = target
+            batch_target = place(Path(batch_dir) if batch_dir is not None else None, folder=True)
+            if batch_target is not None:
+                placed["batch directory"] = batch_target
+            manifest = build_manifest(
+                project_dir,
+                project_id=project_id,
+                description=description,
+                contract=placed["contract"],
+                input=placed.get("input"),
+                baseline=placed.get("baseline"),
+                candidate=placed.get("candidate"),
+                batch=placed.get("batch directory"),
+                batch_recursive=bool(batch_recursive),
+                batch_include_paths=bool(batch_include_paths),
+                batch_minimum_ratio=batch_minimum_ratio,
+                minimum_ratio=minimum_ratio,
+                population_scope=population_scope,
+                population_minimum=population_minimum,
+            )
+            write_project(project_dir, manifest)
+        except (InputError, OSError, ValueError) as exc:
+            return self._guidance("project-save", GUI006, f"The project could not be saved. ({exc})")
+        report = build_report("tracecanary/v1", "pass", [], mode="project-save")
+        human = f"TraceCanary project {project_id} saved to {project_dir / 'tracecanary.project.json'}\n"
+        return GuiResult("pass", EXIT_PASS, human, render_json(report), None, (), None, "project-save",
+                         ProjectPaths(project_dir / "inputs" / Path(contract_path).name, None, None, None, None,
+                                      (minimum_ratio or "", population_scope or "", population_minimum)))
 
     def _validate(self, contract_path: Path) -> Report:
         contract = load_contract(contract_path)
