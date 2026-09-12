@@ -45,9 +45,9 @@ Corridor Lab tests need `PYTHONPATH=src` (matches CI).
 
 | # | Increment | Status |
 |---|---|---|
-| 1 | Export correctness + regressions (both packages) | in progress |
-| 2 | Corridor Lab desktop workbench (controller + tabbed GUI + structured transaction edits + baseline diff) | pending |
-| 3 | TraceCanary guided investigation workflow (controller + grouped GUI + batch directories + starter additions) | pending |
+| 1 | Export correctness + regressions (both packages) | done (48b8039) |
+| 2 | Corridor Lab desktop workbench (controller + tabbed GUI + structured transaction edits + baseline diff) | done |
+| 3 | TraceCanary guided investigation workflow (controller + grouped GUI + batch directories + starter additions) | in progress |
 | 4 | Documentation and quick starts around the finished workflows | pending |
 | 5 | Clean-environment installed verification, real-window exercise, full suites, final diff review | pending |
 

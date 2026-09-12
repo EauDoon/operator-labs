@@ -8,9 +8,21 @@ from dataclasses import dataclass
 from decimal import Decimal, DecimalException
 from pathlib import Path
 
+from .analysis import (
+    break_even_check,
+    cost_ledger,
+    deadline_profile,
+    deadline_target,
+    feasible_amount,
+    guardrail_headroom,
+    loss_profile,
+    outcome_ledger,
+    resolution_quantiles,
+)
 from .canonical import (
     InputError,
     atomic_write_text,
+    decimal_text,
     parse_json_bytes,
     protect_report_output,
     read_bounded_bytes,
@@ -21,9 +33,14 @@ from .model import evaluate_route
 from .report import render_report
 from .route import Route, load_route, load_route_folder
 from .scenario import Scenario, parse_scenario, parse_scenario_text
+from .scenario_diff import diff_scenarios
 from .sensitivity import run_sensitivity
 from .stress import run_stress_grid
-from .transaction_sweep import run_transaction_sweep
+from .transaction_sweep import (
+    TRANSACTION_PARAMETERS,
+    run_transaction_grid,
+    run_transaction_sweep,
+)
 
 BUILTIN_DEMO_SCENARIO = {
     "contract_version": "corridor-lab.scenario/v1",
@@ -100,6 +117,7 @@ class CorridorGuiController:
 
     def __init__(self) -> None:
         self.scenario: Scenario | None = None
+        self.scenario_raw: dict | None = None
         self.selected_routes: tuple[Route, ...] = ()
         self.scenario_source = "No scenario loaded"
         self.routes_source = "Using routes embedded in the scenario"
@@ -108,6 +126,7 @@ class CorridorGuiController:
         self.last_error: str | None = None
         self.scenario_file: Path | None = None
         self.routes_path: Path | None = None
+        self.scenario_unsaved = False
         self.last_report_inputs: tuple[Path, ...] = ()
         self.last_report_scanned_dirs: tuple[Path, ...] = ()
 
@@ -151,16 +170,24 @@ class CorridorGuiController:
             raise InputError("load a fictional scenario or the built-in demo first")
         return self.scenario
 
+    def _install_scenario(self, scenario: Scenario, raw: dict, source: str, *, unsaved: bool, draft_text: str | None) -> None:
+        self.scenario = scenario
+        self.scenario_raw = raw
+        self.scenario_source = source
+        self.scenario_unsaved = unsaved
+        if draft_text is not None:
+            self.scenario_draft_text = draft_text
+        self.selected_routes = ()
+        self.last_report = None
+        self.last_error = None
+
     def load_builtin_demo(self) -> ActionResult:
         try:
-            self.scenario = parse_scenario(copy.deepcopy(BUILTIN_DEMO_SCENARIO))
-            self.scenario_draft_text = self.fictional_template_text()
-            self.selected_routes = ()
-            self.scenario_source = "Built-in fictional Amber to Birch demo"
+            raw = copy.deepcopy(BUILTIN_DEMO_SCENARIO)
+            scenario = parse_scenario(copy.deepcopy(raw))
+            self._install_scenario(scenario, raw, "Built-in fictional Amber to Birch demo", unsaved=False, draft_text=self.fictional_template_text())
             self.routes_source = "Using routes embedded in the built-in demo"
-            self.scenario_file = None
-            self.last_report = None
-            self.last_error = None
+            self.routes_path = None
             return ActionResult({}, None)
         except (InputError, ValueError, DecimalException) as exc:
             return self._failure(exc)
@@ -168,14 +195,12 @@ class CorridorGuiController:
     def load_scenario_file(self, path: str | Path) -> ActionResult:
         try:
             raw = read_bounded_bytes(path)
-            self.scenario = parse_scenario(parse_json_bytes(raw))
-            self.scenario_draft_text = raw.decode("utf-8")
-            self.selected_routes = ()
-            self.scenario_source = str(Path(path))
-            self.routes_source = "Using routes embedded in the scenario"
+            value = parse_json_bytes(raw)
+            scenario = parse_scenario(copy.deepcopy(value))
+            self._install_scenario(scenario, value, str(Path(path)), unsaved=False, draft_text=raw.decode("utf-8"))
             self.scenario_file = Path(path)
-            self.last_report = None
-            self.last_error = None
+            self.routes_source = "Using routes embedded in the scenario"
+            self.routes_path = None
             return ActionResult({}, None)
         except (InputError, OSError, ValueError, DecimalException) as exc:
             return self._failure(exc)
@@ -189,17 +214,87 @@ class CorridorGuiController:
     def validate_and_use_scenario_text(self, text: str) -> ActionResult:
         """Validate a draft first, then atomically replace the active scenario."""
         try:
-            candidate = parse_scenario_text(text)
+            value = parse_json_bytes(text.encode("utf-8"))
+            candidate = parse_scenario(copy.deepcopy(value))
         except (InputError, ValueError, DecimalException) as exc:
             return self._failure(exc)
-        self.scenario = candidate
-        self.scenario_draft_text = text
-        self.selected_routes = ()
-        self.scenario_source = "Validated in-memory fictional scenario"
+        self._install_scenario(candidate, value, "Validated in-memory fictional scenario", unsaved=True, draft_text=text)
         self.routes_source = "Using routes embedded in the validated scenario"
-        self.scenario_file = None
-        self.last_report = None
-        self.last_error = None
+        self.routes_path = None
+        return ActionResult({}, None)
+
+    def transaction_fields(self) -> dict[str, str]:
+        """Show the active transaction's declared fields for structured editing.
+
+        Values come from the declared raw scenario so the editor displays the
+        exact digits the user stored, never a canonicalized or float-rounded
+        version of them.
+        """
+        scenario = self._require_scenario()
+        transaction = scenario.transaction
+        raw_transaction = (self.scenario_raw or {}).get("transaction") if isinstance(self.scenario_raw, dict) else None
+        raw_transaction = raw_transaction if isinstance(raw_transaction, dict) else {}
+
+        def declared(field: str, value: Decimal) -> str:
+            text = raw_transaction.get(field)
+            return text if isinstance(text, str) and text.strip() else decimal_text(value)
+
+        return {
+            "send_amount": declared("send_amount", transaction.send_amount),
+            "send_currency": transaction.send_currency,
+            "send_precision": str(transaction.send_precision),
+            "receive_currency": transaction.receive_currency,
+            "receive_precision": str(transaction.receive_precision),
+            "rounding": transaction.rounding,
+            "deadline_hours": declared("deadline_hours", transaction.deadline_hours),
+            "volume_per_period": declared("volume_per_period", transaction.volume_per_period),
+        }
+
+    def apply_transaction_edits(
+        self,
+        send_amount: str | None = None,
+        deadline_hours: str | None = None,
+        volume_per_period: str | None = None,
+    ) -> ActionResult:
+        """Apply structured transaction edits transactionally to the active scenario.
+
+        The candidate is validated as a whole before it replaces the active
+        scenario; a rejected draft leaves the active scenario, draft text, and
+        current report untouched. Exact decimal strings are preserved and are
+        never converted through binary floats.
+        """
+        try:
+            scenario = self._require_scenario()
+            if self.scenario_raw is None:
+                raise InputError("no editable scenario data is available")
+            raw = copy.deepcopy(self.scenario_raw)
+            transaction = raw.get("transaction")
+            if not isinstance(transaction, dict):
+                raise InputError("scenario transaction must be an object")
+            edits = {
+                "send_amount": send_amount,
+                "deadline_hours": deadline_hours,
+                "volume_per_period": volume_per_period,
+            }
+            for field, value in edits.items():
+                if value is None or not str(value).strip():
+                    continue
+                text = str(value).strip()
+                require_decimal(text, f"transaction.{field}")
+                transaction[field] = text
+            candidate = parse_scenario(copy.deepcopy(raw))
+        except (InputError, ValueError, DecimalException) as exc:
+            return self._failure(exc)
+        source = f"{self.scenario_source} (edited in memory, unsaved)" if not self.scenario_unsaved else self.scenario_source
+        if self.scenario_file is None and not self.scenario_unsaved:
+            source = "Structured edits applied to the built-in demo (unsaved)"
+        self._install_scenario(
+            candidate,
+            raw,
+            source,
+            unsaved=True,
+            draft_text=json.dumps(raw, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        )
         return ActionResult({}, None)
 
     def save_scenario_text(self, path: str | Path, text: str) -> ActionResult:
@@ -255,14 +350,76 @@ class CorridorGuiController:
         except (InputError, OSError, ValueError, DecimalException) as exc:
             return self._failure(exc)
 
+    def _scenario_analysis(self, analysis) -> ActionResult:
+        try:
+            scenario = self._require_scenario()
+            return self._success(analysis(scenario), routes_inputs=False)
+        except (InputError, OSError, ValueError, DecimalException) as exc:
+            return self._failure(exc)
+
+    def cost_ledger(self) -> ActionResult:
+        return self._scenario_analysis(cost_ledger)
+
+    def loss_profile(self) -> ActionResult:
+        return self._scenario_analysis(loss_profile)
+
+    def feasible_amount(self) -> ActionResult:
+        return self._scenario_analysis(feasible_amount)
+
+    def outcome_ledger(self) -> ActionResult:
+        return self._scenario_analysis(outcome_ledger)
+
+    def deadline_profile(self) -> ActionResult:
+        return self._scenario_analysis(deadline_profile)
+
+    def break_even_check(self) -> ActionResult:
+        return self._scenario_analysis(break_even_check)
+
+    def guardrail_headroom(self) -> ActionResult:
+        return self._scenario_analysis(guardrail_headroom)
+
+    def deadline_target(self, probability_text: str) -> ActionResult:
+        try:
+            scenario = self._require_scenario()
+            probability = str(probability_text).strip()
+            require_decimal(probability, "probability")
+            return self._success(deadline_target(scenario, probability), routes_inputs=False)
+        except (InputError, OSError, ValueError, DecimalException) as exc:
+            return self._failure(exc)
+
+    def resolution_quantiles(self, probabilities_text: str) -> ActionResult:
+        try:
+            scenario = self._require_scenario()
+            values = self._parse_values(probabilities_text, "quantile values")
+            return self._success(resolution_quantiles(scenario, values), routes_inputs=False)
+        except (InputError, OSError, ValueError, DecimalException) as exc:
+            return self._failure(exc)
+
+    def diff_against_baseline(self, baseline_path: str | Path) -> ActionResult:
+        """Compare the active scenario (candidate) with a saved baseline (before)."""
+        try:
+            scenario = self._require_scenario()
+            path = Path(baseline_path)
+            if not str(path).strip():
+                raise InputError("select a baseline scenario file before diffing")
+            baseline_raw = read_bounded_bytes(path)
+            baseline = parse_scenario(parse_json_bytes(baseline_raw))
+            return self._success(diff_scenarios(baseline, scenario), routes_inputs=False, extra_inputs=(path,))
+        except (InputError, OSError, ValueError, DecimalException) as exc:
+            return self._failure(exc)
+
+    @staticmethod
+    def _parse_values(values_text: str, description: str) -> list[Decimal]:
+        chunks = values_text.split(",")
+        if not all(chunk.strip() for chunk in chunks):
+            raise InputError(f"{description} must be comma-separated decimals")
+        return [require_decimal(chunk.strip(), f"{description} value") for chunk in chunks]
+
     def sensitivity(self, parameter: str, values_text: str) -> ActionResult:
         try:
             scenario = self._require_scenario()
-            chunks = values_text.split(",")
-            if not chunks or not all(chunk.strip() for chunk in chunks):
-                raise InputError("sensitivity values must be comma-separated decimals")
-            values: list[Decimal] = [require_decimal(chunk.strip(), "sensitivity value") for chunk in chunks]
-            return self._success(run_sensitivity(scenario, parameter.strip(), values), routes_inputs=False)
+            values = self._parse_values(values_text, "sensitivity values")
+            return self._success(run_sensitivity(scenario, parameter.strip(), values))
         except (InputError, OSError, ValueError, DecimalException) as exc:
             return self._failure(exc)
 
@@ -273,6 +430,22 @@ class CorridorGuiController:
                 raise InputError("transaction values must be comma-separated decimals")
             values = [require_decimal(chunk.strip(), "transaction value") for chunk in chunks]
             return self._success(run_transaction_sweep(self._require_scenario(), parameter.strip(), values), routes_inputs=False)
+        except (InputError, OSError, ValueError, DecimalException) as exc:
+            return self._failure(exc)
+
+    def transaction_grid(self, parameter_a: str, values_a_text: str, parameter_b: str, values_b_text: str) -> ActionResult:
+        try:
+            scenario = self._require_scenario()
+            if parameter_a.strip() == parameter_b.strip():
+                raise InputError("transaction grid requires two distinct transaction parameters")
+            if parameter_a.strip() not in TRANSACTION_PARAMETERS or parameter_b.strip() not in TRANSACTION_PARAMETERS:
+                raise InputError("transaction grid parameters must be send_amount, deadline_hours, or volume_per_period")
+            values_a = self._parse_values(values_a_text, "transaction grid values")
+            values_b = self._parse_values(values_b_text, "transaction grid values")
+            return self._success(
+                run_transaction_grid(scenario, parameter_a.strip(), values_a, parameter_b.strip(), values_b),
+                routes_inputs=False,
+            )
         except (InputError, OSError, ValueError, DecimalException) as exc:
             return self._failure(exc)
 
@@ -302,7 +475,7 @@ class CorridorGuiController:
 
     def render_last_report(self, output_format: str) -> str | None:
         if self.last_report is None:
-            self.last_error = "run Compare, Evaluate, Sensitivity, Pareto, or Grid before previewing or saving a report"
+            self.last_error = "run an analysis before previewing or saving a report"
             return None
         try:
             text = render_report(self.last_report, output_format)
