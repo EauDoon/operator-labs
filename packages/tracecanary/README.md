@@ -96,6 +96,10 @@ tracecanary fixture create --output example
 
 It refuses a non-empty output directory. From a fresh checkout, set `PYTHONPATH=src` before using `python -m tracecanary fixture create --output example`. All generated values are fictional.
 
+## Saved local projects
+
+`tracecanary project create --directory investigation --project-id fictional-campaign --contract contract.json [--input export.json] [--baseline before.json] [--candidate after.json] [--batch-dir exports --batch-recursive --batch-include-paths --batch-minimum-ratio 0.95] [--minimum-ratio 0.95] [--population-scope span --population-minimum 1]` saves a self-contained, portable project: the validated `tracecanary.project/v1` manifest plus explicitly copied synthetic inputs. Relative paths resolve against the project directory, and each input (including the batch directory) records a SHA-256 fingerprint, so `project validate` and `project open` explain missing or modified inputs instead of accepting them silently. Saved settings are separate from result evidence; the desktop **Open Project...** applies them to the selectors only, and reports still require an explicit save.
+
 ## Commands and exit status
 
 After installation, use:

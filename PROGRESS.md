@@ -14,7 +14,7 @@ editing, controller/CLI report agreement, shared bounded batch engine with
 background execution and main-thread-only widget updates, synthetic starter
 bundles covering every acceptance case. Verified merged via PR #30.
 
-## Milestone 1: reusable local projects (in progress)
+## Milestone 1: reusable local projects (complete pending PR)
 
 Design decisions (lasting rationale):
 - Each package gets its own project manifest format; no shared runtime:
@@ -32,6 +32,32 @@ Design decisions (lasting rationale):
   declared inputs and the GUI clears stale results on reopen.
 - Saving is explicit: create/save-as write to a user-chosen location and
   refuse to replace an existing manifest silently.
+- The same source chosen twice (input == baseline) is stored once and
+  referenced twice; distinct sources with colliding names are refused.
+
+Implemented (corridor-lab): `projects.py` library, CLI `project
+create|validate|open|add-experiment|run` (combined deterministic
+project-run reports; reports protected against replacing inputs or landing
+inside the project), controller open/save/run, GUI Open Project / Save
+Project As / saved-experiment section with a transactional
+save-current-settings dialog. Acceptance flow verified from the installed
+package: create -> close -> move -> reopen -> identical deterministic rerun;
+modified inputs refuse to run with clear diagnostics.
+
+Implemented (tracecanary): `project.py` library (contract, input, baseline,
+candidate, batch directory with tree fingerprints, coverage threshold,
+population gate), CLI `project create|validate|open`, controller open/save,
+GUI Open Project / Save Project As on the Files tab. Acceptance flow
+verified from the installed package including value-free human summaries.
+
+Corridor tests: 157. TraceCanary tests: 164. Both suites, compile checks,
+and GUI smoke tests green at commit `2569645`.
+
+## Next action
+
+Open the M1 PR checkpoint, then start Milestone 2 (Corridor Lab scenario
+experimentation: named derived variants with assumption diffs) on a stacked
+branch.
 
 ## Verification commands (authoritative)
 
