@@ -16,6 +16,9 @@ superseded by the merged `improve/product-cycle-*` work on main.
 | 7c8a33b | Structured edits after a file load no longer crash on bare JSON numbers (Decimal round-trip) | `test_structured_edits_after_file_load_round_trip` |
 | 68941ec | Development status refreshed | this file |
 | 1f2972c | TraceCanary batch tabs run in bounded background execution (measured 13 s for a legal bounded directory); batch-directory selector browses directories; stale-result protection and main-thread-only widget updates | `tests/test_gui_background.py` (incl. a real-window test, display-guarded) |
+| 950abe2 | Batch widget values captured on the main thread before the worker starts — found by the new real-window regression on Windows CI | PR #30 checks green (ubuntu + windows, Python 3.11 + 3.12) |
+
+Pull request: [#30](https://github.com/EauDoon/operator-labs/pull/30) (`dev/desktop-workbench` -> `main`, open, mergeable, all checks SUCCESS at `950abe2`).
 
 ## Verification executed (all green)
 
