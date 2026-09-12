@@ -115,6 +115,26 @@ Next: documentation checkpoint, push, wait for CI, then Milestone 4
 Next: push, wait for CI, then Milestone 5 (contract development and
 diagnosis).
 
+## Milestone 5: contract development and diagnosis (implemented)
+
+- `authoring.py`: the runtime validator stays authoritative; the review
+  covers only what it cannot — retention conflicts with actionable rule
+  locations, malformed wildcard paths, paths stopping before a scalar value,
+  and forbidden keys shadowed by prefixes. Value-free (canary values never
+  appear); passing review is not a privacy guarantee.
+- CLI: `contract review`, `contract template` (never overwrites).
+- Desktop: **Review Contract** and **Edit Contract JSON...** — transactional
+  editor (template / load selected / validate / Save Contract As...) whose
+  export is explicitly labeled as containing canary configuration, distinct
+  from value-free report exports.
+- TraceCanary tests: 183. Real-window drive passed on macOS arm64.
+
+Next: Milestone 6 (explainable results and evidence exports), then
+M7/M8. Resumption note: branch `dev/scenario-experimentation` at
+`93ad0cc`, CI green on both workflows, PRs #31 (M1, base main) and #32 (M2,
+base dev/program-cycle-1) open awaiting owner approval; M3-M5 commits are
+stacked on the same branch and will appear in PR #32 or follow-ups.
+
 ## Verification commands (authoritative)
 
 ```text
