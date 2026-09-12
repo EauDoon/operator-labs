@@ -112,6 +112,22 @@ class ActionResult:
     error: str | None
 
 
+def _normalize_raw(value):
+    """Return a JSON-serializable copy of parsed scenario input.
+
+    Bounded JSON parsing represents numbers as Decimal. Integral values stay
+    integers and every other number becomes its exact decimal text, so the
+    declared values round-trip without binary floats.
+    """
+    if isinstance(value, Decimal):
+        return int(value) if value == value.to_integral_value() else decimal_text(value)
+    if isinstance(value, list):
+        return [_normalize_raw(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _normalize_raw(item) for key, item in value.items()}
+    return value
+
+
 class CorridorGuiController:
     """State and actions used by the GUI without importing Tkinter."""
 
@@ -183,7 +199,7 @@ class CorridorGuiController:
 
     def load_builtin_demo(self) -> ActionResult:
         try:
-            raw = copy.deepcopy(BUILTIN_DEMO_SCENARIO)
+            raw = _normalize_raw(copy.deepcopy(BUILTIN_DEMO_SCENARIO))
             scenario = parse_scenario(copy.deepcopy(raw))
             self._install_scenario(scenario, raw, "Built-in fictional Amber to Birch demo", unsaved=False, draft_text=self.fictional_template_text())
             self.routes_source = "Using routes embedded in the built-in demo"
@@ -195,7 +211,7 @@ class CorridorGuiController:
     def load_scenario_file(self, path: str | Path) -> ActionResult:
         try:
             raw = read_bounded_bytes(path)
-            value = parse_json_bytes(raw)
+            value = _normalize_raw(parse_json_bytes(raw))
             scenario = parse_scenario(copy.deepcopy(value))
             self._install_scenario(scenario, value, str(Path(path)), unsaved=False, draft_text=raw.decode("utf-8"))
             self.scenario_file = Path(path)
@@ -214,7 +230,7 @@ class CorridorGuiController:
     def validate_and_use_scenario_text(self, text: str) -> ActionResult:
         """Validate a draft first, then atomically replace the active scenario."""
         try:
-            value = parse_json_bytes(text.encode("utf-8"))
+            value = _normalize_raw(parse_json_bytes(text.encode("utf-8")))
             candidate = parse_scenario(copy.deepcopy(value))
         except (InputError, ValueError, DecimalException) as exc:
             return self._failure(exc)

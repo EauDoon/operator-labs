@@ -64,6 +64,25 @@ class StructuredTransactionEditingTests(unittest.TestCase):
         self.assertIsNone(controller.validate_and_use_scenario_text(controller.scenario_draft_text).error)
         self.assertEqual(controller.transaction_fields()["send_amount"], "2500.50")
 
+    def test_structured_edits_after_file_load_round_trip(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            scenario_path = Path(temporary) / "scenario.json"
+            data = scenario()
+            data["transaction"]["send_precision"] = 2  # bare JSON number in the file
+            data["transaction"]["send_amount"] = "1234.50"
+            scenario_path.write_text(json.dumps(data), encoding="utf-8")
+            controller = CorridorGuiController()
+            self.assertIsNone(controller.load_scenario_file(scenario_path).error)
+            result = controller.apply_transaction_edits(deadline_hours="6")
+            self.assertIsNone(result.error)
+            reparsed = json.loads(controller.scenario_draft_text)
+            self.assertEqual(reparsed["transaction"]["send_precision"], 2)
+            self.assertEqual(reparsed["transaction"]["send_amount"], "1234.50")
+            self.assertEqual(reparsed["transaction"]["deadline_hours"], "6")
+            self.assertIsNone(controller.validate_and_use_scenario_text(controller.scenario_draft_text).error)
+            self.assertEqual(controller.transaction_fields()["deadline_hours"], "6")
+            self.assertTrue(controller.scenario_unsaved)
+
     def test_structured_edits_never_route_through_binary_floats(self):
         controller = CorridorGuiController()
         self.assertIsNone(controller.load_builtin_demo().error)
