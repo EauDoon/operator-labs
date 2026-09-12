@@ -168,6 +168,42 @@ stacked on the same branch and will appear in PR #32 or follow-ups.
 Next: Milestone 8 (integrated journeys + release readiness), then the
 program report.
 
+## Milestone 8: integrated journeys and release readiness (implemented)
+
+- Corridor journey (installed package, `PYTHONPATH` unset): create project →
+  stage and apply variants → truthful assumption diffs → run saved
+  experiment → compare across variants → target search (smallest tested
+  feasible value) → robustness across variants → export evidence → save-as
+  → reopen in a fresh controller → rerun. Found and fixed a real defect:
+  materializing a variant mutated the caller's declared base data, so later
+  assumption diffs lied; materialization is now deep-copied and a
+  regression proves the base is never mutated.
+- TraceCanary journey (installed): contract template → review (actionable
+  diagnostics) → project with thresholds → control check (labeled not a
+  privacy pass) → leak detection → campaign → coverage gate → value-free
+  summaries → comparison → value-free evidence → move → reopen → explicit
+  validated baseline promotion. Found and fixed `promote-baseline` calling
+  the fingerprint helper with the wrong signature; regression added.
+- RELEASE-NOTES.md and RELEASE-CHECKLIST.md drafted (owner approval
+  required for any release); root README gains a documentation map.
+- Final suites: corridor 183 tests, tracecanary 189 tests, compile checks,
+  GUI smoke tests — green at the final head.
+
+## Program state (checkpoint)
+
+- Branch `dev/scenario-experimentation`, head `828fbb4`; both workflows
+  green (Linux/Windows/macOS x 3.11/3.12).
+- PRs awaiting owner approval: #31 (M1, base main) and #32 (M2-M8 commits,
+  base dev/program-cycle-1). The developer never merges own work.
+- All eight milestones implemented; integrated journeys verified from
+  installed packages; release material prepared but nothing merged,
+  tagged, or published.
+
+## Next action
+
+Await owner approval/merge of PRs #31/#32, then execute
+RELEASE-CHECKLIST.md.
+
 ## Verification commands (authoritative)
 
 ```text
