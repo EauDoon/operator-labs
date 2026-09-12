@@ -170,6 +170,7 @@ class GuiControllerTests(unittest.TestCase):
         fake_tk.Tk = fail_to_create_window
         fake_tk.filedialog = object()
         fake_tk.messagebox = object()
+        fake_tk.simpledialog = object()
         fake_tk.ttk = object()
         error = io.StringIO()
         with patch.dict(sys.modules, {"tkinter": fake_tk}), contextlib.redirect_stderr(error):
@@ -203,6 +204,7 @@ class GuiControllerTests(unittest.TestCase):
         fake_tk.Tk = fail_to_create_window
         fake_tk.filedialog = object()
         fake_tk.messagebox = object()
+        fake_tk.simpledialog = object()
         fake_tk.ttk = object()
         with patch.dict(sys.modules, {"tkinter": fake_tk}), patch.object(sys, "stdout", None), patch.object(sys, "stderr", None), patch.object(gui, "_show_windows_error") as fallback:
             status = gui.launch_window()
