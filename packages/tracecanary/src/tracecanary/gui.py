@@ -432,25 +432,35 @@ class TraceCanaryWindow:
         self._apply(self._controller.population_gate(self._contract.get(), self._input.get(), self._population_scope.get(), self._population_minimum.get()))
 
     def _batch(self) -> None:
+        contract = self._contract.get()
+        directory = self._batch_dir.get() or self._input.get()
+        recursive = bool(self._recursive.get())
+        include_paths = bool(self._include_paths.get())
+        baseline = self._baseline.get() if self._use_baseline.get() else None
         self._run_background(
             lambda: self._controller.batch(
-                self._contract.get(),
-                self._batch_dir.get() or self._input.get(),
-                recursive=bool(self._recursive.get()),
-                include_paths=bool(self._include_paths.get()),
-                baseline_path=self._baseline.get() if self._use_baseline.get() else None,
+                contract,
+                directory,
+                recursive=recursive,
+                include_paths=include_paths,
+                baseline_path=baseline,
             ),
             "Status: batch running (bounded by the contract file limit); the window stays responsive.",
         )
 
     def _coverage_batch(self) -> None:
+        contract = self._contract.get()
+        directory = self._batch_dir.get() or self._input.get()
+        recursive = bool(self._recursive.get())
+        include_paths = bool(self._include_paths.get())
+        minimum_ratio = self._batch_ratio.get() or None
         self._run_background(
             lambda: self._controller.coverage_batch(
-                self._contract.get(),
-                self._batch_dir.get() or self._input.get(),
-                recursive=bool(self._recursive.get()),
-                include_paths=bool(self._include_paths.get()),
-                minimum_ratio=self._batch_ratio.get() or None,
+                contract,
+                directory,
+                recursive=recursive,
+                include_paths=include_paths,
+                minimum_ratio=minimum_ratio,
             ),
             "Status: coverage batch running (bounded by the contract file limit); the window stays responsive.",
         )
