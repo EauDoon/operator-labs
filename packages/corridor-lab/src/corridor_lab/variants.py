@@ -112,12 +112,15 @@ def parse_derived_variant(name: str, value: Any) -> DerivedVariant:
 
 
 def apply_variant(variant: DerivedVariant, base_raw: dict[str, Any]) -> dict[str, Any]:
-    """Return the materialized scenario with only the declared changes applied."""
-    raw: dict[str, Any] = {
-        "transaction": dict(base_raw.get("transaction", {})),
-        **{key: value for key, value in base_raw.items() if key != "transaction"},
-    }
-    if not isinstance(raw["transaction"], dict):
+    """Return the materialized scenario with only the declared changes applied.
+
+    The base is deep-copied first: materializing a variant must never mutate
+    the caller's declared base data.
+    """
+    from copy import deepcopy
+
+    raw = deepcopy(base_raw)
+    if not isinstance(raw.get("transaction"), dict):
         raise InputError("variant base scenario transaction must be an object")
     transaction = dict(raw["transaction"])
     for field, value in variant.transaction.items():

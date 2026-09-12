@@ -53,6 +53,18 @@ class VariantLibraryTests(unittest.TestCase):
         with self.assertRaisesRegex(InputError, "between 1 and"):
             parse_derived_variant("empty", {"base": "scenario", "changes": {"transaction": {}, "routes": {}}})
 
+    def test_materializing_a_variant_never_mutates_the_declared_base(self):
+        import copy as copy_module
+
+        snapshot = copy_module.deepcopy(self.base)
+        variant = parse_derived_variant("fee", {"base": "scenario", "changes": {
+            "transaction": {},
+            "routes": {"fictional-route-one": {"fixed_fee_send": "9.00", "liquidity.holding_days": "4"}}}})
+        apply_variant(variant, self.base)
+        self.assertEqual(self.base, snapshot)
+        apply_variant(variant, self.base)
+        self.assertEqual(self.base, snapshot)
+
     def test_assumption_diff_lists_exactly_the_changes(self):
         variant = parse_derived_variant("tight", {"base": "scenario", "changes": {"transaction": {"deadline_hours": "1"}}})
         rows = variant_changes(variant, self.base)
