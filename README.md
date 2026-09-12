@@ -18,3 +18,13 @@ python -m pip install ./packages/tracecanary
 
 The packages remain independent; there is no shared runtime or root Python
 distribution.
+
+## Documentation map
+
+- Start with a package README (quick starts, command catalogs, GUI tours).
+- [ROADMAP.md](ROADMAP.md) — program milestones and deferred ideas.
+- [PROGRESS.md](PROGRESS.md) — current state, verification evidence, and the
+  next action.
+- [RELEASE-NOTES.md](RELEASE-NOTES.md) and
+  [RELEASE-CHECKLIST.md](RELEASE-CHECKLIST.md) — draft release material
+  awaiting owner approval.
