@@ -118,6 +118,9 @@ class CorridorLabApp:
         self.simpledialog = simpledialog_module
         self.controller = CorridorGuiController()
         self.experiments_var = tk_module.StringVar(value="No saved experiments")
+        self.selected_experiment_var = tk_module.StringVar()
+        self.variants_var = tk_module.StringVar(value="No derived variants")
+        self.selected_variant_var = tk_module.StringVar()
         self.format_var = tk_module.StringVar(value="markdown")
         self.scenario_var = tk_module.StringVar(value=self.controller.scenario_source)
         self.routes_var = tk_module.StringVar(value=self.controller.routes_source)
@@ -132,7 +135,6 @@ class CorridorLabApp:
         self.deadline_target_var = tk_module.StringVar(value="0.95")
         self.quantiles_var = tk_module.StringVar(value="0.5,0.95,1")
         self.baseline_var = tk_module.StringVar()
-        self.selected_experiment_var = tk_module.StringVar()
         self.send_amount_var = tk_module.StringVar()
         self.deadline_var = tk_module.StringVar()
         self.volume_var = tk_module.StringVar()
@@ -320,6 +322,17 @@ class CorridorLabApp:
         self.ttk.Button(saved_row, text="Run Saved", command=self._run_saved_experiment).grid(row=0, column=1, padx=(6, 0))
         self.ttk.Button(saved_row, text="Save Current Settings...", command=self._save_experiment_dialog).grid(row=0, column=2, padx=(6, 0))
         self.ttk.Label(saved, textvariable=self.experiments_var, wraplength=760, anchor="w").grid(row=1, column=0, sticky="ew", pady=(6, 0))
+
+        variants = self.ttk.LabelFrame(tab, text="Named scenario variants (declared changes over the project scenario)", padding=8)
+        variants.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+        variant_row = self.ttk.Frame(variants)
+        variant_row.grid(row=0, column=0, sticky="ew", pady=(2, 0))
+        self.variant_choice = self.ttk.Combobox(variant_row, textvariable=self.selected_variant_var, state="readonly", width=28)
+        self.variant_choice.grid(row=0, column=0, sticky="w")
+        self.ttk.Button(variant_row, text="Show Assumption Diff", command=self._show_variant_diff).grid(row=0, column=1, padx=(6, 0))
+        self.ttk.Button(variant_row, text="Apply Variant", command=self._apply_variant).grid(row=0, column=2, padx=(6, 0))
+        self.ttk.Button(variant_row, text="Compare Variants", command=self._compare_variants).grid(row=0, column=3, padx=(6, 0))
+        self.ttk.Label(variants, textvariable=self.variants_var, wraplength=760, anchor="w").grid(row=1, column=0, sticky="ew", pady=(6, 0))
 
     def _build_report_tab(self, notebook: object) -> None:
         tab = self.ttk.Frame(notebook, padding=10)
@@ -662,6 +675,36 @@ class CorridorLabApp:
         )
         if names and self.selected_experiment_var.get() not in names:
             self.selected_experiment_var.set(names[0])
+        variant_names = self.controller.variant_names()
+        self.variant_choice.configure(values=variant_names)
+        self.variants_var.set(
+            ", ".join(variant_names) if variant_names else "No derived variants yet. Add one with explicit changes."
+        )
+        if variant_names and self.selected_variant_var.get() not in variant_names:
+            self.selected_variant_var.set(variant_names[0])
+
+    def _show_variant_diff(self) -> None:
+        name = self.selected_variant_var.get()
+        if not name:
+            self._show_error("Choose a derived variant to inspect its assumption diff.")
+            return
+        self._complete(self.controller.show_variant_diff(name), f"Assumption diff for {name}: exactly these declared fields change.")
+
+    def _apply_variant(self) -> None:
+        name = self.selected_variant_var.get()
+        if not name:
+            self._show_error("Choose a derived variant to apply.")
+            return
+        result = self.controller.apply_variant(name)
+        if result.error is not None:
+            self._show_error(result.error)
+            return
+        self._refresh_transaction_fields()
+        self.scenario_var.set(self.controller.scenario_source)
+        self.status_var.set(f"Variant {name} applied in memory (unsaved). The previous report was cleared; rerun analyses against it.")
+
+    def _compare_variants(self) -> None:
+        self._complete(self.controller.compare_variants(), "Variant comparison complete: one declared case per variant, no composite score.")
 
     def _run_saved_experiment(self) -> None:
         name = self.selected_experiment_var.get()
