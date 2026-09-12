@@ -30,6 +30,15 @@ from .canonical import (
 )
 from .comparison import compare_routes, evaluate_scenario, pareto_frontier
 from .model import evaluate_route
+from .projects import (
+    Experiment,
+    build_manifest,
+    execute_experiment,
+    load_project,
+    prepare_project_directory,
+    validate_experiment,
+    write_project,
+)
 from .report import render_report
 from .route import Route, load_route, load_route_folder
 from .scenario import Scenario, parse_scenario, parse_scenario_text
@@ -143,6 +152,10 @@ class CorridorGuiController:
         self.scenario_file: Path | None = None
         self.routes_path: Path | None = None
         self.scenario_unsaved = False
+        self.baseline_file: Path | None = None
+        self.project_source: str | None = None
+        self.project_path: Path | None = None
+        self.experiments: tuple[Experiment, ...] = ()
         self.last_report_inputs: tuple[Path, ...] = ()
         self.last_report_scanned_dirs: tuple[Path, ...] = ()
 
@@ -420,9 +433,102 @@ class CorridorGuiController:
                 raise InputError("select a baseline scenario file before diffing")
             baseline_raw = read_bounded_bytes(path)
             baseline = parse_scenario(parse_json_bytes(baseline_raw))
+            self.baseline_file = path
             return self._success(diff_scenarios(baseline, scenario), routes_inputs=False, extra_inputs=(path,))
         except (InputError, OSError, ValueError, DecimalException) as exc:
             return self._failure(exc)
+
+    def open_project(self, path: str | Path) -> ActionResult:
+        """Load a saved project: inputs, baseline, and saved experiments.
+
+        Missing or modified inputs are reported instead of accepted, and the
+        previous report is cleared because its inputs may no longer apply.
+        """
+        try:
+            loaded = load_project(path)
+            if loaded.problems:
+                raise InputError("; ".join(loaded.problems))
+            scenario_result = self.load_scenario_file(loaded.resolved["scenario"])
+            if scenario_result.error is not None:
+                return scenario_result
+            if "routes" in loaded.resolved:
+                routes_result = self.load_routes_path(loaded.resolved["routes"])
+                if routes_result.error is not None:
+                    return routes_result
+            else:
+                self.clear_route_selection()
+            self.baseline_file = loaded.resolved.get("baseline")
+            self.experiments = loaded.manifest.experiments
+            self.project_source = str(loaded.path)
+            self.project_path = loaded.path.parent
+            return ActionResult(
+                {
+                    "project_id": loaded.manifest.project_id,
+                    "description": loaded.manifest.description,
+                    "experiments": [experiment.name for experiment in loaded.manifest.experiments],
+                },
+                None,
+            )
+        except (InputError, OSError, ValueError, DecimalException) as exc:
+            return self._failure(exc)
+
+    def save_project(self, destination: str | Path, project_id: str, description: str = "") -> ActionResult:
+        """Explicitly save the current inputs and saved experiments as a project."""
+        try:
+            if self.scenario_file is None:
+                raise InputError("load a scenario from a file before saving a project")
+            target = Path(destination)
+            if not target.is_dir():
+                raise InputError(f"choose an existing project directory before saving: {target}")
+            placed = prepare_project_directory(target, self.scenario_file, self.routes_path, self.baseline_file)
+            manifest = build_manifest(
+                target,
+                project_id=project_id,
+                description=description,
+                scenario=placed["scenario"],
+                routes=placed.get("routes"),
+                baseline=placed.get("baseline"),
+                experiments=self.experiments,
+            )
+            write_project(target, manifest)
+            self.project_source = str(target / "corridor-lab.project.json")
+            self.project_path = target
+            return ActionResult({}, None)
+        except (InputError, OSError, ValueError, DecimalException) as exc:
+            return self._failure(exc)
+
+    def add_saved_experiment(self, name: str, analysis: str, fields: dict[str, str]) -> ActionResult:
+        """Validate and stage a named experiment; persisted by the next project save."""
+        try:
+            if self.scenario is None:
+                raise InputError("load a fictional scenario before saving an experiment configuration")
+            experiment = validate_experiment(name, analysis, fields)
+            if any(existing.name == experiment.name for existing in self.experiments):
+                raise InputError(f"an experiment named {experiment.name} is already saved; choose a new name")
+            self.experiments = self.experiments + (experiment,)
+            self.last_error = None
+            return ActionResult({}, None)
+        except (InputError, ValueError, DecimalException) as exc:
+            return self._failure(exc)
+
+    def remove_saved_experiment(self, name: str) -> ActionResult:
+        self.experiments = tuple(experiment for experiment in self.experiments if experiment.name != name)
+        self.last_error = None
+        return ActionResult({}, None)
+
+    def run_saved_experiment(self, name: str) -> ActionResult:
+        """Run one saved experiment through the shared library executor."""
+        try:
+            scenario = self._require_scenario()
+            experiment = next((item for item in self.experiments if item.name == name), None)
+            if experiment is None:
+                raise InputError(f"no saved experiment named {name}; open or create a project first")
+            return self._success(execute_experiment(experiment, scenario), routes_inputs=False)
+        except (InputError, OSError, ValueError, DecimalException) as exc:
+            return self._failure(exc)
+
+    def saved_experiment_names(self) -> tuple[str, ...]:
+        return tuple(experiment.name for experiment in self.experiments)
 
     @staticmethod
     def _parse_values(values_text: str, description: str) -> list[Decimal]:

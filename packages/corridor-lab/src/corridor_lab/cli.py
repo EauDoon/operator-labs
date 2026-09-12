@@ -36,6 +36,7 @@ from .model import evaluate_route
 from .projects import (
     ProjectManifest,
     build_manifest,
+    execute_experiment,
     load_project,
     parse_experiment_argument,
     prepare_project_directory,
@@ -337,31 +338,6 @@ def _project_inputs_for_protection(loaded) -> tuple[list[Path], list[Path]]:
     return inputs, scanned
 
 
-def _experiment_report(experiment, scenario) -> dict[str, object]:
-    values = [Decimal(chunk) for chunk in experiment.fields.get("values", "").split(",") if chunk] \
-        if "values" in experiment.fields else []
-    analysis = experiment.analysis
-    if analysis == "sensitivity":
-        return run_sensitivity(scenario, experiment.fields["parameter"], values)
-    if analysis == "transaction-sweep":
-        return run_transaction_sweep(scenario, experiment.fields["parameter"], values)
-    if analysis == "transaction-grid":
-        return run_transaction_grid(scenario, experiment.fields["parameter_a"],
-                                    [Decimal(chunk) for chunk in experiment.fields["values_a"].split(",")],
-                                    experiment.fields["parameter_b"],
-                                    [Decimal(chunk) for chunk in experiment.fields["values_b"].split(",")])
-    if analysis == "stress-grid":
-        return run_stress_grid(scenario, experiment.fields["parameter_a"],
-                               [Decimal(chunk) for chunk in experiment.fields["values_a"].split(",")],
-                               experiment.fields["parameter_b"],
-                               [Decimal(chunk) for chunk in experiment.fields["values_b"].split(",")])
-    if analysis == "deadline-target":
-        return deadline_target(scenario, experiment.fields["probability"])
-    if analysis == "resolution-quantiles":
-        return resolution_quantiles(scenario, [Decimal(chunk) for chunk in experiment.fields["probabilities"].split(",")])
-    raise InputError(f"unsupported experiment analysis: {analysis}")
-
-
 def _project_run(args: argparse.Namespace) -> int:
     loaded = load_project(_require_cli_text(args.project, "project"))
     if loaded.problems:
@@ -377,7 +353,7 @@ def _project_run(args: argparse.Namespace) -> int:
     items: list[dict[str, object]] = []
     for index, experiment in enumerate(selected, start=1):
         try:
-            report = _experiment_report(experiment, scenario)
+            report = execute_experiment(experiment, scenario)
             status = "pass"
         except (InputError, OSError, ValueError, DecimalException) as exc:
             report = {"status": "unresolved", "error": _failure_text(exc)}

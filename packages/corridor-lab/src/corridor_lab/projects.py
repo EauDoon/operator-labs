@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from decimal import Decimal, DecimalException
 from pathlib import Path, PurePosixPath
 
+from .analysis import deadline_target, resolution_quantiles
 from .canonical import (
     InputError,
     atomic_write_text,
@@ -35,6 +36,9 @@ from .canonical import (
     require_object,
     require_string,
 )
+from .sensitivity import run_sensitivity
+from .stress import run_stress_grid
+from .transaction_sweep import run_transaction_grid, run_transaction_sweep
 
 PROJECT_MANIFEST_VERSION = "corridor-lab.project/v1"
 PROJECT_MANIFEST_NAME = "corridor-lab.project.json"
@@ -470,6 +474,35 @@ def parse_experiment_argument(text: str) -> Experiment:
             raise InputError(f"experiment field repeated: {key.strip()}")
         fields[key.strip()] = value.strip()
     return _parse_experiment({"name": name, "analysis": analysis, "fields": fields}, 0)
+
+
+def validate_experiment(name: str, analysis: str, fields: dict[str, str]) -> Experiment:
+    """Validate one experiment configuration before it enters a project draft."""
+    return _parse_experiment({"name": name, "analysis": analysis, "fields": dict(fields)}, 0)
+
+
+def execute_experiment(experiment: Experiment, scenario) -> dict[str, object]:
+    """Run one saved experiment through the ordinary library analyses."""
+    analysis = experiment.analysis
+
+    def values(field: str) -> list[Decimal]:
+        return [Decimal(chunk.strip()) for chunk in experiment.fields[field].split(",") if chunk.strip()]
+
+    if analysis == "sensitivity":
+        return run_sensitivity(scenario, experiment.fields["parameter"], values("values"))
+    if analysis == "transaction-sweep":
+        return run_transaction_sweep(scenario, experiment.fields["parameter"], values("values"))
+    if analysis == "transaction-grid":
+        return run_transaction_grid(scenario, experiment.fields["parameter_a"], values("values_a"),
+                                    experiment.fields["parameter_b"], values("values_b"))
+    if analysis == "stress-grid":
+        return run_stress_grid(scenario, experiment.fields["parameter_a"], values("values_a"),
+                               experiment.fields["parameter_b"], values("values_b"))
+    if analysis == "deadline-target":
+        return deadline_target(scenario, experiment.fields["probability"])
+    if analysis == "resolution-quantiles":
+        return resolution_quantiles(scenario, values("probabilities"))
+    raise InputError(f"unsupported experiment analysis: {analysis}")
 
 
 def experiment_from_cli(

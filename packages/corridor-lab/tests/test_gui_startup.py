@@ -24,7 +24,7 @@ class StartupGuiTests(unittest.TestCase):
             def Tk():
                 raise FakeTclError()
 
-        with patch.object(gui, "_load_tk_modules", return_value=(FakeTk, None, None, None, None)), patch.object(
+        with patch.object(gui, "_load_tk_modules", return_value=(FakeTk, None, None, None, None, None)), patch.object(
             gui, "_show_windows_message"
         ) as fallback, patch.object(gui.sys, "stderr", None):
             self.assertEqual(gui.launch_gui(), 2)
