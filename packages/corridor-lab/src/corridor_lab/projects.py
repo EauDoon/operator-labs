@@ -334,12 +334,14 @@ def prepare_project_directory(
     """Make the chosen inputs self-contained inside the project directory.
 
     Inputs already inside the directory are used in place; inputs outside are
-    explicitly copied into ``inputs/``. Nothing is copied silently: every
-    collision or unreadable source raises before the manifest is written.
+    explicitly copied into ``inputs/``. The same source chosen twice is stored
+    once and referenced twice. Nothing is copied silently: every collision or
+    unreadable source raises before the manifest is written.
     """
     project_dir = Path(directory).resolve()
     if not project_dir.is_dir():
         raise InputError(f"project directory must exist: {directory}")
+    copied_sources: dict[Path, Path] = {}
 
     def place(source: Path | None) -> Path | None:
         if source is None:
@@ -347,18 +349,20 @@ def prepare_project_directory(
         resolved = Path(source).resolve()
         if resolved == project_dir or not (resolved.is_file() or resolved.is_dir()):
             raise InputError(f"project input is not a readable file or folder: {source}")
+        if resolved in copied_sources:
+            return copied_sources[resolved]
         try:
             resolved.relative_to(project_dir)
-            return resolved
+            target = resolved
         except ValueError:
-            pass
-        inputs_dir = project_dir / "inputs"
-        inputs_dir.mkdir(parents=True, exist_ok=True)
-        target = inputs_dir / resolved.name
-        if resolved.is_dir():
-            _copy_route_folder(resolved, target)
-        else:
-            _copy_regular_file(resolved, target)
+            inputs_dir = project_dir / "inputs"
+            inputs_dir.mkdir(parents=True, exist_ok=True)
+            target = inputs_dir / resolved.name
+            if resolved.is_dir():
+                _copy_route_folder(resolved, target)
+            else:
+                _copy_regular_file(resolved, target)
+        copied_sources[resolved] = target
         return target
 
     placed: dict[str, Path] = {}

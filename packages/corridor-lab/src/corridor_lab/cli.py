@@ -403,7 +403,11 @@ def _project(args: argparse.Namespace) -> int:
         sys.stdout.write(f"project created: {directory / 'corridor-lab.project.json'}\n")
         return 0
     if command == "validate":
-        load_project(_require_cli_text(args.project, "project"))
+        loaded = load_project(_require_cli_text(args.project, "project"))
+        if loaded.problems:
+            for problem in loaded.problems:
+                _write_error(problem)
+            return 2
         sys.stdout.write("valid\n")
         return 0
     if command == "open":
