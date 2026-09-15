@@ -54,7 +54,7 @@ $env:PYTHONPATH = "src"
 python -m tracecanary.gui
 ```
 
-On POSIX shells, use `PYTHONPATH=src python -m tracecanary.gui`. From a checkout on Windows, double-click [TraceCanary.pyw](TraceCanary.pyw) instead. The desktop window is organized as six keyboard-reachable tabs (`Ctrl+1` through `Ctrl+6`) around the questions an operator needs answered, with a shared result panel (human and JSON views plus `Save Report`) underneath:
+On POSIX shells, use `PYTHONPATH=src python -m tracecanary.gui`. From a checkout on Windows, double-click [TraceCanary.pyw](TraceCanary.pyw) instead. The desktop window is organized as seven keyboard-reachable tabs (`Ctrl+1` through `Ctrl+7`) around the questions an operator needs answered, with a shared result panel (human and JSON views plus `Save Report`) underneath:
 
 1. **Files and Starters** — selectors for the contract, sanitized input trace, baseline, candidate, and a batch directory; `Run Built-in Demo` (an in-memory safe check) and `Create Synthetic Starter Files...`, which writes the fictional bundle into an empty directory you choose and prepares the selectors.
 2. **Is the Contract Usable?** — `Validate` and `Inspect Contract` (value-free check inventory, limits, and direct retention conflicts).
@@ -62,6 +62,7 @@ On POSIX shells, use `PYTHONPATH=src python -m tracecanary.gui`. From a checkout
 4. **Did the Candidate Leak?** — `Check Sanitized Export` (exact canary values, forbidden keys, forbidden path prefixes) and `Diff Baseline vs Candidate`.
 5. **Did Telemetry Survive?** — `Coverage`, `Retention Matrix` (value-free structural pointers), `Dropped Telemetry` with an optional explicit zero gate, the `Coverage Gate` (explicit per-field retained-field ratio with population denominators; empty or invalid required populations stay unresolved), the `Population Gate`, and `Coverage Diff` (exact rates with both denominators; a decrease is a regression).
 6. **Batch Directories** — `Run Batch Check` over the selected directory (bounded enumeration, no symlinked files, per-file results, unresolved precedence, optional baseline comparison, opt-in paths) and `Run Coverage Batch` (aggregate sums with an optional exact per-file ratio gate).
+7. **Regression Campaign** — `Run Campaign` against a selected campaign directory, `Save Summary`, and `Compare Summaries` to highlight deltas against a saved baseline.
 
 Reports are written only through `Save Report` after the user chooses a file path; synthetic files are written only through the explicit starter-files action after the user chooses an empty directory. Report destinations that would replace a tracked input (including symlinks and hard links) or sit inside a scanned batch directory are rejected before anything is written. The GUI calls TraceCanary library functions directly and never launches a subprocess.
 
