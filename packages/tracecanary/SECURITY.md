@@ -4,7 +4,7 @@ TraceCanary accepts local JSON files only and makes no network requests. Its tes
 
 ## Supported line
 
-Security fixes target the latest `0.1.x` release line while it is maintained.
+Security fixes target the latest `0.2.x` release line while it is maintained.
 
 ## Reporting
 

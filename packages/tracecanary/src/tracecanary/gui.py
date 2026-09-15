@@ -211,7 +211,7 @@ class TraceCanaryWindow:
         self._ttk.Label(frame, text="TraceCanary", font=("TkDefaultFont", 16, "bold")).grid(row=0, column=0, sticky="w")
         self._ttk.Label(
             frame,
-            text="Offline OTLP trace privacy-regression checks. Results never print matched canary values. Ctrl+1..6 switch tabs.",
+            text="Offline OTLP trace privacy-regression checks. Results never print matched canary values. Ctrl+1..7 switch tabs.",
         ).grid(row=0, column=0, sticky="e")
 
         self._notebook = self._ttk.Notebook(frame)
