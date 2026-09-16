@@ -1,9 +1,31 @@
 # Collector regression example
 
-This fictional example compares a contract-satisfying baseline with a candidate export that no longer retains the required event field. It contains only synthetic values and does not run, configure, or connect to an OpenTelemetry Collector.
+## Question
 
-```text
-python -m tracecanary diff --contract contract.json --baseline baseline.json --candidate candidate.json
+Did a candidate trace export preserve the required operational event field?
+This fictional case contains only synthetic values. It does not run, configure,
+or connect to an OpenTelemetry Collector.
+
+## Run
+
+From `packages/tracecanary`, use the pinned contract with the passing baseline
+and candidate export:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m tracecanary diff --contract fixtures/v1/contract.json --baseline examples/collector-regression/baseline.json --candidate examples/collector-regression/candidate.json
 ```
 
-The command exits `1`, reports the missing retained field, and reports the baseline-to-candidate count regression. It does not print attribute values.
+## Observed output
+
+The command produced this output and exited with status `1`:
+
+```text
+TraceCanary: REGRESSION (2 finding(s))
+- TC004 required operational field is absent [key=telemetry.event.class; scope=event]
+- TC005 candidate retained fewer required operational fields than baseline [key=telemetry.event.class; scope=event]
+```
+
+`TC004` identifies the missing field. `TC005` compares its retained-field count
+with the passing baseline. The report does not print attribute values or
+synthetic canary values.
