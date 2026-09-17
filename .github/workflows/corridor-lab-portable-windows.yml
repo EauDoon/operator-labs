@@ -3,7 +3,7 @@ name: Corridor Lab portable Windows GUI
 on:
   workflow_dispatch:
   push:
-    tags: ["corridor-lab-v0.1.*"]
+    tags: ["corridor-lab-v0.*"]
 
 permissions:
   contents: read

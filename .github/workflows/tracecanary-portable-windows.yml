@@ -3,7 +3,7 @@ name: TraceCanary portable Windows GUI
 on:
   workflow_dispatch:
   push:
-    tags: ["tracecanary-v0.1.*"]
+    tags: ["tracecanary-v0.*"]
 
 permissions:
   contents: read
