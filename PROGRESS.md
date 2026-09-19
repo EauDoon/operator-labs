@@ -6,6 +6,32 @@ Merged state: PRs #31/#32 (the full eight-milestone program) are merged into
 program milestones (M1-M8) and their verification evidence are recorded in
 git history on this file and in the PRs.
 
+## Cycle 3 (branch `dev/cycle-3`, from main at `0e40b0c`; PR #40)
+
+1. **Chained variant bases (Corridor Lab):** a variant may derive from
+   another saved variant (`add-variant --base NAME`, desktop Save Variant
+   dialog Base selector). Chains materialize in dependency order onto the
+   project base with deep copies (no mutation), assumption diffs are
+   cumulative with declared base values, and missing bases, self-reference,
+   and cycles are rejected at parse time and before staging. The previously
+   documented single-level-base limitation is removed. Corridor at 192
+   tests.
+2. **Per-file population gates for batch directories (TraceCanary):**
+   `batch`/`coverage-batch --population-scope/--population-minimum` gate
+   every structurally valid export independently; per-file statuses keep
+   the standard precedence; the gate finding is added without duplicating
+   privacy findings; the desktop batch tab gains the gate checkbox.
+   TraceCanary at 196 tests.
+
+Deferred (still): per-run history inside project manifests (settings vs
+evidence separation), zip-based evidence bundles, ASCII chart approximations.
+
+## Cycle-3 checkpoint
+
+- PR #40 open, MERGEABLE, CI green at head `3011fdc` (both workflows).
+- Awaiting owner approval; the deferred backlog stays documented in
+  ROADMAP.md.
+
 ## Cycle 2 (branch `dev/cycle-2`, from main at `28a6951`)
 
 Fresh-review findings and completed work:
