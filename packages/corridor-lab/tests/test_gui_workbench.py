@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import tempfile
 import unittest
@@ -190,3 +192,38 @@ class WorkbenchAnalysisTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PortfolioBatchTests(unittest.TestCase):
+    def test_desktop_batch_agrees_with_cli_and_protects_the_scan_root(self):
+        with tempfile.TemporaryDirectory() as temporary, contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            root = Path(temporary)
+            portfolio = root / "portfolio"
+            portfolio.mkdir()
+            (portfolio / "one.json").write_text(json.dumps(scenario(routes=[route("fictional-embedded")])), encoding="utf-8")
+            (portfolio / "two.json").write_text(json.dumps(scenario(routes=[route("fictional-embedded")])), encoding="utf-8")
+            controller = CorridorGuiController()
+            result = controller.run_portfolio_batch(portfolio, False, True)
+            self.assertIsNone(result.error)
+            self.assertEqual(result.report["status"], "pass")
+            cli_output = root / "cli.json"
+            self.assertEqual(cli_main(["batch", str(portfolio), "--include-paths", "--format", "json", "--output", str(cli_output)]), 0)
+            self.assertEqual(result.report, json.loads(cli_output.read_text(encoding="utf-8")))
+            # reports cannot land inside the scanned directory
+            self.assertIsNotNone(controller.save_last_report(portfolio / "report.json", "json").error)
+            rejected = controller.save_last_report(portfolio / "inside.json", "json")
+            self.assertIsNotNone(rejected.error)
+
+    def test_desktop_batch_reports_unresolved_files_with_precedence(self):
+        with tempfile.TemporaryDirectory() as temporary, contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            portfolio = Path(temporary) / "portfolio"
+            portfolio.mkdir()
+            (portfolio / "good.json").write_text(json.dumps(scenario(routes=[route()])), encoding="utf-8")
+            (portfolio / "broken.json").write_text("{", encoding="utf-8")
+            controller = CorridorGuiController()
+            result = controller.run_portfolio_batch(portfolio, False, True)
+            self.assertIsNone(result.error)
+            self.assertEqual(result.report["status"], "unresolved")
+            statuses = [item["status"] for item in result.report["items"]]
+            self.assertEqual(statuses, ["unresolved", "pass"])
+            self.assertTrue(controller.last_report_scanned_dirs)

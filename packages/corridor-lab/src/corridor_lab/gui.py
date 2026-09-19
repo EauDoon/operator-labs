@@ -124,6 +124,9 @@ class CorridorLabApp:
         self.target_parameter_var = tk_module.StringVar(value="send_amount")
         self.target_values_var = tk_module.StringVar(value="50,100,200")
         self.constraints_var = tk_module.StringVar(value="expected_sender_cost_at_most=20;probability_by_deadline_at_least=0.8")
+        self.batch_dir_var = tk_module.StringVar()
+        self.batch_recursive_var = tk_module.BooleanVar(value=False)
+        self.batch_include_paths_var = tk_module.BooleanVar(value=False)
         self.format_var = tk_module.StringVar(value="markdown")
         self.scenario_var = tk_module.StringVar(value=self.controller.scenario_source)
         self.routes_var = tk_module.StringVar(value=self.controller.routes_source)
@@ -243,6 +246,23 @@ class CorridorLabApp:
             text="Compare and Pareto use the selected routes; other tabs use embedded routes. Reports show separate metrics per route and never mix currencies into a score.",
             wraplength=760,
         ).grid(row=4, column=0, sticky="w", pady=(10, 0))
+
+        batch = self.ttk.LabelFrame(tab, text="Portfolio batch (bounded directory of fictional scenarios)", padding=8)
+        batch.grid(row=5, column=0, sticky="ew", pady=(10, 0))
+        batch.columnconfigure(0, weight=1)
+        self.ttk.Label(
+            batch,
+            text="Evaluates each JSON scenario file in the chosen directory with per-file results and unresolved precedence. Reports cannot land inside the scanned directory.",
+            wraplength=760,
+        ).grid(row=0, column=0, columnspan=2, sticky="w")
+        batch_row = self.ttk.Frame(batch)
+        batch_row.grid(row=1, column=0, sticky="ew", pady=(4, 0))
+        batch_row.columnconfigure(0, weight=1)
+        self.ttk.Entry(batch_row, textvariable=self.batch_dir_var).grid(row=0, column=0, sticky="ew", padx=(0, 6))
+        self.ttk.Button(batch_row, text="Browse...", command=self._choose_batch_dir).grid(row=0, column=1)
+        self.ttk.Checkbutton(batch_row, text="Recursive", variable=self.batch_recursive_var).grid(row=0, column=2, padx=(6, 0))
+        self.ttk.Checkbutton(batch_row, text="Include paths", variable=self.batch_include_paths_var).grid(row=0, column=3, padx=(6, 0))
+        self.ttk.Button(batch_row, text="Run Batch", command=self._portfolio_batch).grid(row=0, column=4, padx=(6, 0))
 
     def _build_investigate_tab(self, notebook: object) -> None:
         tab = self.ttk.Frame(notebook, padding=10)
@@ -738,6 +758,20 @@ class CorridorLabApp:
 
     def _compare_variants(self) -> None:
         self._complete(self.controller.compare_variants(), "Variant comparison complete: one declared case per variant, no composite score.")
+
+    def _choose_batch_dir(self) -> None:
+        path = self.filedialog.askdirectory(parent=self.root, title="Select folder of fictional scenario JSON files")
+        if path:
+            self.batch_dir_var.set(path)
+
+    def _portfolio_batch(self) -> None:
+        if not self.batch_dir_var.get().strip():
+            self._show_error("Choose a portfolio directory before running a batch.")
+            return
+        self._complete(
+            self.controller.run_portfolio_batch(self.batch_dir_var.get(), bool(self.batch_recursive_var.get()), bool(self.batch_include_paths_var.get())),
+            "Portfolio batch complete with per-file results and unresolved precedence.",
+        )
 
     def _target_search(self) -> None:
         self._complete(

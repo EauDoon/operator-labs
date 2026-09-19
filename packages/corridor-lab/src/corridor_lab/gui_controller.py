@@ -28,6 +28,7 @@ from .canonical import (
     read_bounded_bytes,
     require_decimal,
 )
+from .batching import run_scenario_batch
 from .evidence import build_evidence, write_evidence
 from .comparison import compare_routes, evaluate_scenario, pareto_frontier
 from .model import evaluate_route
@@ -637,6 +638,20 @@ class CorridorGuiController:
 
     def variant_names(self) -> tuple[str, ...]:
         return tuple(sorted(self.derived_variants))
+
+    def run_portfolio_batch(self, directory: str | Path, recursive: bool, include_paths: bool) -> ActionResult:
+        """Evaluate a bounded directory of fictional scenarios from the desktop.
+
+        Reports from this action cannot be written inside the scanned
+        directory, and per-file unresolved results keep their precedence.
+        """
+        try:
+            report = run_scenario_batch(str(directory).strip(), bool(recursive), bool(include_paths))
+        except (InputError, OSError, ValueError, DecimalException) as exc:
+            return self._failure(exc)
+        result = self._success(report, routes_inputs=False)
+        self.last_report_scanned_dirs = tuple(self.last_report_scanned_dirs) + (Path(directory),)
+        return result
 
     def _constraint_list(self, constraints_text: str) -> list[str]:
         chunks = [chunk.strip() for chunk in constraints_text.split(";") if chunk.strip()]

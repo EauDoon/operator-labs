@@ -1,78 +1,45 @@
 # Operator Labs development status
 
 Program: sustained multi-cycle build per [ROADMAP.md](ROADMAP.md).
-Program branch: `dev/program-cycle-1` (from `main` at `45776ea`, the PR #30 merge).
-Baseline verification at that commit (executed, green): corridor-lab 141
-tests, tracecanary 151 tests, compile checks, both GUI smoke tests from the
-checkout and from clean installed packages with `PYTHONPATH` unset.
+Merged state: PRs #31/#32 (the full eight-milestone program) are merged into
+`main` at `28a6951` with owner approval; post-merge CI green. Earlier
+program milestones (M1-M8) and their verification evidence are recorded in
+git history on this file and in the PRs.
 
-## Completed foundations (do not recreate)
+## Cycle 2 (branch `dev/cycle-2`, from main at `28a6951`)
 
-Desktop workbenches with tabbed workflows, protected atomic report exports
-with tracked-input collision guards, exact-decimal structured transaction
-editing, controller/CLI report agreement, shared bounded batch engine with
-background execution and main-thread-only widget updates, synthetic starter
-bundles covering every acceptance case. Verified merged via PR #30.
+Fresh-review findings and completed work:
 
-## Milestone 1: reusable local projects (complete pending PR)
+1. **Campaign-summary compatibility was weaker than the Milestone 4 intent**
+   (contract version only). Fixed: summaries now record the required
+   retained-field identity (scope and key pairs — contract keys are
+   configuration, not protected values) and the configured coverage
+   threshold and population definition; `campaign compare` rejects each
+   incompatible pair as unsupported with a specific explanation, and the
+   comparison document records the shared identity. TraceCanary at 191
+   tests.
+2. **TraceCanary README desktop section was stale** (six tabs; no campaign
+   tab, control selector, contract editor, or find-in-report). Rewritten for
+   the current seven-tab interface.
+3. **Corridor Lab portfolio batch was CLI-only.** The bounded batch engine
+   moved to a shared `batching.py`; the desktop Compare Routes tab gains
+   Portfolio Batch with directory selection, recursive/include-paths
+   options, per-file results, unresolved precedence, and reports kept
+   outside the scanned directory. Controller output is byte-identical with
+   the CLI (asserted). Corridor at 185 tests.
+4. **CLI evidence exports (Corridor Lab).** Every report-emitting command
+   accepts `--evidence FILE` to additionally write the self-explaining
+   evidence document with the same input-collision protection as reports;
+   documented in the README, with regressions for the standard flow, batch
+   and robustness exports, and collision refusals. Corridor at 187 tests.
 
-Design decisions (lasting rationale):
-- Each package gets its own project manifest format; no shared runtime:
-  `corridor-lab.project/v1` and `tracecanary.project/v1`. Manifests are
-  strict canonical JSON with explicit bounds and duplicate-key rejection,
-  like every other package input.
-- Relative paths resolve against the project directory; moving a
-  self-contained directory keeps it valid. Absolute paths are refused so a
-  project stays portable.
-- Every referenced input stores a SHA-256 content fingerprint at save time;
-  opening reports missing or modified inputs instead of silently accepting
-  them. Fingerprints detect change, they never claim identity of entities.
-- Result evidence stays out of the manifest. Reopening a project must not
-  imply an old report describes current inputs; reports carry their own
-  declared inputs and the GUI clears stale results on reopen.
-- Saving is explicit: create/save-as write to a user-chosen location and
-  refuse to replace an existing manifest silently.
-- The same source chosen twice (input == baseline) is stored once and
-  referenced twice; distinct sources with colliding names are refused.
+## Cycle-2 heads
 
-Implemented (corridor-lab): `projects.py` library, CLI `project
-create|validate|open|add-experiment|run` (combined deterministic
-project-run reports; reports protected against replacing inputs or landing
-inside the project), controller open/save/run, GUI Open Project / Save
-Project As / saved-experiment section with a transactional
-save-current-settings dialog. Acceptance flow verified from the installed
-package: create -> close -> move -> reopen -> identical deterministic rerun;
-modified inputs refuse to run with clear diagnostics.
+- PR #39 green and mergeable at `c810ae5`; PR body updated to cover all
+  three-plus-one items.
 
-Implemented (tracecanary): `project.py` library (contract, input, baseline,
-candidate, batch directory with tree fingerprints, coverage threshold,
-population gate), CLI `project create|validate|open`, controller open/save,
-GUI Open Project / Save Project As on the Files tab. Acceptance flow
-verified from the installed package including value-free human summaries.
-
-Corridor tests: 157. TraceCanary tests: 164. Both suites, compile checks,
-and GUI smoke tests green at commit `2569645`.
-
-## Next action
-
-Milestone 2 (Corridor Lab scenario experimentation) is implemented on the
-stacked branch `dev/scenario-experimentation` (base: `dev/program-cycle-1`):
-- `variants.py`: derived variants with strict change validation (transaction
-  fields plus declared route fee/spread/liquidity fields), materialization
-  that preserves every unchanged field, exact-decimal assumption diffs, and
-  a variant-comparison analysis table with currencies, units, guardrail
-  satisfaction, and an explicit not-a-distribution note. No composite score.
-- Manifest variants section accepts file references (existing) or derived
-  specs (`base: "scenario"` only; chained bases deferred).
-- CLI: `project add-variant | show-variant | compare-variants | run-variants`
-  with the same input protection as other project commands.
-- Desktop: variants section on the Investigate tab (Show Assumption Diff,
-  Apply Variant, Compare Variants); applied variants are in-memory, unsaved,
-  and clearly labeled; controller/CLI agreement asserted.
-- Corridor tests: 171. Real-window drive passed on macOS arm64.
-
-Next: push the stacked branch, open the M2 PR (base dev/program-cycle-1),
-wait for CI, then start Milestone 3 (target and constraint analysis).
+Deferred (still): chained variant bases, per-run history inside project
+manifests, zip-based evidence bundles, ASCII chart approximations.
 
 ## Milestone 3: target and constraint analysis (implemented)
 

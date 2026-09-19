@@ -138,6 +138,29 @@ class CampaignSummaryTests(unittest.TestCase):
         with self.assertRaisesRegex(Exception, "requires two saved"):
             compare_summaries({"summary_version": "wrong/v1"}, after)
 
+    def test_comparison_records_and_checks_thresholds_and_population(self):
+        first = campaign_summary(run_campaign(self.contract, candidates=[("leak.json", self.root / "leaked-prompt.json")],
+                                              minimum_ratio="0.95", population_scope="span", population_minimum=1))
+        matching = campaign_summary(run_campaign(self.contract, candidates=[("leak.json", self.root / "leaked-prompt.json")],
+                                                 minimum_ratio="0.95", population_scope="span", population_minimum=1))
+        comparison = compare_summaries(first, matching)
+        self.assertIn("required_fields", comparison["compatibility"] if "compatibility" in comparison else first["compatibility"])
+        changed_threshold = campaign_summary(run_campaign(self.contract, candidates=[("leak.json", self.root / "leaked-prompt.json")],
+                                                          minimum_ratio="0.5", population_scope="span", population_minimum=1))
+        with self.assertRaisesRegex(Exception, "different coverage thresholds"):
+            compare_summaries(first, changed_threshold)
+        changed_population = campaign_summary(run_campaign(self.contract, candidates=[("leak.json", self.root / "leaked-prompt.json")],
+                                                           minimum_ratio="0.95", population_scope="link", population_minimum=1))
+        with self.assertRaisesRegex(Exception, "different coverage thresholds"):
+            compare_summaries(first, changed_population)
+
+    def test_summary_records_required_field_identity_value_free(self):
+        summary = campaign_summary(run_campaign(self.contract, candidates=[("leak.json", self.root / "leaked-prompt.json")]))
+        identity = summary["compatibility"]["required_fields"]
+        self.assertEqual([field["scope"] for field in identity], ["resource", "span", "event"])
+        self.assertEqual([field["key"] for field in identity], ["service.name", "gen_ai.operation.name", "telemetry.event.class"])
+        self.assertNotIn("TCANARY", json.dumps(summary))
+
 
 class ControllerCampaignTests(unittest.TestCase):
     @classmethod

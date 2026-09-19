@@ -40,7 +40,9 @@ class ScenarioTests(unittest.TestCase):
                 json.dumps(scenario(routes=[route(route_id="replacement")])),
                 encoding="utf-8",
             )
-            original_reader = cli_module._read_scanned_scenario
+            import corridor_lab.batching as batching_module
+
+            original_reader = batching_module.read_scanned_scenario
 
             def swap_before_open(*args):
                 replacement.replace(inside)
@@ -49,8 +51,8 @@ class ScenarioTests(unittest.TestCase):
             stdout = StringIO()
             stderr = StringIO()
             with patch.object(
-                cli_module,
-                "_read_scanned_scenario",
+                batching_module,
+                "read_scanned_scenario",
                 side_effect=swap_before_open,
             ), redirect_stdout(stdout), redirect_stderr(stderr):
                 result = main(["batch", str(root), "--include-paths"])

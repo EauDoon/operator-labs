@@ -50,6 +50,11 @@ Embedded Routes** always uses embedded routes. Reports show separate metrics
 per declared route and never merge currencies into a composite score; a
 ranking appears only when the scenario declares an objective with guardrails.
 
+**Portfolio Batch** evaluates each JSON scenario file in a chosen directory
+with bounded enumeration, per-file results, unresolved precedence, and
+opt-in paths. Reports from a batch cannot be written inside the scanned
+directory, keeping scanned inputs and result evidence apart.
+
 ## 3. Investigate
 
 This tab groups the assumption analyses on the declared data:

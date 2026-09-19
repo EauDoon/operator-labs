@@ -35,10 +35,13 @@ On Windows, use `py -3.11 -m pip install --user .` when `python` is not on
 Each result is deterministic. JSON reports are canonical, UTF-8, sorted-key
 documents with an LF terminator. Compare, evaluate, sensitivity, and
 stress-grid also accept `--format csv` or `--format markdown`. Pareto and batch
-accept JSON or Markdown but not CSV. Use `--output FILE` to write a report.
-If `--format` is omitted, it is inferred from `--output` (`.json`, `.md` /
-`.markdown`, `.csv`) or from `CORRIDOR_LAB_FORMAT`; otherwise JSON is the
-default. An explicit `--format` always wins.
+accept JSON or Markdown but not CSV. Use `--output FILE` to write a report, and
+`--evidence FILE` to additionally write a self-explaining evidence document
+(the report verbatim plus the tool version, analysis identity, declared input
+sources, and standing limitations); evidence paths keep the same input-collision
+protection as reports. If `--format` is omitted, it is inferred from `--output`
+(`.json`, `.md` / `.markdown`, `.csv`) or from `CORRIDOR_LAB_FORMAT`; otherwise
+JSON is the default. An explicit `--format` always wins.
 
 ## Inspect declared cost, timing, and loss
 
@@ -94,8 +97,11 @@ repository file dependency. The tabs are:
   clearly marked unsaved; rejected drafts leave the active scenario and
   current report untouched.
 - **Compare Routes:** compare selected route files or folders against the
-  transaction, evaluate embedded routes, and show the Pareto frontier as
-  separate metrics with no composite score.
+  transaction, evaluate embedded routes, show the Pareto frontier as
+  separate metrics with no composite score, and run a bounded **Portfolio
+  Batch** over a directory of fictional scenarios with per-file results,
+  unresolved precedence, opt-in paths, and reports kept outside the scanned
+  directory.
 - **Investigate:** sensitivity, transaction sweep and grid, two-parameter
   stress grid, cost ledger, deadline profile, outcome ledger, guardrail
   headroom, loss profile, feasible amount, break-even check, deadline target,
