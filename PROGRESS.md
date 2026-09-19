@@ -27,6 +27,16 @@ Fresh-review findings and completed work:
    options, per-file results, unresolved precedence, and reports kept
    outside the scanned directory. Controller output is byte-identical with
    the CLI (asserted). Corridor at 185 tests.
+4. **CLI evidence exports (Corridor Lab).** Every report-emitting command
+   accepts `--evidence FILE` to additionally write the self-explaining
+   evidence document with the same input-collision protection as reports;
+   documented in the README, with regressions for the standard flow, batch
+   and robustness exports, and collision refusals. Corridor at 187 tests.
+
+## Cycle-2 heads
+
+- PR #39 green and mergeable at `c810ae5`; PR body updated to cover all
+  three-plus-one items.
 
 Deferred (still): chained variant bases, per-run history inside project
 manifests, zip-based evidence bundles, ASCII chart approximations.
