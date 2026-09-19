@@ -94,8 +94,11 @@ repository file dependency. The tabs are:
   clearly marked unsaved; rejected drafts leave the active scenario and
   current report untouched.
 - **Compare Routes:** compare selected route files or folders against the
-  transaction, evaluate embedded routes, and show the Pareto frontier as
-  separate metrics with no composite score.
+  transaction, evaluate embedded routes, show the Pareto frontier as
+  separate metrics with no composite score, and run a bounded **Portfolio
+  Batch** over a directory of fictional scenarios with per-file results,
+  unresolved precedence, opt-in paths, and reports kept outside the scanned
+  directory.
 - **Investigate:** sensitivity, transaction sweep and grid, two-parameter
   stress grid, cost ledger, deadline profile, outcome ledger, guardrail
   headroom, loss profile, feasible amount, break-even check, deadline target,
