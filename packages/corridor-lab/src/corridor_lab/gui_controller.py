@@ -44,9 +44,10 @@ from .projects import (
 from .report import render_report
 from .variants import (
     DerivedVariant,
-    apply_variant as materialize_variant,
+    apply_variant_chain as materialize_variant,
     parse_derived_variant,
     validate_changes,
+    validate_variant_graph,
     variant_comparison,
     variant_diff_report,
 )
@@ -559,16 +560,24 @@ class CorridorGuiController:
         """
         return self.project_base_raw if self.project_base_raw is not None else self.scenario_raw
 
-    def add_variant(self, name: str, changes: dict[str, object]) -> ActionResult:
-        """Stage a named derived variant; persisted by the next project save."""
+    def add_variant(self, name: str, changes: dict[str, object], base: str = "scenario") -> ActionResult:
+        """Stage a named derived variant; persisted by the next project save.
+
+        ``base`` may name another saved variant to build a chain; cycles,
+        missing bases, and self-reference are rejected before staging.
+        """
         try:
             if self.scenario is None or self.scenario_raw is None:
                 raise InputError("load a fictional scenario before adding a variant")
-            variant = parse_derived_variant(name.strip(), {"base": "scenario", "changes": changes})
+            variant = parse_derived_variant(name.strip(), {"base": (base or "scenario").strip(), "changes": changes})
             if variant.name in self.derived_variants:
                 raise InputError(f"a variant named {variant.name} already exists; choose a new name")
-            # Prove the variant materializes against the declared base before staging it.
-            parse_scenario(materialize_variant(variant, self._variant_base_raw()))
+            # Prove the variant materializes (with any declared chain base)
+            # against the declared base before staging it.
+            candidate_variants = dict(self.derived_variants)
+            candidate_variants[variant.name] = variant
+            validate_variant_graph(candidate_variants)
+            parse_scenario(materialize_variant(candidate_variants, variant.name, self._variant_base_raw()))
             self.derived_variants[variant.name] = variant
             self.last_error = None
             return ActionResult({}, None)
@@ -581,10 +590,9 @@ class CorridorGuiController:
             scenario = self._require_scenario()
             if self.scenario_raw is None:
                 raise InputError("the active scenario has no editable baseline data; load it from a file")
-            variant = self.derived_variants.get(name)
-            if variant is None:
+            if name not in self.derived_variants:
                 raise InputError(f"no derived variant named {name}; open or create a project first")
-            raw = materialize_variant(variant, self._variant_base_raw())
+            raw = materialize_variant(self.derived_variants, name, self._variant_base_raw())
             candidate = parse_scenario(copy.deepcopy(raw))
         except (InputError, ValueError, DecimalException) as exc:
             return self._failure(exc)
@@ -606,11 +614,10 @@ class CorridorGuiController:
             self._require_scenario()
             if self.scenario_raw is None:
                 raise InputError("the active scenario has no declared base data")
-            variant = self.derived_variants.get(name)
-            if variant is None:
+            if name not in self.derived_variants:
                 raise InputError(f"no derived variant named {name}")
             return self._success(
-                variant_diff_report(variant, self._variant_base_raw(), self.scenario.scenario_id if self.scenario else "fictional-scenario"),
+                variant_diff_report(self.derived_variants, name, self._variant_base_raw(), self.scenario.scenario_id if self.scenario else "fictional-scenario"),
                 routes_inputs=False,
             )
         except (InputError, ValueError, DecimalException) as exc:
@@ -684,7 +691,7 @@ class CorridorGuiController:
             scenarios = [parse_scenario(self._variant_base_raw())]
             labels = [str(scenarios[0].scenario_id)]
             for name in sorted(self.derived_variants):
-                scenarios.append(parse_scenario(materialize_variant(self.derived_variants[name], self._variant_base_raw())))
+                scenarios.append(parse_scenario(materialize_variant(self.derived_variants, name, self._variant_base_raw())))
                 labels.append(name)
             return self._success(robustness_review(scenarios, labels, constraints), routes_inputs=False)
         except (InputError, OSError, ValueError, DecimalException) as exc:

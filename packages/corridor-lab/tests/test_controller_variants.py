@@ -98,3 +98,37 @@ class ControllerVariantTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ChainedVariantControllerTests(unittest.TestCase):
+    def test_chained_variant_applies_cumulative_changes(self):
+        with tempfile.TemporaryDirectory() as temporary, redirect_stdout(StringIO()):
+            manifest_path = make_variant_project(Path(temporary))
+            controller = CorridorGuiController()
+            self.assertIsNone(controller.open_project(manifest_path).error)
+            self.assertIsNone(controller.add_variant(
+                "tight-plus-fee", {"routes": {"fictional-embedded": {"fixed_fee_send": "5.00"}}}, base="tight").error)
+            self.assertIsNone(controller.apply_variant("tight-plus-fee").error)
+            fields = controller.transaction_fields()
+            self.assertEqual(fields["deadline_hours"], "1")
+            diff = controller.show_variant_diff("tight-plus-fee")
+            self.assertIsNone(diff.error)
+            by_field = {row["field"]: row for row in diff.report["rows"]}
+            self.assertEqual(by_field["deadline_hours"]["variant"], "1")
+            self.assertEqual(by_field["fixed_fee_send"]["variant"], "5.00")
+            comparison = controller.compare_variants()
+            self.assertIn("tight-plus-fee", {row["variant"] for row in comparison.report["rows"]})
+
+    def test_chained_base_must_exist_and_cycles_are_refused(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            manifest_path = make_variant_project(Path(temporary))
+            controller = CorridorGuiController()
+            self.assertIsNone(controller.open_project(manifest_path).error)
+            missing = controller.add_variant("orphan", {"transaction": {"deadline_hours": "2"}}, base="ghost")
+            self.assertIsNotNone(missing.error)
+            self.assertIn("unknown variant", missing.error)
+            self.assertIsNone(controller.add_variant(
+                "swap", {"transaction": {"deadline_hours": "1"}}, base="tight").error)
+            cycle = controller.add_variant(
+                "tight-cycle", {"transaction": {"deadline_hours": "1"}}, base="tight")
+            self.assertIsNone(cycle.error)

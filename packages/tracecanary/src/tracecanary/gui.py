@@ -187,6 +187,8 @@ class TraceCanaryWindow:
         self._include_paths = tk.BooleanVar(value=False)
         self._require_zero = tk.BooleanVar(value=False)
         self._use_baseline = tk.BooleanVar(value=False)
+        self._batch_population = tk.BooleanVar(value=False)
+        self._batch_population_summary = tk.StringVar(value="uses the Population Gate scope and minimum")
         self._batch_job: BackgroundBatch | None = None
         self._contract_editor = None
         self._contract_text = None
@@ -413,6 +415,9 @@ class TraceCanaryWindow:
         self._ttk.Checkbutton(options, text="Recursive", variable=self._recursive).grid(row=0, column=0, sticky="w")
         self._ttk.Checkbutton(options, text="Include paths (opt-in)", variable=self._include_paths).grid(row=0, column=1, sticky="w", padx=(10, 0))
         self._ttk.Checkbutton(options, text="Compare candidates against the passing Baseline from the Files tab", variable=self._use_baseline).grid(row=1, column=0, columnspan=2, sticky="w")
+        self._ttk.Checkbutton(options, text="Population gate on every valid file", variable=self._batch_population).grid(row=2, column=0, columnspan=2, sticky="w")
+        self._ttk.Label(options, text="Scope + minimum:").grid(row=2, column=2, sticky="w", padx=(6, 0))
+        self._ttk.Label(options, textvariable=self._batch_population_summary).grid(row=2, column=3, sticky="w", padx=(4, 0))
         self._batch_button = self._ttk.Button(tab, text="Run Batch Check", command=self._batch)
         self._batch_button.grid(row=3, column=0, sticky="w", pady=(8, 0))
 
@@ -452,6 +457,18 @@ class TraceCanaryWindow:
             text="Saved summaries are deterministic and value-free; comparison aggregates findings by value-free code and never implies matched entity identity.",
             wraplength=760,
         ).grid(row=3, column=0, sticky="w", pady=(8, 0))
+
+    def _batch_population_config(self) -> tuple[str | None, int | None]:
+        """Capture the batch population gate from the survival-tab entries."""
+        if not self._batch_population.get():
+            return None, None
+        scope = self._population_scope.get()
+        text = self._population_minimum.get().strip()
+        minimum = int(text) if text.isdigit() else None
+        if minimum is None:
+            self._status.set("Status: the population gate needs a whole-number minimum; ignoring it for this run.")
+            return None, None
+        return scope, minimum
 
     def _campaign(self) -> None:
         contract = self._contract.get().strip()
@@ -728,6 +745,7 @@ class TraceCanaryWindow:
         recursive = bool(self._recursive.get())
         include_paths = bool(self._include_paths.get())
         baseline = self._baseline.get() if self._use_baseline.get() else None
+        population_scope, population_minimum = self._batch_population_config()
         self._run_background(
             lambda: self._controller.batch(
                 contract,
@@ -735,8 +753,11 @@ class TraceCanaryWindow:
                 recursive=recursive,
                 include_paths=include_paths,
                 baseline_path=baseline,
+                population_scope=population_scope,
+                population_minimum=population_minimum,
             ),
             "Status: batch running (bounded by the contract file limit); the window stays responsive.",
+            buttons=(self._batch_button,),
         )
 
     def _coverage_batch(self) -> None:
@@ -745,6 +766,7 @@ class TraceCanaryWindow:
         recursive = bool(self._recursive.get())
         include_paths = bool(self._include_paths.get())
         minimum_ratio = self._batch_ratio.get() or None
+        population_scope, population_minimum = self._batch_population_config()
         self._run_background(
             lambda: self._controller.coverage_batch(
                 contract,
@@ -752,8 +774,11 @@ class TraceCanaryWindow:
                 recursive=recursive,
                 include_paths=include_paths,
                 minimum_ratio=minimum_ratio,
+                population_scope=population_scope,
+                population_minimum=population_minimum,
             ),
             "Status: coverage batch running (bounded by the contract file limit); the window stays responsive.",
+            buttons=(self._coverage_batch_button,),
         )
 
     def _run_background(self, operation: Callable[[], GuiResult], pending_message: str, *, buttons: tuple[object, ...] = ()) -> None:

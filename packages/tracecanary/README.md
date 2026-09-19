@@ -251,5 +251,12 @@ all unresolved results, and `excluded_items` counts malformed inputs omitted fro
 aggregate denominators. A valid empty export can be an unresolved gate result
 without being excluded from the coverage input count.
 
+`batch` and `coverage-batch` also accept an explicit per-file population gate
+(`--population-scope span --population-minimum 1`): every structurally valid
+export is gated independently, gate findings join each file's own findings
+without duplication, and unresolved precedence is unchanged. In the desktop
+this is the **Population gate on every valid file** checkbox with the scope
+and minimum from the survival tab.
+
 `tracecanary coverage-batch --contract contract.json --input-dir exports --format json`
 uses the same strict file, nesting, symlink and file-count bounds as `batch`. Each valid export includes normal privacy findings plus coverage. The aggregate sums presence counts and entity denominators, rather than averaging percentages. Invalid items are unresolved and explicitly excluded from aggregate denominators; an empty denominator has a null ratio. Counts describe the supplied files and may double-count repeated entities across exports. Paths remain opt-in. Human and JSON formats are supported; no production telemetry or collection is enabled.

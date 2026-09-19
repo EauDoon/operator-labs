@@ -148,6 +148,8 @@ def build_parser() -> argparse.ArgumentParser:
     batch.add_argument("--baseline", type=_cli_path, help="compare every candidate with this passing synthetic baseline")
     batch.add_argument("--recursive", action="store_true", help="include *.json files in subdirectories")
     batch.add_argument("--include-paths", action="store_true", help="include input-relative POSIX paths in reports")
+    batch.add_argument("--population-scope", choices=("resource", "scope", "span", "event", "link"), help="apply an explicit population gate to every valid file")
+    batch.add_argument("--population-minimum", type=int)
     batch.add_argument("--format", choices=("human", "json", "sarif", "junit"), default="json", help="report format (default: json)")
     batch_coverage = commands.add_parser("coverage-batch", help="aggregate coverage counts across a bounded directory")
     batch_coverage.add_argument("--contract", required=True, type=_cli_path)
@@ -155,6 +157,8 @@ def build_parser() -> argparse.ArgumentParser:
     batch_coverage.add_argument("--recursive", action="store_true")
     batch_coverage.add_argument("--include-paths", action="store_true")
     batch_coverage.add_argument("--minimum-ratio", help="require this exact retained-field ratio in every file")
+    batch_coverage.add_argument("--population-scope", choices=("resource", "scope", "span", "event", "link"))
+    batch_coverage.add_argument("--population-minimum", type=int)
     batch_coverage.add_argument("--format", choices=("human", "json"), default="json")
     for command in (validate, check, diff, batch, coverage, inspect, gate, rate_diff, matrix, batch_coverage, control, population, dropped):
         command.add_argument("--output", type=_cli_path, help="write a UTF-8 report atomically; cannot replace inputs")
@@ -268,8 +272,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _status_exit(report["status"])
         else:
             baseline = _load_trace(args.baseline, contract) if getattr(args, "baseline", None) is not None else None
+            population_scope = getattr(args, "population_scope", None)
+            population_minimum = getattr(args, "population_minimum", None)
+            if population_scope is not None and population_minimum is None:
+                raise InputError("--population-minimum is required with --population-scope")
             batch_report = _run_batch(contract, args.input_dir, args.recursive, args.include_paths, baseline,
-                                      coverage=args.command == "coverage-batch", minimum_ratio=getattr(args, "minimum_ratio", None))
+                                      coverage=args.command == "coverage-batch", minimum_ratio=getattr(args, "minimum_ratio", None),
+                                      population_scope=population_scope, population_minimum=population_minimum)
             _print_batch(
                 batch_report,
                 args.format,
@@ -561,9 +570,10 @@ def _load_trace(path: Path, contract: Contract) -> dict[str, Any]:
     return payload
 
 
-def _run_batch(contract: Contract, input_dir: Path, recursive: bool, include_paths: bool, baseline: dict[str, Any] | None = None, *, coverage: bool = False, minimum_ratio: str | None = None) -> BatchReport:
+def _run_batch(contract: Contract, input_dir: Path, recursive: bool, include_paths: bool, baseline: dict[str, Any] | None = None, *, coverage: bool = False, minimum_ratio: str | None = None, population_scope: str | None = None, population_minimum: int | None = None) -> BatchReport:
     """Compatibility wrapper; the shared engine lives in batching.run_batch."""
-    return run_batch(contract, input_dir, recursive, include_paths, baseline, coverage=coverage, minimum_ratio=minimum_ratio)
+    return run_batch(contract, input_dir, recursive, include_paths, baseline, coverage=coverage, minimum_ratio=minimum_ratio,
+                     population_scope=population_scope, population_minimum=population_minimum)
 
 
 def _emit(text: str, output: Path | None) -> None:
