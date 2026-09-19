@@ -1,4 +1,5 @@
 """Bounded batch execution shared by the CLI and the desktop controller."""
+import json
 from collections.abc import Iterator
 from fractions import Fraction
 from pathlib import Path
@@ -9,7 +10,7 @@ from tracecanary.checker import check_trace
 from tracecanary.comparison import diff_traces
 from tracecanary.contract import Contract
 from tracecanary.coverage import coverage_report
-from tracecanary.inspection import _parse_minimum_ratio, coverage_gate
+from tracecanary.inspection import _parse_minimum_ratio, coverage_gate, population_gate
 from tracecanary.otlp import OtlpError, validate_trace
 from tracecanary.report import (
     BatchItem,
@@ -36,8 +37,14 @@ def run_batch(
     *,
     coverage: bool = False,
     minimum_ratio: str | None = None,
+    population_scope: str | None = None,
+    population_minimum: int | None = None,
 ) -> BatchReport:
-    """Check or inspect a bounded directory of OTLP/HTTP JSON exports."""
+    """Check or inspect a bounded directory of OTLP/HTTP JSON exports.
+
+    An explicit population gate applies independently to every structurally
+    valid file, keeping each per-file status and the unresolved precedence.
+    """
     if minimum_ratio is not None:
         _parse_minimum_ratio(minimum_ratio)
         if not coverage:
@@ -80,6 +87,18 @@ def run_batch(
                 report = coverage_gate(contract, payload, minimum_ratio)
             else:
                 report = coverage_report(contract, payload) if coverage else check_trace(contract, payload, mode="batch") if baseline is None else diff_traces(contract, baseline, payload)
+            if population_scope is not None and population_minimum is not None:
+                gated = population_gate(contract, payload, population_scope, population_minimum)
+                combined = dict(report)
+                existing = {json.dumps(violation, sort_keys=True) for violation in report["violations"]}
+                combined["violations"] = list(report["violations"]) + [
+                    violation for violation in gated["violations"]
+                    if json.dumps(violation, sort_keys=True) not in existing
+                ]
+                pair = {report["status"], gated["status"]}
+                combined["status"] = "unresolved" if "unresolved" in pair else "regression" if "regression" in pair else "pass"
+                combined["population_gate"] = gated["population_gate"]
+                report = combined
         except UnsafeReportError:
             raise
         except (InputError, OtlpError, ValueError):

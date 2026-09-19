@@ -337,7 +337,7 @@ class TraceCanaryController:
             inputs=(Path(contract_path), Path(baseline_path), Path(candidate_path)),
         )
 
-    def batch(self, contract_path: str | Path, input_dir: str | Path, *, recursive: bool = False, include_paths: bool = False, baseline_path: str | Path | None = None) -> GuiResult:
+    def batch(self, contract_path: str | Path, input_dir: str | Path, *, recursive: bool = False, include_paths: bool = False, baseline_path: str | Path | None = None, population_scope: str | None = None, population_minimum: int | None = None) -> GuiResult:
         """Check a bounded directory of exports, optionally against a baseline."""
         guidance = self._require(
             "batch",
@@ -348,13 +348,13 @@ class TraceCanaryController:
             return guidance
         return self._run_batch_op(
             "batch",
-            lambda: self._batch(Path(contract_path), Path(input_dir), recursive, include_paths, baseline_path),
+            lambda: self._batch(Path(contract_path), Path(input_dir), recursive, include_paths, baseline_path, population_scope, population_minimum),
             contract_path=Path(contract_path),
             input_dir=Path(input_dir),
             baseline_path=None if baseline_path is None else Path(baseline_path),
         )
 
-    def coverage_batch(self, contract_path: str | Path, input_dir: str | Path, *, recursive: bool = False, include_paths: bool = False, minimum_ratio: str | None = None) -> GuiResult:
+    def coverage_batch(self, contract_path: str | Path, input_dir: str | Path, *, recursive: bool = False, include_paths: bool = False, minimum_ratio: str | None = None, population_scope: str | None = None, population_minimum: int | None = None) -> GuiResult:
         """Aggregate coverage counts across a bounded directory of exports."""
         guidance = self._require(
             "coverage-batch",
@@ -365,16 +365,18 @@ class TraceCanaryController:
             return guidance
         return self._run_batch_op(
             "coverage-batch",
-            lambda: run_batch(load_contract(Path(contract_path)), Path(input_dir), recursive, include_paths, None, coverage=True, minimum_ratio=minimum_ratio),
+            lambda: run_batch(load_contract(Path(contract_path)), Path(input_dir), recursive, include_paths, None, coverage=True, minimum_ratio=minimum_ratio,
+                              population_scope=population_scope, population_minimum=population_minimum),
             contract_path=Path(contract_path),
             input_dir=Path(input_dir),
             baseline_path=None,
         )
 
-    def _batch(self, contract_path: Path, input_dir: Path, recursive: bool, include_paths: bool, baseline_path: str | Path | None) -> BatchReport:
+    def _batch(self, contract_path: Path, input_dir: Path, recursive: bool, include_paths: bool, baseline_path: str | Path | None, population_scope: str | None = None, population_minimum: int | None = None) -> BatchReport:
         contract = load_contract(contract_path)
         baseline = self._load_trace(Path(baseline_path), contract) if baseline_path is not None and str(baseline_path).strip() else None
-        return run_batch(contract, input_dir, recursive, include_paths, baseline)
+        return run_batch(contract, input_dir, recursive, include_paths, baseline,
+                         population_scope=population_scope, population_minimum=population_minimum)
 
     def open_project(self, path: str | Path) -> GuiResult:
         """Load a saved project: report selection statuses without implying old results apply."""
