@@ -182,13 +182,27 @@ def run_campaign(
         "status": status,
         "phases": phases,
         "summary": {"finding_counts": dict(sorted(totals.items()))},
+        "required_fields": [
+            {"scope": field.scope, "key": field.key} for field in contract.required_retained_fields
+        ],
+        "coverage": {
+            "minimum_ratio": minimum_ratio,
+            "population_scope": population_scope,
+            "population_minimum": population_minimum,
+        },
     }
     ensure_object_values_absent(campaign, tuple(canary.value for canary in contract.canaries))
     return campaign
 
 
 def campaign_summary(campaign: dict[str, Any]) -> dict[str, Any]:
-    """A deterministic, value-free digest safe to save explicitly."""
+    """A deterministic, value-free digest safe to save explicitly.
+
+    The digest records the compatibility identity a later comparison needs:
+    contract version, required-field identity (scope and key pairs — contract
+    keys are not protected values), and the configured thresholds. Canary
+    values never appear.
+    """
     return {
         "summary_version": "tracecanary.campaign-summary/v1",
         "contract_version": campaign["contract_version"],
@@ -199,6 +213,20 @@ def campaign_summary(campaign: dict[str, Any]) -> dict[str, Any]:
             if isinstance(phase, dict)
         },
         "candidate_count": campaign["phases"]["candidates"].get("count", 0),
+        "compatibility": _compatibility_identity(campaign),
+    }
+
+
+def _compatibility_identity(campaign: dict[str, Any]) -> dict[str, Any]:
+    fields = []
+    for field in campaign.get("required_fields", []):
+        if isinstance(field, dict):
+            fields.append({"scope": field.get("scope", ""), "key": field.get("key", "")})
+        else:
+            fields.append({"scope": getattr(field, "scope", ""), "key": getattr(field, "key", "")})
+    return {
+        "required_fields": fields,
+        "coverage": dict(campaign.get("coverage", {})),
     }
 
 
@@ -254,6 +282,20 @@ def compare_summaries(baseline_summary: dict[str, Any], candidate_summary: dict[
             raise InputError("campaign comparison requires two saved tracecanary.campaign-summary/v1 documents")
     if baseline_summary.get("contract_version") != candidate_summary.get("contract_version"):
         raise InputError("campaign comparison requires the same contract version in both summaries")
+    baseline_identity = baseline_summary.get("compatibility") or {}
+    candidate_identity = candidate_summary.get("compatibility") or {}
+    baseline_fields = baseline_identity.get("required_fields") or []
+    candidate_fields = candidate_identity.get("required_fields") or []
+    if [dict(field) for field in baseline_fields] != [dict(field) for field in candidate_fields]:
+        raise InputError(
+            "campaign comparison is unsupported: the summaries declare different required retained fields "
+            "(identity is scope plus key); run both campaigns with the same contract"
+        )
+    if (baseline_identity.get("coverage") or {}) != (candidate_identity.get("coverage") or {}):
+        raise InputError(
+            "campaign comparison is unsupported: the summaries were run with different coverage thresholds "
+            "or population definitions; rerun one of the campaigns with matching configuration"
+        )
     phases: dict[str, Any] = {}
     for name in sorted(set(baseline_summary.get("phases", {})) | set(candidate_summary.get("phases", {}))):
         before = baseline_summary.get("phases", {}).get(name, {})
@@ -271,6 +313,10 @@ def compare_summaries(baseline_summary: dict[str, Any], candidate_summary: dict[
         "comparison_version": "tracecanary.campaign-comparison/v1",
         "contract_version": baseline_summary.get("contract_version", ""),
         "campaign_status_change": [baseline_summary.get("campaign_status", "absent"), candidate_summary.get("campaign_status", "absent")],
+        "compatibility": {
+            "required_fields": baseline_identity.get("required_fields", []),
+            "coverage": baseline_identity.get("coverage", {}),
+        },
         "phases": phases,
         "meaning": "finding codes are aggregated by value-free code; no entity identity or causal attribution is implied",
     }
