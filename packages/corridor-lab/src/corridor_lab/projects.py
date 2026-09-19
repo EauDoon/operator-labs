@@ -23,7 +23,13 @@ from decimal import Decimal, DecimalException
 from pathlib import Path, PurePosixPath
 
 from .analysis import deadline_target, resolution_quantiles
-from .variants import DerivedVariant, parse_derived_variant
+from .variants import (
+    DerivedVariant,
+    apply_variant_chain,
+    chain_changes,
+    parse_derived_variant,
+    validate_variant_graph,
+)
 from .canonical import (
     InputError,
     atomic_write_text,
@@ -247,6 +253,7 @@ def parse_manifest(value: object) -> ProjectManifest:
                 variants[variant_name] = _parse_input_ref(ref, f"variants[{name}]")
         if len(variants) + len(derived_variants) > MAX_VARIANTS:
             raise InputError(f"variants exceed the {MAX_VARIANTS}-variant budget")
+        validate_variant_graph(derived_variants)
     experiment_values = require_object(manifest, "project manifest").get("experiments")
     if not isinstance(experiment_values, list):
         raise InputError("project manifest.experiments must be a list")
@@ -427,7 +434,7 @@ def manifest_document(manifest: ProjectManifest) -> dict[str, object]:
         document["variants"] = document.get("variants", {})
         for name, variant in manifest.derived_variants.items():
             document["variants"][name] = {
-                "base": "scenario",
+                "base": variant.base,
                 "changes": {
                     "transaction": dict(variant.transaction),
                     "routes": {route_id: dict(fields) for route_id, fields in variant.routes.items()},

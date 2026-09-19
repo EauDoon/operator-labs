@@ -38,8 +38,8 @@ Fresh-review findings and completed work:
 - PR #39 green and mergeable at `c810ae5`; PR body updated to cover all
   three-plus-one items.
 
-Deferred (still): chained variant bases, per-run history inside project
-manifests, zip-based evidence bundles, ASCII chart approximations.
+Deferred (still): per-run history inside project manifests, zip-based
+evidence bundles, ASCII chart approximations.
 
 ## Milestone 3: target and constraint analysis (implemented)
 

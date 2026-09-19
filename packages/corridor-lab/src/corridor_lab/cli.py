@@ -53,7 +53,14 @@ from .scenario_diff import diff_scenarios
 from .sensitivity import run_sensitivity
 from .stress import run_stress_grid
 from .targeting import robustness_review, target_search
-from .variants import apply_variant, parse_derived_variant, parse_variant_changes_argument, variant_comparison, variant_diff_report
+from .variants import (
+    apply_variant_chain,
+    parse_derived_variant,
+    parse_variant_changes_argument,
+    validate_variant_graph,
+    variant_comparison,
+    variant_diff_report,
+)
 from .transaction_sweep import (
     TRANSACTION_PARAMETERS,
     run_transaction_grid,
@@ -299,6 +306,8 @@ def build_parser() -> argparse.ArgumentParser:
     add_variant = project_commands.add_parser("add-variant", help="add a named derived scenario variant (explicit save)")
     add_variant.add_argument("project")
     add_variant.add_argument("--variant", required=True, help="variant name")
+    add_variant.add_argument("--base", default="scenario",
+                             help="derive from the project scenario (default) or another saved variant name")
     add_variant.add_argument("--changes", required=True, help="transaction.FIELD=VALUE;route.ROUTE_ID.FIELD=VALUE;...")
     show_variant = project_commands.add_parser("show-variant", help="show the assumption diff of a derived variant")
     show_variant.add_argument("project")
@@ -441,7 +450,7 @@ def _project_run_variants(args: argparse.Namespace) -> int:
     for index, name in enumerate(chosen, start=1):
         try:
             variant = derived[name]
-            variant_scenario = parse_scenario(apply_variant(variant, base_raw))
+            variant_scenario = parse_scenario(apply_variant_chain(derived, name, base_raw))
             report = execute_experiment(experiment, variant_scenario)
             status = "pass"
         except (InputError, OSError, ValueError, DecimalException) as exc:
@@ -615,8 +624,9 @@ def _project(args: argparse.Namespace) -> int:
         if args.variant.strip() in derived:
             raise InputError(f"add-variant must not replace an existing derived variant: {args.variant}")
         transaction, routes = parse_variant_changes_argument(args.changes)
-        variant = parse_derived_variant(args.variant.strip(), {"base": "scenario", "changes": {"transaction": transaction, "routes": routes}})
+        variant = parse_derived_variant(args.variant.strip(), {"base": args.base.strip() or "scenario", "changes": {"transaction": transaction, "routes": routes}})
         derived[args.variant.strip()] = variant
+        validate_variant_graph(derived)
         write_project(loaded.path, _manifest_with_variants(loaded, derived), replace=True)
         sys.stdout.write(f"variant saved: {args.variant.strip()}\n")
         return 0
@@ -631,7 +641,7 @@ def _project(args: argparse.Namespace) -> int:
         if variant is None:
             raise InputError(f"no derived variant named {args.variant.strip()}")
         scenario_id = parse_scenario(base_raw).scenario_id if "scenario_id" in base_raw else loaded.manifest.project_id
-        report = variant_diff_report(variant, base_raw, scenario_id)
+        report = variant_diff_report(derived, args.variant.strip(), base_raw, scenario_id)
         output_format = resolve_report_format(args.format, args.output, ("json", "markdown"))
         text = render_report(report, output_format)
         if args.output is None:

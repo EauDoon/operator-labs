@@ -10,6 +10,7 @@ distribution, and nothing here invents a composite score.
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 from decimal import Decimal, DecimalException
 from typing import Any
@@ -33,13 +34,15 @@ ROUTE_CHANGE_FIELDS = (
     "liquidity.holding_days",
 )
 MAX_CHANGES = 32
+SCENARIO_BASE = "scenario"
 
 
 @dataclass(frozen=True)
 class DerivedVariant:
-    """A named, controlled change set applied to the project scenario."""
+    """A named, controlled change set applied to a declared base."""
 
     name: str
+    base: str
     transaction: dict[str, str]
     routes: dict[str, dict[str, str]]
 
@@ -105,10 +108,14 @@ def parse_derived_variant(name: str, value: Any) -> DerivedVariant:
     missing = {"base", "changes"} - value.keys()
     if unknown or missing:
         raise InputError(f"derived variant has unsupported or missing fields: {', '.join(sorted(unknown | missing))}")
-    if value["base"] != "scenario":
-        raise InputError("variant base must be the project scenario; chained variants are not supported")
+    base = value["base"]
+    if not isinstance(base, str) or not base.strip():
+        raise InputError("variant base must be a variant name or the project scenario")
+    base = base.strip()
+    if base != SCENARIO_BASE and base != name and require_identifier(base, "variant base") != base:
+        raise InputError(f"variant base must be a stable identifier: {base}")
     transaction, routes = validate_changes(value["changes"])
-    return DerivedVariant(name=require_identifier(name, "variant name"), transaction=transaction, routes=routes)
+    return DerivedVariant(name=require_identifier(name, "variant name"), base=base, transaction=transaction, routes=routes)
 
 
 def apply_variant(variant: DerivedVariant, base_raw: dict[str, Any]) -> dict[str, Any]:
@@ -117,8 +124,6 @@ def apply_variant(variant: DerivedVariant, base_raw: dict[str, Any]) -> dict[str
     The base is deep-copied first: materializing a variant must never mutate
     the caller's declared base data.
     """
-    from copy import deepcopy
-
     raw = deepcopy(base_raw)
     if not isinstance(raw.get("transaction"), dict):
         raise InputError("variant base scenario transaction must be an object")
@@ -153,6 +158,113 @@ def apply_variant(variant: DerivedVariant, base_raw: dict[str, Any]) -> dict[str
     return raw
 
 
+def validate_variant_graph(variants: dict[str, DerivedVariant]) -> None:
+    """Reject missing bases, self-reference, and cycles in the variant graph."""
+    for name, variant in variants.items():
+        base = variant.base
+        if base == SCENARIO_BASE:
+            continue
+        if base not in variants:
+            raise InputError(f"variant {name} derives from unknown variant {base}")
+        if base == name:
+            raise InputError(f"variant {name} cannot derive from itself")
+    visiting: list[str] = []
+
+    def visit(name: str) -> None:
+        if name in visiting:
+            cycle = " -> ".join([*visiting[visiting.index(name):], name])
+            raise InputError(f"variant base cycle: {cycle}")
+        if name == SCENARIO_BASE or name not in variants:
+            return
+        visiting.append(name)
+        try:
+            visit(variants[name].base)
+        finally:
+            visiting.remove(name)
+
+    for name in sorted(variants):
+        visit(name)
+
+
+def _chain_order(variants: dict[str, DerivedVariant], name: str) -> list[str]:
+    """Return the materialization order from the scenario up to ``name``."""
+    order: list[str] = []
+    current: str | None = name
+    while current is not None and current != SCENARIO_BASE:
+        if current in order:
+            raise InputError("variant base cycle detected")
+        if current not in variants:
+            raise InputError(f"variant {name} derives from unknown variant {current}")
+        order.append(current)
+        current = variants[current].base
+    order.reverse()
+    return order
+
+
+def apply_variant_chain(variants: dict[str, DerivedVariant], name: str, base_raw: dict[str, Any]) -> dict[str, Any]:
+    """Materialize ``name`` by applying its chain in order onto the base.
+
+    The base is deep-copied once; no step mutates the caller's declared data
+    or an earlier chain state.
+    """
+    if name not in variants:
+        raise InputError(f"no derived variant named {name}")
+    order = _chain_order(variants, name)
+    raw = deepcopy(base_raw)
+    for step in order:
+        raw = apply_variant(variants[step], raw)
+    return raw
+
+
+def chain_changes(variants: dict[str, DerivedVariant], name: str, base_raw: dict[str, Any]) -> list[dict[str, str]]:
+    """The cumulative assumption diff of a variant chain against the base.
+
+    Rows reflect the end state of the whole chain, with declared base values
+    from the project scenario.
+    """
+    if name not in variants:
+        raise InputError(f"no derived variant named {name}")
+    order = _chain_order(variants, name)
+    cumulative: dict[str, str] = {}
+    cumulative_routes: dict[str, dict[str, str]] = {}
+    for step in order:
+        variant = variants[step]
+        for field, value in variant.transaction.items():
+            cumulative[field] = value
+        for route_id, fields in variant.routes.items():
+            target = cumulative_routes.setdefault(route_id, {})
+            for field, value in fields.items():
+                target[field] = value
+    end_state = apply_variant_chain(variants, name, base_raw)
+    rows: list[dict[str, str]] = []
+    transaction = base_raw.get("transaction", {})
+    for field in sorted(cumulative, key=TRANSACTION_CHANGE_FIELDS.index):
+        base_value = transaction.get(field)
+        rows.append({
+            "section": "transaction", "field": field,
+            "base": decimal_text(Decimal(str(base_value))) if base_value is not None else "",
+            "variant": cumulative[field],
+        })
+    routes_raw = base_raw.get("routes", [])
+    by_id: dict[str, dict[str, Any]] = {}
+    for route in routes_raw or []:
+        if isinstance(route, dict) and isinstance(route.get("route_id"), str):
+            by_id[route["route_id"]] = route
+    for route_id in sorted(cumulative_routes):
+        route = by_id.get(route_id, {})
+        for field in cumulative_routes[route_id]:
+            group, name_part = _split_route_field(field)
+            source = route.get(group, {}) if group else route
+            base_value = source.get(name_part) if isinstance(source, dict) else None
+            rows.append({
+                "section": f"route {route_id}",
+                "field": field,
+                "base": decimal_text(Decimal(str(base_value))) if base_value is not None else "",
+                "variant": cumulative_routes[route_id][field],
+            })
+    return rows
+
+
 def parse_variant_changes_argument(text: str) -> tuple[dict[str, str], dict[str, dict[str, str]]]:
     """Parse ``transaction.FIELD=VALUE;route.ROUTE_ID.FIELD=VALUE`` arguments."""
     if not text.strip():
@@ -183,9 +295,9 @@ def parse_variant_changes_argument(text: str) -> tuple[dict[str, str], dict[str,
     return validate_changes({"transaction": transaction, "routes": routes})
 
 
-def variant_diff_report(variant: DerivedVariant, base_raw: dict[str, Any], scenario_id: str) -> dict[str, Any]:
-    """The assumption diff as a standard analysis table, shown before results."""
-    rows = variant_changes(variant, base_raw)
+def variant_diff_report(variants: dict[str, DerivedVariant], name: str, base_raw: dict[str, Any], scenario_id: str) -> dict[str, Any]:
+    """The cumulative assumption diff of a variant chain, shown before results."""
+    rows = chain_changes(variants, name, base_raw)
     return {"report_version": "corridor-lab.analysis/v1", "analysis": "variant-assumption-diff",
             "scenario_id": scenario_id, "fictional": True,
             "columns": ["section", "field", "base", "variant"], "rows": rows,

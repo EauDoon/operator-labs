@@ -11,6 +11,7 @@ import sys
 from collections.abc import Sequence
 
 from .gui_controller import ActionResult, CorridorGuiController
+from .variants import parse_variant_changes_argument
 
 STARTUP_FAILURE_MESSAGE = "Corridor Lab could not open its desktop interface. Install or enable Tcl/Tk, then try again."
 
@@ -356,6 +357,7 @@ class CorridorLabApp:
         self.ttk.Button(variant_row, text="Show Assumption Diff", command=self._show_variant_diff).grid(row=0, column=1, padx=(6, 0))
         self.ttk.Button(variant_row, text="Apply Variant", command=self._apply_variant).grid(row=0, column=2, padx=(6, 0))
         self.ttk.Button(variant_row, text="Compare Variants", command=self._compare_variants).grid(row=0, column=3, padx=(6, 0))
+        self.ttk.Button(variant_row, text="Save Variant...", command=self._save_variant_dialog).grid(row=0, column=4, padx=(6, 0))
         self.ttk.Label(variants, textvariable=self.variants_var, wraplength=760, anchor="w").grid(row=1, column=0, sticky="ew", pady=(6, 0))
 
         targets = self.ttk.LabelFrame(tab, text="Target and constraint analysis (bounded, declared candidate sets)", padding=8)
@@ -755,6 +757,50 @@ class CorridorLabApp:
         self._refresh_transaction_fields()
         self.scenario_var.set(self.controller.scenario_source)
         self.status_var.set(f"Variant {name} applied in memory (unsaved). The previous report was cleared; rerun analyses against it.")
+
+    def _save_variant_dialog(self) -> None:
+        if self.controller.scenario is None or self.controller.scenario_raw is None:
+            self._show_error("Load a fictional scenario before adding a variant.")
+            return
+        dialog = self.tk.Toplevel(self.root)
+        dialog.title("Save named scenario variant")
+        dialog.minsize(620, 280)
+        dialog.columnconfigure(1, weight=1)
+        name_var = self.tk.StringVar()
+        base_var = self.tk.StringVar(value="scenario")
+        changes_var = self.tk.StringVar()
+        status_var = self.tk.StringVar(
+            value="Changes use transaction.FIELD=VALUE and route.ROUTE_ID.FIELD=VALUE separated by semicolons. The variant stays in memory until Save Project As..."
+        )
+        self.ttk.Label(dialog, text="Name").grid(row=0, column=0, sticky="w")
+        self.ttk.Entry(dialog, textvariable=name_var, width=30).grid(row=0, column=1, sticky="w", padx=6)
+        self.ttk.Label(dialog, text="Base").grid(row=1, column=0, sticky="w")
+        self.ttk.Combobox(dialog, textvariable=base_var, values=("scenario", *self.controller.variant_names()), state="readonly", width=28).grid(
+            row=1, column=1, sticky="w", padx=6)
+        self.ttk.Label(dialog, text="Changes").grid(row=2, column=0, sticky="w")
+        self.ttk.Entry(dialog, textvariable=changes_var, width=48).grid(row=2, column=1, sticky="w", padx=6)
+        self.ttk.Label(dialog, textvariable=status_var, wraplength=520).grid(row=3, column=0, columnspan=2, sticky="w", pady=(8, 0))
+
+        def save() -> None:
+            try:
+                transaction, routes = parse_variant_changes_argument(changes_var.get())
+            except Exception as exc:
+                status_var.set(f"Not saved: {exc}")
+                self._show_error(str(exc))
+                return
+            result = self.controller.add_variant(name_var.get(), {"transaction": transaction, "routes": routes}, base_var.get())
+            if result.error is not None:
+                status_var.set(f"Not saved: {result.error}")
+                self._show_error(result.error)
+                return
+            self._refresh_saved_experiments()
+            dialog.destroy()
+            self.status_var.set(f"Variant {name_var.get().strip()} staged in memory. Save Project As... persists it.")
+
+        buttons = self.ttk.Frame(dialog)
+        buttons.grid(row=4, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        self.ttk.Button(buttons, text="Save Variant", command=save).grid(row=0, column=0)
+        self.ttk.Button(buttons, text="Cancel", command=dialog.destroy).grid(row=0, column=1, padx=6)
 
     def _compare_variants(self) -> None:
         self._complete(self.controller.compare_variants(), "Variant comparison complete: one declared case per variant, no composite score.")
