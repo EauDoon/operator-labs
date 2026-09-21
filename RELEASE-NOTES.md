@@ -1,3 +1,4 @@
+DEPRECATED: see CHANGELOG.md for the consolidated release history. This file is kept for historical reference only.
 # Release notes (draft, awaiting owner approval)
 
 This draft covers the changes on `dev/scenario-experimentation` since the

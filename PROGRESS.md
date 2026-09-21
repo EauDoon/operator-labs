@@ -1,3 +1,4 @@
+DEPRECATED: see CHANGELOG.md for the consolidated release history. This file is kept for historical reference only.
 # Operator Labs development status
 
 Program: sustained multi-cycle build per [ROADMAP.md](ROADMAP.md).
