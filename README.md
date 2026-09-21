@@ -1,5 +1,9 @@
 # Operator Labs
 
+[![build](https://img.shields.io/github/actions/workflow/status/EauDoon/operator-labs/corridor-lab.yml?branch=main)](https://github.com/EauDoon/operator-labs/actions)
+[![license](https://img.shields.io/github/license/EauDoon/operator-labs)](https://github.com/EauDoon/operator-labs/blob/main/LICENSE)
+[![last commit](https://img.shields.io/github/last-commit/EauDoon/operator-labs)](https://github.com/EauDoon/operator-labs)
+
 Operator Labs contains two independent, offline Python 3.11+ tools. Each keeps
 its original distribution name, command-line and desktop entry points,
 documentation, tests, and Apache-2.0 license.
