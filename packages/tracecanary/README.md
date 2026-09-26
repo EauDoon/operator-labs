@@ -115,6 +115,18 @@ candidates or failing baselines keep the campaign unresolved (2). Summary
 comparison still returns 0 when the comparison itself succeeds; inspect the
 reported campaign statuses and findings for the privacy outcome.
 
+Campaigns inherit the project's saved `coverage.minimum_ratio` for every named
+candidate (saved input, saved candidate, and any additional candidate). For
+example, a project created with `--minimum-ratio 0.95` applies that gate when
+running `campaign run PROJECT`; the threshold need not be repeated. An explicit
+`campaign run PROJECT --minimum-ratio VALUE` overrides it for that run, including
+`0`, without changing the saved project. Reports and saved summaries record the
+effective threshold, and summary comparison rejects different thresholds.
+With neither a saved nor an explicit threshold, the existing baseline-diff or
+standalone-check behavior remains. The saved `batch.minimum_ratio` remains
+independent of the saved named-candidate threshold; an explicit campaign
+`--minimum-ratio` overrides both phases.
+
 ## Contract development and diagnosis
 
 `tracecanary contract template --output new-contract.json` writes a minimal valid synthetic contract (never overwritten; replace the placeholder canary value before use). `tracecanary contract review draft.json` adds conservative, value-free diagnostics on top of the strict runtime validator: direct retention conflicts with actionable rule locations, malformed wildcard path prefixes that can never match, forbidden paths that stop before a scalar value, and forbidden exact keys shadowed by broader prefix rules. Every diagnostic names a safe structural location, explains the issue, and suggests a correction without weakening the contract; canary values never appear, and passing review is not a privacy guarantee. The desktop **Is the Contract Usable?** tab gains **Review Contract** and **Edit Contract JSON...** — a transactional editor with a minimal template, strict validation, and an explicit **Save Contract As...** action that is clearly labeled as writing canary configuration, distinct from value-free report exports.

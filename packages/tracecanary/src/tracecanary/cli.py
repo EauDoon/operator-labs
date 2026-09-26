@@ -222,7 +222,7 @@ def campaign_run_options(parser: argparse.ArgumentParser) -> argparse.ArgumentPa
     parser.add_argument("--input-dir", type=_cli_path, help="override the project batch directory")
     parser.add_argument("--recursive", action="store_true")
     parser.add_argument("--include-paths", action="store_true")
-    parser.add_argument("--minimum-ratio", help="per-file coverage gate for named candidates")
+    parser.add_argument("--minimum-ratio", help="override saved coverage thresholds for named candidates and batch files")
     parser.add_argument("--population-scope", choices=("resource", "scope", "span", "event", "link"))
     parser.add_argument("--population-minimum", type=int)
     return parser
@@ -467,6 +467,7 @@ def _campaign(args: Any) -> int:
             if manifest.candidate is not None:
                 candidates.append((manifest.candidate.path, loaded.resolved["candidate"]))
             batch = args.input_dir or loaded.resolved.get("batch directory")
+            minimum_ratio = args.minimum_ratio if args.minimum_ratio is not None else manifest.coverage.minimum_ratio
             population_scope = args.population_scope or manifest.coverage.population_scope
             population_minimum = args.population_minimum if args.population_minimum is not None else manifest.coverage.population_minimum
             campaign = run_campaign(
@@ -478,7 +479,7 @@ def _campaign(args: Any) -> int:
                 batch_recursive=args.recursive or (manifest.batch.recursive if manifest.batch is not None else False),
                 batch_include_paths=args.include_paths or (manifest.batch.include_paths if manifest.batch is not None else False),
                 batch_minimum_ratio=args.minimum_ratio or (manifest.batch.minimum_ratio if manifest.batch is not None else None),
-                minimum_ratio=args.minimum_ratio,
+                minimum_ratio=minimum_ratio,
                 population_scope=population_scope,
                 population_minimum=population_minimum,
             )
