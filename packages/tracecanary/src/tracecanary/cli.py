@@ -464,6 +464,8 @@ def _campaign(args: Any) -> int:
                 candidates.append((args.candidate.name, args.candidate))
             if manifest.input is not None:
                 candidates.append((manifest.input.path, loaded.resolved["input"]))
+            if manifest.candidate is not None:
+                candidates.append((manifest.candidate.path, loaded.resolved["candidate"]))
             batch = args.input_dir or loaded.resolved.get("batch directory")
             population_scope = args.population_scope or manifest.coverage.population_scope
             population_minimum = args.population_minimum if args.population_minimum is not None else manifest.coverage.population_minimum
