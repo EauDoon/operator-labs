@@ -105,6 +105,16 @@ It refuses a non-empty output directory. From a fresh checkout, set `PYTHONPATH=
 
 `tracecanary campaign run PROJECT [--control control.json] [--save-summary summary.json]` runs one bounded campaign from a saved project: contract validity, canary exercise in the unsanitized positive control (a control pass confirms exercise, never a privacy pass), baseline validity (a failing baseline is never used), per-candidate privacy and retention findings, the batch directory through the bounded batch engine, and the configured coverage and population gates. Every phase keeps its own status; the campaign status applies unresolved precedence. Value-free, deterministic summaries are saved only through the explicit `--save-summary` action (outside the project directory), and `tracecanary campaign compare baseline.json candidate.json` compares two saved summaries after strict compatibility checks (same contract version, identical required retained fields by scope and key, and identical coverage thresholds and population definitions; incompatible pairs are reported as unsupported rather than compared loosely), aggregating findings by value-free code as persistent, resolved, or new — no entity identity or causal attribution is implied. `tracecanary project promote-baseline PROJECT --candidate candidate.json` promotes a candidate to the project baseline only after the candidate satisfies the contract. The desktop **Regression Campaign** tab runs the same campaign over the current selectors, saves summaries, and compares saved summaries.
 
+`campaign run PROJECT` evaluates both the saved `input` and the saved `candidate`, when present.
+`campaign run --candidate extra.json` adds a candidate; it does not replace or
+skip either saved selection. A project containing only a baseline and candidate
+therefore checks that candidate against the baseline without requiring the path
+again on the command line. Its findings appear in the campaign and saved summary:
+safe candidates return 0, privacy or retention regressions return 1, and malformed
+candidates or failing baselines keep the campaign unresolved (2). Summary
+comparison still returns 0 when the comparison itself succeeds; inspect the
+reported campaign statuses and findings for the privacy outcome.
+
 ## Contract development and diagnosis
 
 `tracecanary contract template --output new-contract.json` writes a minimal valid synthetic contract (never overwritten; replace the placeholder canary value before use). `tracecanary contract review draft.json` adds conservative, value-free diagnostics on top of the strict runtime validator: direct retention conflicts with actionable rule locations, malformed wildcard path prefixes that can never match, forbidden paths that stop before a scalar value, and forbidden exact keys shadowed by broader prefix rules. Every diagnostic names a safe structural location, explains the issue, and suggests a correction without weakening the contract; canary values never appear, and passing review is not a privacy guarantee. The desktop **Is the Contract Usable?** tab gains **Review Contract** and **Edit Contract JSON...** — a transactional editor with a minimal template, strict validation, and an explicit **Save Contract As...** action that is clearly labeled as writing canary configuration, distinct from value-free report exports.

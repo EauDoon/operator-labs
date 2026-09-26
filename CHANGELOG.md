@@ -94,6 +94,13 @@ Nothing here is published until the owner approves the release (see
 
 ### Fixed
 
+- **TraceCanary saved-candidate campaigns.** `campaign run PROJECT` now
+  evaluates the candidate saved by `project create --candidate`, alongside
+  the saved input and any explicitly added candidate. Previously a saved
+  leaking or malformed candidate could be omitted, yielding a passing
+  campaign and a summary with zero candidates. Regression tests cover
+  pass/regression/unresolved outcomes, baseline safeguards, fingerprint
+  rejection, value-free summaries, and summary comparisons.
 - **Corridor Lab (Milestone 8).** Materializing a variant mutated the
   caller's declared base data, so later assumption diffs lied;
   materialization is now deep-copied and a regression proves the base is
