@@ -94,6 +94,12 @@ Nothing here is published until the owner approves the release (see
 
 ### Fixed
 
+- **TraceCanary saved coverage thresholds.** `campaign run PROJECT` now
+  applies the saved `coverage.minimum_ratio` to named candidates instead of
+  silently omitting the gate unless the CLI option is repeated. Explicit
+  overrides, including zero, take precedence without changing the project;
+  summaries record the effective threshold and reject incompatible comparisons.
+  The separately saved batch threshold remains independent.
 - **TraceCanary saved-candidate campaigns.** `campaign run PROJECT` now
   evaluates the candidate saved by `project create --candidate`, alongside
   the saved input and any explicitly added candidate. Previously a saved
