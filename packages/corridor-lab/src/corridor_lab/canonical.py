@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import stat
 import tempfile
 from contextlib import AbstractContextManager
 from collections.abc import Sequence
@@ -123,7 +124,15 @@ def read_bounded_bytes(path: str | Path) -> bytes:
     """Read at most one byte beyond the input limit for fail-closed sizing."""
     input_path = Path(path)
     try:
-        with input_path.open("rb") as input_file:
+        # Nonblocking open lets us reject FIFOs without waiting for a writer.
+        # Check the descriptor so a path replacement cannot bypass the check.
+        with open(
+            input_path,
+            "rb",
+            opener=lambda name, flags: os.open(name, flags | getattr(os, "O_NONBLOCK", 0)),
+        ) as input_file:
+            if not stat.S_ISREG(os.fstat(input_file.fileno()).st_mode):
+                raise InputError("input must be a regular file")
             raw = input_file.read(MAX_INPUT_BYTES + 1)
     except OSError as exc:
         raise InputError(f"cannot read {input_path}: {exc}") from exc

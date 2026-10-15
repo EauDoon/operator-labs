@@ -86,11 +86,18 @@ class HostileInputTests(unittest.TestCase):
             read_sizes: list[int] = []
 
             class GrowingInput(io.BytesIO):
+                def fileno(self) -> int:
+                    return 123
+
                 def read(self, size: int = -1) -> bytes:
                     read_sizes.append(size)
                     return super().read(size)
 
-            with patch.object(Path, "open", return_value=GrowingInput(b"x" * 2_048)), self.assertRaisesRegex(InputError, "exceeds"):
+            with (
+                patch("tracecanary.canonical.open", return_value=GrowingInput(b"x" * 2_048)),
+                patch("tracecanary.canonical.os.fstat", return_value=path.stat()),
+                self.assertRaisesRegex(InputError, "exceeds"),
+            ):
                 load_json(path, max_bytes=1_024, max_depth=10)
             self.assertEqual(read_sizes, [1_025])
 
