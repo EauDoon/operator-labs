@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import stat
 from pathlib import Path
 from typing import Any
 
@@ -57,22 +59,33 @@ def parse_json_text(text: str, *, max_bytes: int, max_depth: int) -> Any:
 def load_json(path: Path, *, max_bytes: int, max_depth: int) -> Any:
     """Load UTF-8 JSON while rejecting duplicate keys, large files and deep trees."""
     try:
-        if path.is_dir():
-            raise InputError("input path is a directory")
-        size = path.stat().st_size
-    except InputError:
-        raise
+        # Opening a FIFO must not block before we can inspect the descriptor.
+        # Inspect the opened file, not a separate path stat, to avoid a race.
+        with open(
+            path,
+            "rb",
+            opener=lambda name, flags: os.open(name, flags | getattr(os, "O_NONBLOCK", 0)),
+        ) as input_file:
+            info = os.fstat(input_file.fileno())
+            if not stat.S_ISREG(info.st_mode):
+                raise InputError("input must be a regular file")
+            if info.st_size > max_bytes:
+                raise InputError(f"input exceeds the {max_bytes}-byte limit")
+            raw = input_file.read(max_bytes + 1)
     except FileNotFoundError as exc:
         raise InputError("input file does not exist") from exc
-    except OSError as exc:
-        raise InputError("input file cannot be read") from exc
-    if size > max_bytes:
-        raise InputError(f"input exceeds the {max_bytes}-byte limit")
-    try:
-        with path.open("rb") as input_file:
-            raw = input_file.read(max_bytes + 1)
     except IsADirectoryError as exc:
         raise InputError("input path is a directory") from exc
+    except PermissionError as exc:
+        # Windows reports opening a directory as a permission error. This
+        # path check only refines a rejection, never authorizes a file read.
+        try:
+            is_directory = path.is_dir()
+        except OSError:
+            is_directory = False
+        if is_directory:
+            raise InputError("input path is a directory") from exc
+        raise InputError("input file cannot be read") from exc
     except OSError as exc:
         raise InputError("input file cannot be read") from exc
     if len(raw) > max_bytes:
