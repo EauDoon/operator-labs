@@ -76,6 +76,16 @@ def load_json(path: Path, *, max_bytes: int, max_depth: int) -> Any:
         raise InputError("input file does not exist") from exc
     except IsADirectoryError as exc:
         raise InputError("input path is a directory") from exc
+    except PermissionError as exc:
+        # Windows reports opening a directory as a permission error. This
+        # path check only refines a rejection, never authorizes a file read.
+        try:
+            is_directory = path.is_dir()
+        except OSError:
+            is_directory = False
+        if is_directory:
+            raise InputError("input path is a directory") from exc
+        raise InputError("input file cannot be read") from exc
     except OSError as exc:
         raise InputError("input file cannot be read") from exc
     if len(raw) > max_bytes:

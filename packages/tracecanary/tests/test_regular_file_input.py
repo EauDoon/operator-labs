@@ -14,6 +14,28 @@ from tracecanary.canonical import InputError, load_json
 
 
 class RegularFileInputTests(unittest.TestCase):
+    def test_permission_error_for_directory_preserves_safe_diagnostic(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with patch("tracecanary.canonical.os.open", side_effect=PermissionError("private path")):
+                with self.assertRaisesRegex(InputError, "^input path is a directory$"):
+                    load_json(Path(directory), max_bytes=1024, max_depth=10)
+
+    def test_permission_error_for_regular_file_stays_unreadable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "input.json"
+            path.write_text('{}', encoding="utf-8")
+            with patch("tracecanary.canonical.os.open", side_effect=PermissionError("private path")):
+                with self.assertRaisesRegex(InputError, "^input file cannot be read$"):
+                    load_json(path, max_bytes=1024, max_depth=10)
+
+    def test_failed_directory_diagnostic_check_stays_unreadable(self):
+        with (
+            patch("tracecanary.canonical.os.open", side_effect=PermissionError("private path")),
+            patch.object(Path, "is_dir", side_effect=OSError("private metadata")),
+            self.assertRaisesRegex(InputError, "^input file cannot be read$"),
+        ):
+            load_json(Path("input.json"), max_bytes=1024, max_depth=10)
+
     @unittest.skipUnless(hasattr(os, "mkfifo"), "requires POSIX named pipes")
     def test_fifo_without_writer_is_rejected_without_blocking(self):
         with tempfile.TemporaryDirectory() as directory:
