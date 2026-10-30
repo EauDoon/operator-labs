@@ -13,7 +13,7 @@ from tracecanary.canonical import InputError, load_json
 from tracecanary.batching import _load_trace, run_batch
 from tracecanary.checker import check_trace
 from tracecanary.comparison import diff_traces
-from tracecanary.contract import Contract, ContractError, load_contract
+from tracecanary.contract import CONTRACT_MAX_BYTES, CONTRACT_MAX_DEPTH, Contract, ContractError, load_contract
 from tracecanary.coverage import coverage_report
 from tracecanary.fixture import write_bundle
 from tracecanary.inspection import (
@@ -556,7 +556,7 @@ def _contract_authoring(args: Any) -> int:
     command = args.contract_command
     try:
         if command == "review":
-            raw = load_json(args.contract_path, max_bytes=MAX_CAMPAIGN_SUMMARY_BYTES, max_depth=MAX_CAMPAIGN_SUMMARY_DEPTH)
+            raw = load_json(args.contract_path, max_bytes=CONTRACT_MAX_BYTES, max_depth=CONTRACT_MAX_DEPTH)
             protect_inputs(args.output, [args.contract_path])
             report = review_contract(raw)
             output = render_json(report) if args.format == "json" else render_contract_review_human(report)
@@ -581,8 +581,6 @@ def _contract_authoring(args: Any) -> int:
         print("TraceCanary: UNRESOLVED: input or output could not be accessed", file=sys.stderr)
         return EXIT_UNRESOLVED
 
-
-MAX_CAMPAIGN_SUMMARY_DEPTH = 32
 
 
 def render_contract_review_human(report: dict[str, Any]) -> str:

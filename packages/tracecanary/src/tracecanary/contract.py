@@ -13,6 +13,10 @@ SUPPORTED_SEMCONV_VERSION = "opentelemetry/semconv/1.43.0"
 DEFAULT_MAX_INPUT_BYTES = 5_000_000
 DEFAULT_MAX_NESTING = 100
 DEFAULT_MAX_BATCH_FILES = 256
+# Contract files and drafts are read with these limits on every surface:
+# the loader, CLI and desktop review, and the desktop draft editor.
+CONTRACT_MAX_BYTES = 1_000_000
+CONTRACT_MAX_DEPTH = 50
 
 
 class ContractError(ValueError):
@@ -48,7 +52,7 @@ class Contract:
 
 def load_contract(path: Path) -> Contract:
     try:
-        raw = load_json(path, max_bytes=1_000_000, max_depth=50)
+        raw = load_json(path, max_bytes=CONTRACT_MAX_BYTES, max_depth=CONTRACT_MAX_DEPTH)
     except InputError as exc:
         raise ContractError(str(exc)) from exc
     return parse_contract(raw)

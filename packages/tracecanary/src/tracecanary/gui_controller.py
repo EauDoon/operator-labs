@@ -22,7 +22,14 @@ from tracecanary.campaign import (
 from tracecanary.canonical import InputError, parse_json_text, canonical_json, load_json
 from tracecanary.checker import check_trace
 from tracecanary.comparison import diff_traces
-from tracecanary.contract import Contract, ContractError, load_contract, parse_contract
+from tracecanary.contract import (
+    CONTRACT_MAX_BYTES,
+    CONTRACT_MAX_DEPTH,
+    Contract,
+    ContractError,
+    load_contract,
+    parse_contract,
+)
 from tracecanary.coverage import coverage_report
 from tracecanary.fixture import bundle, write_bundle
 from tracecanary.output import protect_inputs, write_report
@@ -121,7 +128,8 @@ class TraceCanaryController:
         if guidance is not None:
             return guidance
         try:
-            raw = load_json(Path(contract_path), max_bytes=5_000_000, max_depth=100)
+            # The contract loader's limits: a draft review never reads more than a run would.
+            raw = load_json(Path(contract_path), max_bytes=CONTRACT_MAX_BYTES, max_depth=CONTRACT_MAX_DEPTH)
             report = review_contract(raw)
             human = render_review_human(report)
             json_text = render_json(report)
@@ -146,7 +154,7 @@ class TraceCanaryController:
         """
         try:
             # Same limits as load_contract, so a saved draft is a file that loader accepts.
-            raw = parse_json_text(text, max_bytes=1_000_000, max_depth=50)
+            raw = parse_json_text(text, max_bytes=CONTRACT_MAX_BYTES, max_depth=CONTRACT_MAX_DEPTH)
             validate_draft(raw)
         except InputError as exc:
             if "not valid JSON" in str(exc) or "UTF-8" in str(exc):
@@ -169,7 +177,7 @@ class TraceCanaryController:
 
     def validate_draft_text(self, text: str) -> dict:
         """Validate a contract draft strictly; raises ContractError on failure."""
-        raw = parse_json_text(text, max_bytes=1_000_000, max_depth=50)
+        raw = parse_json_text(text, max_bytes=CONTRACT_MAX_BYTES, max_depth=CONTRACT_MAX_DEPTH)
         return validate_draft(raw)
 
     def validate(self, contract_path: str | Path) -> GuiResult:
