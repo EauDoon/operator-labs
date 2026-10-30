@@ -208,5 +208,40 @@ class FailedCreateRollbackTests(unittest.TestCase):
             self.assertEqual(run_cli("project", "validate", project)[0], 0)
 
 
+class ShowVariantFormatTests(unittest.TestCase):
+    def test_output_suffix_chooses_the_format_unless_format_is_explicit(self):
+        import os
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = create_project(root, scenario(routes=[route()]), variants=DEADLINE_VARIANT)
+            show = ("project", "show-variant", project, "--variant", "fast")
+            with mock.patch.dict(os.environ, {"CORRIDOR_LAB_FORMAT": "json"}):
+                cases = (
+                    ("tight.json", (), "json"),
+                    ("tight.JSON", (), "json"),
+                    ("tight.md", (), "markdown"),
+                    ("tight.markdown", (), "markdown"),
+                    ("tight.txt", (), "markdown"),
+                    ("tight.csv", (), "markdown"),
+                    ("forced.json", ("--format", "markdown"), "markdown"),
+                    ("forced.md", ("--format", "json"), "json"),
+                )
+                for name, extra, expected in cases:
+                    with self.subTest(output=name, extra=extra):
+                        target = root / name
+                        code, _, stderr = run_cli(*show, "--output", target, *extra)
+                        self.assertEqual(code, 0, stderr)
+                        text = target.read_text(encoding="utf-8")
+                        if expected == "json":
+                            self.assertEqual(json.loads(text)["analysis"], "variant-assumption-diff")
+                        else:
+                            self.assertTrue(text.startswith("# Corridor Lab report"), text[:40])
+                code, stdout, _ = run_cli(*show)
+                self.assertEqual(code, 0)
+                self.assertTrue(stdout.startswith("# Corridor Lab report"))
+
+
 if __name__ == "__main__":
     unittest.main()

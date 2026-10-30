@@ -327,7 +327,9 @@ def build_parser() -> argparse.ArgumentParser:
     show_variant = project_commands.add_parser("show-variant", help="show the assumption diff of a derived variant")
     show_variant.add_argument("project")
     show_variant.add_argument("--variant", required=True)
-    show_variant.add_argument("--format", choices=("json", "markdown"), default="markdown")
+    show_variant.add_argument("--format", choices=("json", "markdown"), default=None,
+                              help="json or markdown (default: markdown, or json when --output ends in .json; "
+                                   f"{REPORT_FORMAT_ENV} is not consulted)")
     show_variant.add_argument("--output", help="write the diff to this UTF-8 path outside the project")
     compare_variants = project_commands.add_parser("compare-variants", help="compare route performance across named variants")
     compare_variants.add_argument("project")
@@ -553,6 +555,17 @@ def _project_variant_state(loaded) -> tuple[dict[str, Any], dict[str, Any]]:
     return base_raw, derived
 
 
+def _show_variant_format(explicit: str | None, output: str | None) -> str:
+    """An explicit --format wins; otherwise .json means JSON and anything else Markdown.
+
+    show-variant has always defaulted to Markdown, so the environment default
+    is deliberately not consulted here.
+    """
+    if explicit is not None:
+        return explicit
+    return "json" if _format_from_output_path(output) == "json" else "markdown"
+
+
 def _project_variant_arguments(args: argparse.Namespace, derived: dict[str, Any]) -> list[str]:
     chosen = args.variant or sorted(derived)
     unknown = sorted(set(chosen) - set(derived))
@@ -681,7 +694,7 @@ def _project(args: argparse.Namespace) -> int:
         if variant is None:
             raise InputError(f"no derived variant named {args.variant.strip()}")
         report = variant_diff_report(derived, args.variant.strip(), base_raw, scenario_id)
-        output_format = resolve_report_format(args.format, args.output, ("json", "markdown"))
+        output_format = _show_variant_format(args.format, args.output)
         text = render_report(report, output_format)
         if args.output is None:
             sys.stdout.write(text)
