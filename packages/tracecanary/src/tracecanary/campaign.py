@@ -329,6 +329,10 @@ def render_comparison_human(comparison: dict[str, Any]) -> str:
                 rendered = ", ".join(f"{code} x{count}" for code, count in counts.items())
                 lines.append(f"  {label.replace('_', ' ')}: {rendered}")
     lines.append("Finding codes are aggregated by value-free code; no entity identity or causal attribution is implied.")
+    gate = comparison.get("gate")
+    if isinstance(gate, dict):
+        lines.append(f"Gate: {gate['status'].upper()}")
+        lines.extend(f"  - {reason}" for reason in gate["reasons"])
     return "\n".join(lines) + "\n"
 
 
@@ -378,14 +382,68 @@ def _coverage_identity(identity: dict[str, Any]) -> dict[str, Any]:
     return coverage
 
 
-def compare_summaries(baseline_summary: dict[str, Any], candidate_summary: dict[str, Any]) -> dict[str, Any]:
+GATE_RANK = {"pass": 0, "regression": 1, "unresolved": 2}
+
+
+def _gate(baseline_summary: dict[str, Any], candidate_summary: dict[str, Any]) -> dict[str, Any]:
+    """Decide the CI gate for a comparison, with value-free reasons.
+
+    A reason names a phase and a status or finding code, never a value:
+    the campaign or a phase status worsened (pass < regression <
+    unresolved); a phase that ran in the baseline is absent or skipped in
+    the candidate, because fewer checks is not a pass; a finding code is
+    new in a phase; or a persistent code's count increased. A phase that
+    was absent or skipped in the baseline is judged by its own status and
+    findings. An unresolved candidate campaign is unresolved even when the
+    baseline was unresolved too: an unknown outcome is never a pass.
+    """
+    reasons: list[str] = []
+    before_status = baseline_summary.get("campaign_status", "absent")
+    after_status = candidate_summary.get("campaign_status", "absent")
+    if GATE_RANK.get(after_status, 2) > GATE_RANK.get(before_status, 2):
+        reasons.append(f"campaign: {before_status} -> {after_status}")
+    before_phases = baseline_summary.get("phases", {})
+    after_phases = candidate_summary.get("phases", {})
+    for name in sorted(set(before_phases) | set(after_phases)):
+        before = before_phases.get(name, {})
+        after = after_phases.get(name, {})
+        old_status = before.get("status", "absent")
+        new_status = after.get("status", "absent")
+        old_ran = old_status in GATE_RANK
+        new_ran = new_status in GATE_RANK
+        if old_ran and not new_ran:
+            reasons.append(f"{name}: {old_status} -> {new_status}")
+        elif new_ran and GATE_RANK[new_status] > (GATE_RANK[old_status] if old_ran else 0):
+            reasons.append(f"{name}: {old_status} -> {new_status}")
+        old_counts = before.get("finding_counts", {}) if old_ran else {}
+        new_counts = after.get("finding_counts", {}) if new_ran else {}
+        for code in sorted(new_counts):
+            if code not in old_counts:
+                reasons.append(f"{name}: new {code} x{new_counts[code]}")
+            elif new_counts[code] > old_counts[code]:
+                reasons.append(f"{name}: {code} {old_counts[code]} -> {new_counts[code]}")
+    if after_status == "unresolved":
+        status = "unresolved"
+    else:
+        status = "regression" if reasons else "pass"
+    return {"status": status, "reasons": reasons}
+
+
+def compare_summaries(
+    baseline_summary: dict[str, Any],
+    candidate_summary: dict[str, Any],
+    *,
+    gate: bool = False,
+) -> dict[str, Any]:
     """Compare two saved campaign summaries with strict compatibility checks.
 
     Findings are aggregated by value-free code. A code present in both is
     persistent, one only in the baseline is resolved, and one only in the
     candidate is new. Nothing implies matched entity identity or causal
     attribution, and incompatible summaries are unsupported rather than
-    compared loosely.
+    compared loosely. ``gate`` adds a ``gate`` verdict (see ``_gate``) for
+    ``campaign compare --fail-on-regression``; without it the comparison is
+    exactly as before.
     """
     for summary in (baseline_summary, candidate_summary):
         if not isinstance(summary, dict) or summary.get("summary_version") != "tracecanary.campaign-summary/v1":
@@ -422,7 +480,7 @@ def compare_summaries(baseline_summary: dict[str, Any], candidate_summary: dict[
             "resolved_findings": {code: old_counts[code] for code in sorted(set(old_counts) - set(new_counts))},
             "new_findings": {code: new_counts[code] for code in sorted(set(new_counts) - set(old_counts))},
         }
-    return {
+    comparison = {
         "comparison_version": "tracecanary.campaign-comparison/v1",
         "contract_version": baseline_summary.get("contract_version", ""),
         "campaign_status_change": [baseline_summary.get("campaign_status", "absent"), candidate_summary.get("campaign_status", "absent")],
@@ -433,3 +491,6 @@ def compare_summaries(baseline_summary: dict[str, Any], candidate_summary: dict[
         "phases": phases,
         "meaning": "finding codes are aggregated by value-free code; no entity identity or causal attribution is implied",
     }
+    if gate:
+        comparison["gate"] = _gate(baseline_summary, candidate_summary)
+    return comparison

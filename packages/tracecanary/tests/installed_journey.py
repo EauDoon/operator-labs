@@ -61,6 +61,9 @@ def main():
             summaries.append(summary)
         comparison = json.loads(run("campaign", "compare", *summaries[:2], "--format", "json"))
         assert comparison["campaign_status_change"] == ["pass", "regression"]
+        assert "Gate: REGRESSION" in run("campaign", "compare", *summaries[:2], "--fail-on-regression", expected=1)
+        run("campaign", "compare", summaries[0], summaries[0], "--fail-on-regression")
+        run("campaign", "compare", summaries[0], summaries[2], "--fail-on-regression", expected=2)
         for summary in summaries[:2]:
             original = summary.read_bytes()
             run("campaign", "compare", *summaries[:2], "--output", summary, expected=2)

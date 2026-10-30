@@ -213,6 +213,14 @@ def build_parser() -> argparse.ArgumentParser:
     campaign_compare.add_argument("candidate_summary", type=_cli_path)
     campaign_compare.add_argument("--format", choices=("human", "json"), default="human")
     campaign_compare.add_argument("--output", type=_cli_path)
+    campaign_compare.add_argument(
+        "--fail-on-regression",
+        action="store_true",
+        help=(
+            "add a gate verdict with value-free reasons and exit 0 pass, 1 regression (a worse status, a phase "
+            "that stopped running, a new finding code, or a higher count), 2 unresolved candidate"
+        ),
+    )
 
     contract_cmd = commands.add_parser("contract", help="authoring helpers for synthetic contracts")
     contract_commands = contract_cmd.add_subparsers(dest="contract_command", required=True, parser_class=_ArgumentParser)
@@ -548,9 +556,11 @@ def _campaign(args: Any) -> int:
             protect_inputs(args.output, [args.baseline_summary, args.candidate_summary])
             baseline_summary = load_json(args.baseline_summary, max_bytes=MAX_CAMPAIGN_SUMMARY_BYTES, max_depth=32)
             candidate_summary = load_json(args.candidate_summary, max_bytes=MAX_CAMPAIGN_SUMMARY_BYTES, max_depth=32)
-            comparison = compare_summaries(baseline_summary, candidate_summary)
+            comparison = compare_summaries(baseline_summary, candidate_summary, gate=args.fail_on_regression)
             output = render_json(comparison) if args.format == "json" else render_comparison_human(comparison)
             _emit(output, args.output)
+            if args.fail_on_regression:
+                return _status_exit(comparison["gate"]["status"])
             return EXIT_PASS
         raise InputError(f"unsupported campaign command: {command}")
     except UnsafeReportError:
