@@ -59,7 +59,34 @@ def main():
         assert scenario.read_bytes() == original
         scenario.write_bytes(original + b"\n")
         run("project", "validate", moved, expected=2)
+        assert "refreshed" in run("project", "refresh", moved, "--input", "scenario")
+        run("project", "validate", moved)
+        check_saved_routes_journey(root, run)
     print("INSTALLED_CORRIDOR_JOURNEY_OK")
+
+
+def check_saved_routes_journey(root, run):
+    """A project whose routes sit beside the scenario, as in examples/fictional-corridor."""
+    layout = root / "layout"
+    (layout / "routes").mkdir(parents=True)
+    starter = root / "starter.json"
+    run("init", "--output", starter)
+    document = json.loads(starter.read_text(encoding="utf-8"))
+    for item in document.pop("routes"):
+        (layout / "routes" / f"{item['route_id']}.json").write_text(json.dumps(item), encoding="utf-8")
+    scenario = layout / "scenario.json"
+    scenario.write_text(json.dumps(document), encoding="utf-8")
+    run("project", "create", "--directory", layout, "--project-id", "fictional-layout", "--scenario", scenario,
+        "--routes", layout / "routes", "--experiment", "target:deadline-target:probability=0.5")
+    evidence = root / "layout-evidence.json"
+    report = json.loads(run("project", "run", layout, "--format", "json", "--evidence", evidence))
+    assert report["status"] == "pass", report
+    recorded = json.loads(evidence.read_text(encoding="utf-8"))
+    assert recorded["inputs"]["routes"] == "routes", recorded["inputs"]
+    assert [item["label"] for item in recorded["inputs"]["project_inputs"]] == ["routes", "scenario"]
+    run("project", "compare-variants", layout, "--format", "json")
+    run("project", "run", layout, "--evidence", layout / "inside.json", expected=2)
+    assert not (layout / "inside.json").exists()
 
 
 if __name__ == "__main__":
