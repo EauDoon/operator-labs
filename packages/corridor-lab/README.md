@@ -191,7 +191,7 @@ See [the model](docs/MODEL.md), [assumptions](docs/ASSUMPTIONS.md),
 ## Development
 
 ```text
-python -m unittest discover -s tests -v
+PYTHONPATH=src python -m unittest discover -s tests -v
 python -m compileall -q src
 ```
 

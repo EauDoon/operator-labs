@@ -17,6 +17,10 @@ are now deprecated; see the deprecation note at the top of each.
 - Both packages reject non-regular JSON inputs before reading them, so named
   pipes cannot indefinitely block local checks. Validation uses the opened
   descriptor, while ordinary files and symlinks to regular files remain supported.
+- The Corridor Lab README documented the test suite without the
+  `PYTHONPATH=src` setting that CI uses, so the documented command failed on
+  a clean checkout. The README now shows the command that CI runs and that
+  `CONTRIBUTING.md` documents.
 
 ## [0.3.0] - 2026-10-09
 
