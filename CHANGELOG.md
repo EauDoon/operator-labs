@@ -37,6 +37,12 @@ are now deprecated; see the deprecation note at the top of each.
   therefore passed in the desktop while `campaign run` reported the
   regression. The desktop campaign now checks both selections, as
   `campaign run` does, and protects the candidate from summary saves.
+- TraceCanary `campaign compare` crashed with a Python traceback and exit 1,
+  the regression status, when a saved summary had a wrongly typed part (for
+  example a phase that is not an object, or a non-list `required_fields`), and
+  the desktop **Compare Saved Summaries...** raised the same error. Such
+  summaries are now unresolved (exit 2) with a message naming the malformed
+  part, never a value.
 
 ## [0.3.0] - 2026-10-09
 
