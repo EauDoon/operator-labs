@@ -153,6 +153,42 @@ class CampaignSummaryTests(unittest.TestCase):
         with self.assertRaisesRegex(Exception, "requires two saved"):
             compare_summaries({"summary_version": "wrong/v1"}, after)
 
+    def test_malformed_summaries_are_unresolved_not_a_crash(self):
+        from tracecanary.canonical import InputError
+        from tracecanary.cli import main
+
+        good = campaign_summary(run_campaign(self.contract, candidates=[("leak.json", self.root / "leaked-prompt.json")]))
+        damaged = {
+            "required field": lambda summary: summary["compatibility"].update(required_fields=[1]),
+            "phase": lambda summary: summary["phases"].update(candidates="regression"),
+            "phases": lambda summary: summary.update(phases=["candidates"]),
+            "finding count": lambda summary: summary["phases"]["candidates"].update(finding_counts={"TC001": "1"}),
+            "compatibility": lambda summary: summary.update(compatibility=["required_fields"]),
+            "coverage": lambda summary: summary["compatibility"].update(coverage=["minimum_ratio"]),
+            "campaign status": lambda summary: summary.update(campaign_status=["regression"]),
+        }
+        good_path = self.root / "good-summary.json"
+        good_path.write_text(json.dumps(good), encoding="utf-8")
+        for name, damage in damaged.items():
+            with self.subTest(damage=name):
+                bad = json.loads(json.dumps(good))
+                damage(bad)
+                with self.assertRaisesRegex(InputError, "well-formed saved summaries"):
+                    compare_summaries(good, bad)
+                with self.assertRaisesRegex(InputError, "well-formed saved summaries"):
+                    compare_summaries(bad, good)
+                bad_path = self.root / "bad-summary.json"
+                bad_path.write_text(json.dumps(bad), encoding="utf-8")
+                stdout, stderr = StringIO(), StringIO()
+                with redirect_stdout(stdout), redirect_stderr(stderr):
+                    code = main(["campaign", "compare", str(good_path), str(bad_path)])
+                self.assertEqual(code, 2)
+                self.assertEqual(stdout.getvalue(), "")
+                self.assertIn("UNRESOLVED", stderr.getvalue())
+                self.assertNotIn("Traceback", stderr.getvalue())
+                gui = TraceCanaryController().compare_saved_summaries(good_path, bad_path)
+                self.assertEqual(gui.status, "unresolved")
+
     def test_comparison_records_and_checks_thresholds_and_population(self):
         first = campaign_summary(run_campaign(self.contract, candidates=[("leak.json", self.root / "leaked-prompt.json")],
                                               minimum_ratio="0.95", population_scope="span", population_minimum=1))
@@ -224,6 +260,31 @@ class ControllerCampaignTests(unittest.TestCase):
         self.assertEqual(saved["campaign_status"], "regression")
         self.assertNotIn("TCANARY", summary_path.read_text(encoding="utf-8"))
         self.assertEqual(saved["phases"]["candidates"]["finding_counts"], {"TC001": 1, "TC002": 1})
+
+    def test_controller_campaign_checks_the_selected_candidate(self):
+        # The desktop Candidate selector, as Open Project fills it from a
+        # project saved with only --baseline and --candidate.
+        leaking = self.controller.run_campaign_selections(
+            contract_path=str(self.root / "contract.json"),
+            input_path=None,
+            baseline_path=str(self.root / "safe-export.json"),
+            candidate_path=str(self.root / "leaked-prompt.json"),
+            batch_path=None,
+        )
+        self.assertEqual((leaking.status, leaking.exit_code), ("regression", 1))
+        candidates = json.loads(leaking.json)["phases"]["candidates"]
+        self.assertEqual([item["label"] for item in candidates["items"]], ["leaked-prompt.json"])
+        self.assertEqual(candidates["finding_counts"], {"TC001": 1, "TC002": 1})
+        self.assertIn(self.root / "leaked-prompt.json", leaking.inputs)
+        both = self.controller.run_campaign_selections(
+            contract_path=str(self.root / "contract.json"),
+            input_path=str(self.root / "safe-export.json"),
+            baseline_path=None,
+            candidate_path=str(self.root / "leaked-prompt.json"),
+            batch_path=None,
+        )
+        self.assertEqual(both.status, "regression")
+        self.assertEqual(json.loads(both.json)["phases"]["candidates"]["count"], 2)
 
     def test_summary_save_refuses_inputs_and_project_directories(self):
         result = self.controller.run_campaign_selections(

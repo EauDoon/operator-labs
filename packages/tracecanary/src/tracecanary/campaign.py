@@ -300,6 +300,40 @@ def render_comparison_human(comparison: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _require_summary_shape(summary: dict[str, Any], label: str) -> None:
+    """Reject a damaged summary as unresolved instead of failing mid-comparison.
+
+    Absent optional parts keep their defaults; present parts must have the
+    shape ``campaign_summary`` writes. Messages name the part, never a value.
+    """
+
+    def fail(part: str) -> None:
+        raise InputError(f"campaign comparison requires well-formed saved summaries: the {label} summary has a malformed {part}")
+
+    for key in ("contract_version", "campaign_status"):
+        if key in summary and not isinstance(summary[key], str):
+            fail(key)
+    phases = summary.get("phases", {})
+    if not isinstance(phases, dict):
+        fail("phases object")
+    for phase in phases.values():
+        if not isinstance(phase, dict) or not isinstance(phase.get("status", ""), str):
+            fail("phase")
+        counts = phase.get("finding_counts", {})
+        if not isinstance(counts, dict) or not all(
+            isinstance(code, str) and type(count) is int for code, count in counts.items()
+        ):
+            fail("finding_counts")
+    identity = summary.get("compatibility") or {}
+    if not isinstance(identity, dict):
+        fail("compatibility object")
+    fields = identity.get("required_fields") or []
+    if not isinstance(fields, list) or not all(isinstance(field, dict) for field in fields):
+        fail("required_fields list")
+    if not isinstance(identity.get("coverage") or {}, dict):
+        fail("coverage object")
+
+
 def compare_summaries(baseline_summary: dict[str, Any], candidate_summary: dict[str, Any]) -> dict[str, Any]:
     """Compare two saved campaign summaries with strict compatibility checks.
 
@@ -312,6 +346,8 @@ def compare_summaries(baseline_summary: dict[str, Any], candidate_summary: dict[
     for summary in (baseline_summary, candidate_summary):
         if not isinstance(summary, dict) or summary.get("summary_version") != "tracecanary.campaign-summary/v1":
             raise InputError("campaign comparison requires two saved tracecanary.campaign-summary/v1 documents")
+    _require_summary_shape(baseline_summary, "baseline")
+    _require_summary_shape(candidate_summary, "candidate")
     if baseline_summary.get("contract_version") != candidate_summary.get("contract_version"):
         raise InputError("campaign comparison requires the same contract version in both summaries")
     baseline_identity = baseline_summary.get("compatibility") or {}

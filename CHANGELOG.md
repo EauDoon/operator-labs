@@ -21,6 +21,28 @@ are now deprecated; see the deprecation note at the top of each.
   `PYTHONPATH=src` setting that CI uses, so the documented command failed on
   a clean checkout. The README now shows the command that CI runs and that
   `CONTRIBUTING.md` documents.
+- Corridor Lab desktop: after **Open Project...**, **Save Report...** and
+  evidence export protected only the scenario file, so they could overwrite the
+  project manifest, baseline, or variant files and leave a project that no
+  longer validates. Reports now refuse any destination inside the open project
+  directory, as `project run --output` already did.
+- Corridor Lab `project add-variant` checked the new name only against derived
+  variants, so reusing the name of a file variant saved with
+  `project create --variant NAME=PATH` silently replaced that entry in the
+  manifest. It now refuses any existing variant name with exit 2 and leaves the
+  manifest unchanged.
+- TraceCanary desktop: **Run Campaign** checked only the Input selector and
+  ignored the Candidate selector, which **Open Project...** fills from a saved
+  `--candidate`. A project with a passing baseline and a leaking candidate
+  therefore passed in the desktop while `campaign run` reported the
+  regression. The desktop campaign now checks both selections, as
+  `campaign run` does, and protects the candidate from summary saves.
+- TraceCanary `campaign compare` crashed with a Python traceback and exit 1,
+  the regression status, when a saved summary had a wrongly typed part (for
+  example a phase that is not an object, or a non-list `required_fields`), and
+  the desktop **Compare Saved Summaries...** raised the same error. Such
+  summaries are now unresolved (exit 2) with a message naming the malformed
+  part, never a value.
 
 ## [0.3.0] - 2026-10-09
 

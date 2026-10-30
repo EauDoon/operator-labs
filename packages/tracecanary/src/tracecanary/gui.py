@@ -480,6 +480,7 @@ class TraceCanaryWindow:
             return
         input_path = self._input.get().strip() or None
         baseline_path = self._baseline.get().strip() or None
+        candidate_path = self._candidate.get().strip() or None
         batch_path = self._batch_dir.get().strip() or None
         control_path = self._control.get().strip() or None
         minimum_ratio = self._minimum_ratio.get().strip() or None
@@ -497,6 +498,7 @@ class TraceCanaryWindow:
                 contract_path=contract,
                 input_path=input_path,
                 baseline_path=baseline_path,
+                candidate_path=candidate_path,
                 batch_path=batch_path,
                 control_path=control_path,
                 minimum_ratio=minimum_ratio,

@@ -635,8 +635,9 @@ def _project(args: argparse.Namespace) -> int:
                 _write_error(problem)
             return 2
         _, derived = _project_variant_state(loaded)
-        if args.variant.strip() in derived:
-            raise InputError(f"add-variant must not replace an existing derived variant: {args.variant}")
+        # File and derived variants share one name space in the manifest.
+        if args.variant.strip() in loaded.manifest.all_variants:
+            raise InputError(f"add-variant must not replace an existing variant: {args.variant}")
         transaction, routes = parse_variant_changes_argument(args.changes)
         variant = parse_derived_variant(args.variant.strip(), {"base": args.base.strip() or "scenario", "changes": {"transaction": transaction, "routes": routes}})
         derived[args.variant.strip()] = variant
