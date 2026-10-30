@@ -26,6 +26,11 @@ are now deprecated; see the deprecation note at the top of each.
   project manifest, baseline, or variant files and leave a project that no
   longer validates. Reports now refuse any destination inside the open project
   directory, as `project run --output` already did.
+- Corridor Lab `project add-variant` checked the new name only against derived
+  variants, so reusing the name of a file variant saved with
+  `project create --variant NAME=PATH` silently replaced that entry in the
+  manifest. It now refuses any existing variant name with exit 2 and leaves the
+  manifest unchanged.
 
 ## [0.3.0] - 2026-10-09
 

@@ -111,6 +111,27 @@ class VariantLibraryTests(unittest.TestCase):
 
 
 class VariantCliTests(unittest.TestCase):
+    def test_add_variant_refuses_to_replace_a_file_variant(self):
+        with tempfile.TemporaryDirectory() as temporary, redirect_stdout(StringIO()):
+            project_root = Path(temporary)
+            inputs = project_root / "inputs"
+            inputs.mkdir()
+            for name in ("scenario.json", "heavy.json"):
+                (inputs / name).write_text(json.dumps(scenario(routes=[route("fictional-embedded")])), encoding="utf-8")
+            self.assertEqual(cli_main(["project", "create", "--directory", str(project_root), "--project-id", "fictional-variants",
+                                       "--scenario", str(inputs / "scenario.json"),
+                                       "--variant", f"heavy={inputs / 'heavy.json'}"]), 0)
+            manifest_path = project_root / PROJECT_MANIFEST_NAME
+            before = manifest_path.read_bytes()
+            err = StringIO()
+            with redirect_stderr(err):
+                code = cli_main(["project", "add-variant", str(project_root), "--variant", "heavy",
+                                 "--changes", "transaction.deadline_hours=2"])
+            self.assertEqual(code, 2)
+            self.assertIn("must not replace an existing variant", err.getvalue())
+            self.assertEqual(manifest_path.read_bytes(), before)
+            self.assertEqual(json.loads(before)["variants"]["heavy"]["path"], "inputs/heavy.json")
+
     def test_add_show_compare_and_run_variants(self):
         with tempfile.TemporaryDirectory() as temporary, redirect_stdout(StringIO()), redirect_stderr(StringIO()):
             root = Path(temporary)
