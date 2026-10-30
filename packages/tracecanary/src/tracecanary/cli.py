@@ -13,7 +13,7 @@ from tracecanary.canonical import InputError, load_json
 from tracecanary.batching import _load_trace, run_batch
 from tracecanary.checker import check_trace
 from tracecanary.comparison import diff_traces
-from tracecanary.contract import Contract, ContractError, load_contract
+from tracecanary.contract import CONTRACT_MAX_BYTES, CONTRACT_MAX_DEPTH, Contract, ContractError, load_contract
 from tracecanary.coverage import coverage_report
 from tracecanary.fixture import write_bundle
 from tracecanary.inspection import (
@@ -23,11 +23,18 @@ from tracecanary.inspection import (
     dropped_telemetry,
     inspect_contract,
     population_gate,
+    population_gate_configured,
     retention_matrix,
 )
 from tracecanary.otlp import OtlpError
 from tracecanary.output import protect_inputs, write_report
-from tracecanary.project import build_manifest, load_project, write_project
+from tracecanary.project import (
+    build_manifest,
+    load_project,
+    remove_created_paths,
+    validate_project_settings,
+    write_project,
+)
 from tracecanary.report import (
     BatchReport,
     Report,
@@ -185,6 +192,19 @@ def build_parser() -> argparse.ArgumentParser:
     project_validate.add_argument("project", type=_cli_path)
     project_open = project_commands.add_parser("open", help="resolve a project and report missing or changed inputs")
     project_open.add_argument("project", type=_cli_path)
+    refresh = project_commands.add_parser(
+        "refresh",
+        help="accept deliberately edited inputs after validating them (explicit save)",
+        description=(
+            "Validate each named input and record its new fingerprint in the manifest. The manifest is written "
+            "only when every named input passes and the project then loads with no problems; otherwise it is "
+            "left unchanged and every blocking problem is listed. Inputs are never rewritten, unnamed inputs are "
+            "never touched, and no digest is printed."
+        ),
+    )
+    refresh.add_argument("project", type=_cli_path, help="project directory or manifest path")
+    refresh.add_argument("--input", action="append", required=True, dest="inputs", metavar="LABEL",
+                         help="contract, input, baseline, candidate, or batch; repeat for several")
     promote = project_commands.add_parser("promote-baseline", help="explicitly promote a passing candidate to the project baseline")
     promote.add_argument("project", type=_cli_path)
     promote.add_argument("--candidate", required=True, type=_cli_path, help="candidate export that must satisfy the contract first")
@@ -195,11 +215,25 @@ def build_parser() -> argparse.ArgumentParser:
     campaign_run.add_argument("project", type=_cli_path, help="project directory or manifest path")
     campaign_run.add_argument("--control", type=_cli_path, help="unsanitized synthetic positive control")
     campaign_run.add_argument("--save-summary", type=_cli_path, help="explicitly save the value-free summary to this JSON path")
+    campaign_run.add_argument("--save-evidence", type=_cli_path,
+                              help="explicitly save the value-free tracecanary.evidence/v1 document to this JSON path")
+    campaign_run.add_argument("--format", choices=("json", "human"), default="json",
+                              help="campaign report format (default: json)")
+    campaign_run.add_argument("--output", type=_cli_path,
+                              help="write the campaign report atomically to this path instead of stdout")
     campaign_compare = campaign_commands.add_parser("compare", help="compare two saved value-free campaign summaries")
     campaign_compare.add_argument("baseline_summary", type=_cli_path)
     campaign_compare.add_argument("candidate_summary", type=_cli_path)
     campaign_compare.add_argument("--format", choices=("human", "json"), default="human")
     campaign_compare.add_argument("--output", type=_cli_path)
+    campaign_compare.add_argument(
+        "--fail-on-regression",
+        action="store_true",
+        help=(
+            "add a gate verdict with value-free reasons and exit 0 pass, 1 regression (a worse status, a phase "
+            "that stopped running, a new finding code, or a higher count), 2 unresolved candidate"
+        ),
+    )
 
     contract_cmd = commands.add_parser("contract", help="authoring helpers for synthetic contracts")
     contract_commands = contract_cmd.add_subparsers(dest="contract_command", required=True, parser_class=_ArgumentParser)
@@ -271,8 +305,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             baseline = _load_trace(args.baseline, contract) if getattr(args, "baseline", None) is not None else None
             population_scope = getattr(args, "population_scope", None)
             population_minimum = getattr(args, "population_minimum", None)
-            if population_scope is not None and population_minimum is None:
-                raise InputError("--population-minimum is required with --population-scope")
+            population_gate_configured(population_scope, population_minimum)
             batch_report = _run_batch(contract, args.input_dir, args.recursive, args.include_paths, baseline,
                                       coverage=args.command == "coverage-batch", minimum_ratio=getattr(args, "minimum_ratio", None),
                                       population_scope=population_scope, population_minimum=population_minimum)
@@ -304,32 +337,49 @@ def _project(args: Any) -> int:
             directory = args.directory
             if not directory.is_dir():
                 raise InputError(f"--directory must be an existing project directory: {directory}")
-            placed = _project_prepare(
-                directory,
-                contract=args.contract,
-                input=args.input,
-                baseline=args.baseline,
-                candidate=args.candidate,
-                batch=args.batch_dir,
-                batch_recursive=bool(args.batch_recursive),
-            )
-            manifest = build_manifest(
-                directory,
+            # Validate every setting that needs no input before copying any.
+            validate_project_settings(
                 project_id=args.project_id,
                 description=args.description or "",
-                contract=placed["contract"],
-                input=placed.get("input"),
-                baseline=placed.get("baseline"),
-                candidate=placed.get("candidate"),
-                batch=placed.get("batch directory"),
-                batch_recursive=bool(args.batch_recursive),
-                batch_include_paths=bool(args.batch_include_paths),
-                batch_minimum_ratio=args.batch_minimum_ratio,
                 minimum_ratio=args.minimum_ratio,
+                batch_minimum_ratio=args.batch_minimum_ratio,
                 population_scope=args.population_scope,
                 population_minimum=args.population_minimum,
             )
-            write_project(directory, manifest)
+            created: list[Path] = []
+            try:
+                placed = _project_prepare(
+                    directory,
+                    contract=args.contract,
+                    input=args.input,
+                    baseline=args.baseline,
+                    candidate=args.candidate,
+                    batch=args.batch_dir,
+                    batch_recursive=bool(args.batch_recursive),
+                    created=created,
+                )
+                manifest = build_manifest(
+                    directory,
+                    project_id=args.project_id,
+                    description=args.description or "",
+                    contract=placed["contract"],
+                    input=placed.get("input"),
+                    baseline=placed.get("baseline"),
+                    candidate=placed.get("candidate"),
+                    batch=placed.get("batch directory"),
+                    batch_recursive=bool(args.batch_recursive),
+                    batch_include_paths=bool(args.batch_include_paths),
+                    batch_minimum_ratio=args.batch_minimum_ratio,
+                    minimum_ratio=args.minimum_ratio,
+                    population_scope=args.population_scope,
+                    population_minimum=args.population_minimum,
+                )
+                write_project(directory, manifest)
+            except BaseException:
+                # A failed create leaves the directory as it was, so a
+                # corrected retry does not trip over this attempt's copies.
+                remove_created_paths(created)
+                raise
             print(f"Project created: {directory / 'tracecanary.project.json'}")
             return EXIT_PASS
         if command == "validate":
@@ -361,6 +411,8 @@ def _project(args: Any) -> int:
             return EXIT_PASS if loaded.ok else EXIT_UNRESOLVED
         if command == "promote-baseline":
             return _project_promote_baseline(args.project, args.candidate)
+        if command == "refresh":
+            return _project_refresh(args.project, args.inputs)
         raise InputError(f"unsupported project command: {command}")
     except (InputError, ValueError) as exc:
         print(f"TraceCanary: UNRESOLVED: {exc}", file=sys.stderr)
@@ -370,7 +422,7 @@ def _project(args: Any) -> int:
         return EXIT_UNRESOLVED
 
 
-def _project_prepare(directory: Path, *, contract: Path, input: Path | None, baseline: Path | None, candidate: Path | None, batch: Path | None, batch_recursive: bool = False) -> dict[str, Path]:
+def _project_prepare(directory: Path, *, contract: Path, input: Path | None, baseline: Path | None, candidate: Path | None, batch: Path | None, batch_recursive: bool = False, created: list[Path] | None = None) -> dict[str, Path]:
     """Make the chosen synthetic inputs self-contained inside the project directory."""
     from tracecanary.project import _copy_project_input
 
@@ -386,7 +438,7 @@ def _project_prepare(directory: Path, *, contract: Path, input: Path | None, bas
         resolved_source = source.resolve()
         if resolved_source in copied_sources:
             return copied_sources[resolved_source]
-        target = _copy_project_input(project_dir, source, folder=folder, recursive=recursive)
+        target = _copy_project_input(project_dir, source, folder=folder, recursive=recursive, created=created)
         copied_sources[resolved_source] = target
         return target
 
@@ -399,6 +451,24 @@ def _project_prepare(directory: Path, *, contract: Path, input: Path | None, bas
     if batch_target is not None:
         placed["batch directory"] = batch_target
     return placed
+
+
+def _project_refresh(project: Path, labels: list[str]) -> int:
+    from tracecanary.project import refresh_project
+
+    result = refresh_project(project, labels)
+    for warning in result.warnings:
+        print(f"TraceCanary: WARNING: {warning}", file=sys.stderr)
+    if result.problems:
+        for problem in result.problems:
+            print(f"TraceCanary: UNRESOLVED: {problem}", file=sys.stderr)
+        print("TraceCanary: UNRESOLVED: manifest left unchanged", file=sys.stderr)
+        return EXIT_UNRESOLVED
+    for outcome in result.outcomes:
+        print(f"{outcome.label}: {outcome.path} {'refreshed' if outcome.changed else 'unchanged'}")
+    if result.written:
+        print(f"Manifest updated: {result.manifest_path}")
+    return EXIT_PASS
 
 
 def _project_promote_baseline(directory: Path, candidate: Path) -> int:
@@ -441,7 +511,14 @@ def canonical_json_text(value: Any) -> str:
 
 
 def _campaign(args: Any) -> int:
-    from tracecanary.campaign import campaign_summary, compare_summaries, render_comparison_human, run_campaign
+    from tracecanary.campaign import (
+        campaign_evidence,
+        campaign_summary,
+        compare_summaries,
+        render_campaign_human,
+        render_comparison_human,
+        run_campaign,
+    )
     from tracecanary.project import load_project
     from tracecanary.report import ensure_text_values_absent
 
@@ -455,7 +532,6 @@ def _campaign(args: Any) -> int:
                 return EXIT_UNRESOLVED
             manifest = loaded.manifest
             contract_path = args.contract or loaded.resolved["contract"]
-            contract = load_contract(contract_path)
             control = args.control
             baseline = args.baseline or loaded.resolved.get("baseline")
             candidates: list[tuple[str, Path]] = []
@@ -469,6 +545,16 @@ def _campaign(args: Any) -> int:
             minimum_ratio = args.minimum_ratio if args.minimum_ratio is not None else manifest.coverage.minimum_ratio
             population_scope = args.population_scope or manifest.coverage.population_scope
             population_minimum = args.population_minimum if args.population_minimum is not None else manifest.coverage.population_minimum
+            # Checked after the overrides merge with the saved gate, so one
+            # override over a saved full gate still works.
+            population_gate_configured(population_scope, population_minimum)
+            sources = [path for path in (contract_path, control, baseline, *(path for _, path in candidates))
+                       if path is not None]
+            _protect_campaign_destinations(
+                (("--output", args.output), ("--save-summary", args.save_summary), ("--save-evidence", args.save_evidence)),
+                sources, loaded.path.parent, batch,
+            )
+            contract = load_contract(contract_path)
             campaign = run_campaign(
                 contract,
                 control_payload=_load_trace(control, contract) if control is not None else None,
@@ -483,30 +569,31 @@ def _campaign(args: Any) -> int:
                 population_minimum=population_minimum,
             )
             canary_values = tuple(canary.value for canary in contract.canaries)
-            output = render_json(campaign)
+            # Render and check every requested text before the first byte goes
+            # out: any hit withholds the report, summary and evidence alike.
+            output = render_json(campaign) if args.format == "json" else render_campaign_human(campaign)
             ensure_text_values_absent(output, canary_values)
-            summary_path = args.save_summary
-            summary_text = ""
-            if summary_path is not None:
-                # Check the summary before anything is emitted, so a withheld
-                # summary never follows a printed campaign report.
-                summary_text = render_json(campaign_summary(campaign))
-                ensure_text_values_absent(summary_text, canary_values)
-            _emit(output, args.output if hasattr(args, "output") else None)
-            if summary_path is not None:
-                sources = [contract_path, control, baseline, batch, *(path for _, path in candidates)]
-                protect_inputs(summary_path, [path for path in sources if path is not None], loaded.path.parent)
-                protect_inputs(summary_path, [], batch)
-                write_report(summary_path, summary_text)
-                print(f"Value-free campaign summary saved to {summary_path}")
+            summary_text = render_json(campaign_summary(campaign)) if args.save_summary is not None else ""
+            ensure_text_values_absent(summary_text, canary_values)
+            evidence_text = render_json(campaign_evidence(campaign)) if args.save_evidence is not None else ""
+            ensure_text_values_absent(evidence_text, canary_values)
+            _emit(output, args.output)
+            if args.save_summary is not None:
+                write_report(args.save_summary, summary_text)
+                print(f"Value-free campaign summary saved to {args.save_summary}")
+            if args.save_evidence is not None:
+                write_report(args.save_evidence, evidence_text)
+                print(f"Value-free evidence saved to {args.save_evidence}")
             return _status_exit(campaign["status"])
         if command == "compare":
             protect_inputs(args.output, [args.baseline_summary, args.candidate_summary])
             baseline_summary = load_json(args.baseline_summary, max_bytes=MAX_CAMPAIGN_SUMMARY_BYTES, max_depth=32)
             candidate_summary = load_json(args.candidate_summary, max_bytes=MAX_CAMPAIGN_SUMMARY_BYTES, max_depth=32)
-            comparison = compare_summaries(baseline_summary, candidate_summary)
+            comparison = compare_summaries(baseline_summary, candidate_summary, gate=args.fail_on_regression)
             output = render_json(comparison) if args.format == "json" else render_comparison_human(comparison)
             _emit(output, args.output)
+            if args.fail_on_regression:
+                return _status_exit(comparison["gate"]["status"])
             return EXIT_PASS
         raise InputError(f"unsupported campaign command: {command}")
     except UnsafeReportError:
@@ -523,6 +610,31 @@ def _campaign(args: Any) -> int:
 MAX_CAMPAIGN_SUMMARY_BYTES = 1_000_000
 
 
+def _protect_campaign_destinations(
+    destinations: tuple[tuple[str, Path | None], ...],
+    sources: list[Path],
+    project_dir: Path,
+    batch: Path | None,
+) -> None:
+    """Refuse campaign output destinations before the campaign runs.
+
+    The report, summary, and evidence destinations must name different
+    files, stay outside the project directory and the batch directory, and
+    never replace a campaign input.
+    """
+    named = [(flag, path) for flag, path in destinations if path is not None]
+    for index, (flag, path) in enumerate(named):
+        for other_flag, other in named[index + 1:]:
+            if path.resolve() == other.resolve() or (path.exists() and other.exists() and path.samefile(other)):
+                raise InputError(f"{flag} and {other_flag} must name different files")
+    for flag, path in named:
+        try:
+            protect_inputs(path, sources, project_dir)
+            protect_inputs(path, [], batch)
+        except InputError as exc:
+            raise InputError(f"{flag}: {exc}") from exc
+
+
 def _contract_authoring(args: Any) -> int:
     from tracecanary.authoring import draft_canary_values, empty_template, review_contract, validate_draft
     from tracecanary.canonical import canonical_json
@@ -530,7 +642,7 @@ def _contract_authoring(args: Any) -> int:
     command = args.contract_command
     try:
         if command == "review":
-            raw = load_json(args.contract_path, max_bytes=MAX_CAMPAIGN_SUMMARY_BYTES, max_depth=MAX_CAMPAIGN_SUMMARY_DEPTH)
+            raw = load_json(args.contract_path, max_bytes=CONTRACT_MAX_BYTES, max_depth=CONTRACT_MAX_DEPTH)
             protect_inputs(args.output, [args.contract_path])
             report = review_contract(raw)
             output = render_json(report) if args.format == "json" else render_contract_review_human(report)
@@ -555,8 +667,6 @@ def _contract_authoring(args: Any) -> int:
         print("TraceCanary: UNRESOLVED: input or output could not be accessed", file=sys.stderr)
         return EXIT_UNRESOLVED
 
-
-MAX_CAMPAIGN_SUMMARY_DEPTH = 32
 
 
 def render_contract_review_human(report: dict[str, Any]) -> str:

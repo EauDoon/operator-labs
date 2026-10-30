@@ -9,10 +9,10 @@ from typing import Any
 
 import json
 
-from tracecanary import __version__
 from tracecanary.authoring import draft_canary_values, empty_template, render_review_human, review_contract, validate_draft
 from tracecanary.batching import run_batch
 from tracecanary.campaign import (
+    campaign_evidence,
     campaign_summary,
     compare_summaries as compare_summaries_engine,
     render_campaign_human,
@@ -22,11 +22,25 @@ from tracecanary.campaign import (
 from tracecanary.canonical import InputError, parse_json_text, canonical_json, load_json
 from tracecanary.checker import check_trace
 from tracecanary.comparison import diff_traces
-from tracecanary.contract import Contract, ContractError, load_contract, parse_contract
+from tracecanary.contract import (
+    CONTRACT_MAX_BYTES,
+    CONTRACT_MAX_DEPTH,
+    Contract,
+    ContractError,
+    load_contract,
+    parse_contract,
+)
 from tracecanary.coverage import coverage_report
 from tracecanary.fixture import bundle, write_bundle
 from tracecanary.output import protect_inputs, write_report
-from tracecanary.project import _copy_project_input, build_manifest, load_project, write_project
+from tracecanary.project import (
+    _copy_project_input,
+    build_manifest,
+    load_project,
+    remove_created_paths,
+    validate_project_settings,
+    write_project,
+)
 from tracecanary.inspection import (
     control_check,
     coverage_diff,
@@ -103,6 +117,8 @@ class ProjectPaths:
     candidate: Path | None
     batch_dir: Path | None
     coverage: tuple[str, str, int | None]
+    # The saved batch per-file threshold; None when the project saved none.
+    batch_minimum_ratio: str | None = None
 
 
 class TraceCanaryController:
@@ -114,7 +130,8 @@ class TraceCanaryController:
         if guidance is not None:
             return guidance
         try:
-            raw = load_json(Path(contract_path), max_bytes=5_000_000, max_depth=100)
+            # The contract loader's limits: a draft review never reads more than a run would.
+            raw = load_json(Path(contract_path), max_bytes=CONTRACT_MAX_BYTES, max_depth=CONTRACT_MAX_DEPTH)
             report = review_contract(raw)
             human = render_review_human(report)
             json_text = render_json(report)
@@ -139,7 +156,7 @@ class TraceCanaryController:
         """
         try:
             # Same limits as load_contract, so a saved draft is a file that loader accepts.
-            raw = parse_json_text(text, max_bytes=1_000_000, max_depth=50)
+            raw = parse_json_text(text, max_bytes=CONTRACT_MAX_BYTES, max_depth=CONTRACT_MAX_DEPTH)
             validate_draft(raw)
         except InputError as exc:
             if "not valid JSON" in str(exc) or "UTF-8" in str(exc):
@@ -162,7 +179,7 @@ class TraceCanaryController:
 
     def validate_draft_text(self, text: str) -> dict:
         """Validate a contract draft strictly; raises ContractError on failure."""
-        raw = parse_json_text(text, max_bytes=1_000_000, max_depth=50)
+        raw = parse_json_text(text, max_bytes=CONTRACT_MAX_BYTES, max_depth=CONTRACT_MAX_DEPTH)
         return validate_draft(raw)
 
     def validate(self, contract_path: str | Path) -> GuiResult:
@@ -432,6 +449,7 @@ class TraceCanaryController:
             coverage=(manifest.coverage.minimum_ratio or "",
                       manifest.coverage.population_scope or "",
                       manifest.coverage.population_minimum),
+            batch_minimum_ratio=manifest.batch.minimum_ratio if manifest.batch is not None else None,
         )
         return GuiResult("pass", EXIT_PASS, human, human, None, (loaded.path,), None, "project-open", project_paths)
 
@@ -462,10 +480,19 @@ class TraceCanaryController:
         )
         if guidance is not None:
             return guidance
+        created: list[Path] = []
         try:
             project_dir = Path(destination).resolve()
             if not project_dir.is_dir():
                 raise InputError(f"the project destination must be an existing directory: {destination}")
+            validate_project_settings(
+                project_id=project_id,
+                description=description,
+                minimum_ratio=minimum_ratio,
+                batch_minimum_ratio=batch_minimum_ratio,
+                population_scope=population_scope,
+                population_minimum=population_minimum,
+            )
             placed: dict[str, Path] = {}
             copied_sources: dict[Path, Path] = {}
 
@@ -475,7 +502,8 @@ class TraceCanaryController:
                 resolved_source = Path(source).resolve()
                 if resolved_source in copied_sources:
                     return copied_sources[resolved_source]
-                target = _copy_project_input(project_dir, Path(source), folder=folder, recursive=recursive)
+                target = _copy_project_input(project_dir, Path(source), folder=folder, recursive=recursive,
+                                             created=created)
                 copied_sources[resolved_source] = target
                 return target
 
@@ -505,7 +533,11 @@ class TraceCanaryController:
             )
             write_project(project_dir, manifest)
         except (InputError, OSError, ValueError) as exc:
+            remove_created_paths(created)
             return self._guidance("project-save", GUI006, f"The project could not be saved. ({exc})")
+        except BaseException:
+            remove_created_paths(created)
+            raise
         report = build_report("tracecanary/v1", "pass", [], mode="project-save")
         human = f"TraceCanary project {project_id} saved to {project_dir / 'tracecanary.project.json'}\n"
         return GuiResult("pass", EXIT_PASS, human, render_json(report), None, (), None, "project-save",
@@ -526,6 +558,7 @@ class TraceCanaryController:
         batch_recursive: bool = False,
         batch_include_paths: bool = False,
         candidate_path: str | Path | None = None,
+        batch_minimum_ratio: str | None = None,
     ) -> GuiResult:
         """Run the regression campaign from plain selector values in one bounded pass.
 
@@ -534,6 +567,8 @@ class TraceCanaryController:
         and reports stay protected. The batch selectors apply exactly as they
         do for ``campaign run`` and saved projects. Like ``campaign run``, the
         selected input and the selected candidate are both checked.
+        ``batch_minimum_ratio`` is the batch phase's per-file threshold, which
+        the window passes for a campaign over an opened project's batch.
         """
         inputs: list[Path] = [Path(contract_path)]
         if baseline_path and str(baseline_path).strip():
@@ -563,6 +598,7 @@ class TraceCanaryController:
                 batch=batch,
                 batch_recursive=bool(batch_recursive),
                 batch_include_paths=bool(batch_include_paths),
+                batch_minimum_ratio=batch_minimum_ratio,
                 minimum_ratio=minimum_ratio,
                 population_scope=population_scope,
                 population_minimum=population_minimum,
@@ -607,19 +643,7 @@ class TraceCanaryController:
         values, contracts, or trace inputs, and it is not a privacy guarantee.
         """
         try:
-            summary = campaign_summary(json.loads(result.json))
-            evidence = {
-                "evidence_version": "tracecanary.evidence/v1",
-                "tool": {"name": "tracecanary", "version": __version__},
-                "summary": summary,
-                "meaning": (
-                    "Deterministic value-free evidence for a synthetic regression campaign. "
-                    "Canary values, contracts, and trace inputs are not bundled; hashes of "
-                    "protected values are not treated as anonymization. Detection is bounded "
-                    "by the declared contract and does not claim absence of all sensitive data."
-                ),
-            }
-            text = render_json(evidence)
+            text = render_json(campaign_evidence(json.loads(result.json)))
             ensure_text_values_absent(text, self._redacted_values(Path(result.inputs[0])))
             protect_inputs(Path(evidence_path), list(result.inputs), result.input_dir)
             write_report(Path(evidence_path), text)

@@ -75,9 +75,22 @@ The desktop GUI reserves `GUI001` through `GUI008` for local, safe guidance. Gui
 
 ## Withheld reports
 
-Every rendering is checked against the contract's canary values as it is emitted: single-trace and batch reports, contract reviews, campaign reports, and saved campaign summaries and evidence. When a protected value occurs anywhere in that text, including TraceCanary's own fixed wording, the report is withheld. The CLI exits `2` and writes nothing to stdout or stderr, because any explanation could itself contain the value; the desktop returns an empty result. `contract review` reports a `conflict` at `canaries[N]` when a canary value occurs in TraceCanary's fixed report wording, so the collision can be fixed before a run. When the review's own text contains the value, the review is withheld the same way.
+Every rendering is checked against the contract's canary values as it is emitted: single-trace and batch reports, contract reviews, campaign reports, and saved campaign summaries and evidence. When a protected value occurs anywhere in that text, including TraceCanary's own fixed wording, the report is withheld. The CLI exits `2` and writes nothing to stdout or stderr, because any explanation could itself contain the value; the desktop returns an empty result. `contract review` reports a `conflict` at `canaries[N]` when a canary value occurs in TraceCanary's fixed report wording (every report mode, every finding code, the text of real reports with findings from every checker and output format, and identifiers numbered per draft), so the collision can be fixed before a run. When the review's own text contains the value, the review is withheld the same way.
 
 The GUI may create synthetic starter files only after the user selects an empty destination directory. Its file mapping uses `safe-export.json` for Input and Baseline and `missing-operational-fields.json` for Candidate, so Diff demonstrates an intentional retained-field regression.
+
+## Campaign comparison gate
+
+`campaign compare BASELINE CANDIDATE --fail-on-regression` adds a `gate` object to the `tracecanary.campaign-comparison/v1` document: `{"status": "pass" | "regression" | "unresolved", "reasons": [...]}`. Without the flag the document has no `gate` key and is otherwise unchanged. Each reason is value-free and names a phase:
+
+| Reason | Example |
+|---|---|
+| The campaign or a phase status got worse (pass < regression < unresolved) | `candidates: pass -> regression` |
+| A phase that ran in the baseline is absent or skipped in the candidate | `batch: pass -> absent` |
+| A finding code is new in a phase | `candidates: new TC001 x2` |
+| A persistent code's count increased | `candidates: TC001 1 -> 3` |
+
+A phase absent or skipped in the baseline is judged by its own status and findings. The gate status is `unresolved` whenever the candidate summary's campaign status is unresolved, even if the baseline was unresolved too; otherwise it is `regression` when any reason exists and `pass` when none does. The exit status is `0`, `1` or `2` accordingly, and incompatible or malformed summaries keep `2`. Campaign and summary compatibility identities carry `coverage.batch_minimum_ratio`; a summary without the key (saved before 0.4.0) is treated as having null.
 
 `check` returns `0` for no findings and `1` for findings. `diff` returns `2` when its baseline cannot provide a passing comparison point. Malformed files, duplicate keys, invalid structures, and unsupported versions return `2`.
 

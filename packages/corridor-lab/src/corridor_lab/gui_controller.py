@@ -27,6 +27,7 @@ from .canonical import (
     protect_report_output,
     read_bounded_bytes,
     require_decimal,
+    require_identifier,
 )
 from .batching import run_scenario_batch
 from .evidence import build_evidence, write_evidence
@@ -38,6 +39,9 @@ from .projects import (
     execute_experiment,
     load_project,
     prepare_project_directory,
+    project_input_records,
+    project_scenario_state,
+    remove_created_paths,
     validate_experiment,
     write_project,
 )
@@ -171,6 +175,8 @@ class CorridorGuiController:
         self.derived_variants: dict[str, DerivedVariant] = {}
         self.active_variant: str | None = None
         self.project_base_raw: dict | None = None
+        # Verified inputs of the open project, recorded in exported evidence.
+        self.project_inputs: list[dict[str, object]] | None = None
         self.last_report_inputs: tuple[Path, ...] = ()
         self.last_report_scanned_dirs: tuple[Path, ...] = ()
         # Provenance of the current report beyond the active scenario, so
@@ -478,10 +484,20 @@ class CorridorGuiController:
             scenario_result = self.load_scenario_file(loaded.resolved["scenario"])
             if scenario_result.error is not None:
                 return scenario_result
+            stand_in = False
             if "routes" in loaded.resolved:
                 routes_result = self.load_routes_path(loaded.resolved["routes"])
                 if routes_result.error is not None:
                     return routes_result
+                # A scenario that embeds no routes takes the saved route
+                # selection, exactly as the project CLI commands do. The
+                # scenario file is untouched: saving the project copies it
+                # unmodified, and report protection still names it.
+                merged, stand_in = project_scenario_state(loaded)
+                if stand_in:
+                    merged = _normalize_raw(merged)
+                    self.scenario = parse_scenario(copy.deepcopy(merged))
+                    self.scenario_raw = merged
             else:
                 self.clear_route_selection()
             self.baseline_file = loaded.resolved.get("baseline")
@@ -492,11 +508,13 @@ class CorridorGuiController:
             self.project_source = str(loaded.path)
             self.project_path = loaded.path.parent
             self.project_id = loaded.manifest.project_id
+            self.project_inputs = project_input_records(loaded.manifest)
             return ActionResult(
                 {
                     "project_id": loaded.manifest.project_id,
                     "description": loaded.manifest.description,
                     "experiments": [experiment.name for experiment in loaded.manifest.experiments],
+                    "saved_routes_stand_in": stand_in,
                 },
                 None,
             )
@@ -511,21 +529,29 @@ class CorridorGuiController:
             target = Path(destination)
             if not target.is_dir():
                 raise InputError(f"choose an existing project directory before saving: {target}")
-            placed = prepare_project_directory(target, self.scenario_file, self.routes_path, self.baseline_file)
-            manifest = build_manifest(
-                target,
-                project_id=project_id,
-                description=description,
-                scenario=placed["scenario"],
-                routes=placed.get("routes"),
-                baseline=placed.get("baseline"),
-                experiments=self.experiments,
-                derived_variants=self.derived_variants or None,
-            )
-            write_project(target, manifest)
+            require_identifier(project_id, "project_id")
+            created: list[Path] = []
+            placed = prepare_project_directory(target, self.scenario_file, self.routes_path, self.baseline_file,
+                                               created=created)
+            try:
+                manifest = build_manifest(
+                    target,
+                    project_id=project_id,
+                    description=description,
+                    scenario=placed["scenario"],
+                    routes=placed.get("routes"),
+                    baseline=placed.get("baseline"),
+                    experiments=self.experiments,
+                    derived_variants=self.derived_variants or None,
+                )
+                write_project(target, manifest)
+            except BaseException:
+                remove_created_paths(created)
+                raise
             self.project_source = str(target / "corridor-lab.project.json")
             self.project_path = target
             self.project_id = manifest.project_id
+            self.project_inputs = project_input_records(manifest)
             return ActionResult({}, None)
         except (InputError, OSError, ValueError, DecimalException) as exc:
             return self._failure(exc)
@@ -815,6 +841,7 @@ class CorridorGuiController:
                 baseline_source=self.last_report_baseline,
                 scenario_directory=self.last_report_directory,
                 notes=notes,
+                project_inputs=self.project_inputs if self.project_path is not None else None,
             )
             target = write_evidence(path, document, inputs=self.last_report_inputs, scanned_dirs=self.last_report_scanned_dirs)
             self.last_error = None

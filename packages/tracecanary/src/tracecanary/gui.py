@@ -193,6 +193,9 @@ class TraceCanaryWindow:
         self._batch_population = tk.BooleanVar(value=False)
         self._batch_population_summary = tk.StringVar(value="uses the Population Gate scope and minimum")
         self._batch_job: BackgroundBatch | None = None
+        # The batch directory of the last opened project, whose saved per-file
+        # threshold the campaign applies while the batch selector names it.
+        self._project_batch_dir: str | None = None
         self._contract_editor = None
         self._contract_text = None
         self._contract_editor_status = None
@@ -492,6 +495,9 @@ class TraceCanaryWindow:
         effective_scope = population_scope if population_minimum is not None else None
         recursive = bool(self._recursive.get())
         include_paths = bool(self._include_paths.get())
+        batch_minimum_ratio = None
+        if batch_path is not None and self._project_batch_dir is not None and batch_path == self._project_batch_dir:
+            batch_minimum_ratio = self._batch_ratio.get().strip() or None
 
         def operation():
             return self._controller.run_campaign_selections(
@@ -506,6 +512,7 @@ class TraceCanaryWindow:
                 population_minimum=population_minimum,
                 batch_recursive=recursive,
                 batch_include_paths=include_paths,
+                batch_minimum_ratio=batch_minimum_ratio,
             )
 
         self._run_background(operation, "Status: campaign running (bounded by contract limits); the window stays responsive.", buttons=(self._campaign_button,))
@@ -584,11 +591,15 @@ class TraceCanaryWindow:
             self._baseline.set(str(paths.baseline) if paths.baseline else "")
             self._candidate.set(str(paths.candidate) if paths.candidate else "")
             self._batch_dir.set(str(paths.batch_dir) if paths.batch_dir else "")
+            # Saved values only: a blank entry means the project saved no such
+            # threshold, so Run Campaign gates exactly what `campaign run`
+            # gates. Defaults used to fill a 0.95 ratio and a span >= 1 gate.
             minimum_ratio, scope, minimum = paths.coverage
-            self._minimum_ratio.set(minimum_ratio or "0.95")
-            self._batch_ratio.set(minimum_ratio or "0.95")
+            self._minimum_ratio.set(minimum_ratio or "")
+            self._batch_ratio.set(paths.batch_minimum_ratio or "")
             self._population_scope.set(scope or "span")
-            self._population_minimum.set(str(minimum) if minimum is not None else "1")
+            self._population_minimum.set(str(minimum) if minimum is not None else "")
+            self._project_batch_dir = str(paths.batch_dir) if paths.batch_dir else None
         self._apply(result)
         if result.project_paths is not None:
             self._status.set("Status: project opened. Saved settings are applied; run an action before results apply to them.")

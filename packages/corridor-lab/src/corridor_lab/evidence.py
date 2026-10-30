@@ -55,12 +55,16 @@ def build_evidence(
     baseline_source: str = "",
     scenario_directory: str = "",
     notes: str = "",
+    project_inputs: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Assemble the evidence document; the report is embedded verbatim.
 
     ``scenario_directory`` names the folder a batch scanned; it replaces the
     single-scenario description because every file there carries its own
     routes. ``baseline_source`` names the "before" scenario of a diff.
+    ``project_inputs`` lists the label, relative path, SHA-256 and folder
+    flag of every input of the saved project the report came from, as
+    verified when it was loaded; the key is absent otherwise.
     """
     if not isinstance(report, dict) or "report_version" not in report:
         raise InputError("evidence requires a rendered corridor-lab report")
@@ -83,6 +87,8 @@ def build_evidence(
         },
         "limitations": STANDING_LIMITATIONS,
     }
+    if project_inputs is not None:
+        document["inputs"]["project_inputs"] = [dict(item) for item in project_inputs]
     if notes:
         if len(notes) > 2000:
             raise InputError("evidence notes must be at most 2000 characters")

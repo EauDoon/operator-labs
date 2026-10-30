@@ -12,7 +12,131 @@ are now deprecated; see the deprecation note at the top of each.
 
 ## [Unreleased]
 
+### Added
+
+#### Corridor Lab
+
+- **`project refresh` accepts deliberately edited inputs.** After a
+  deliberate edit to a project input, every project command refused the
+  project as changed since it was saved, and nothing could accept the change
+  short of hand-editing SHA-256 values or rebuilding the project.
+  `corridorlab project refresh DIR --input LABEL` (`scenario`, `routes`,
+  `baseline`, or `variant:NAME` for a file variant; repeatable) validates each
+  named input with its own loader, re-checks the merged scenario when saved
+  routes stand in for embedded ones, and records the new fingerprints only
+  when the project then loads with no problems. Otherwise it exits 2, lists
+  every blocking problem (unnamed modified or missing inputs included), and
+  leaves the manifest byte-identical. Derived variants that no longer apply
+  are named as warnings. Refresh validates content, which `project create`
+  does not: it is the stricter, explicit acceptance.
+- **`--evidence FILE` on `project run`, `run-variants`, `compare-variants` and
+  `show-variant`.** The evidence document embeds the report, names the
+  manifest's relative scenario path, the saved routes when they stand in, and
+  the manifest path, and adds an optional `inputs.project_inputs` list with
+  the label, path, verified SHA-256 and folder flag of every manifest input.
+  The desktop **Export Evidence...** adds the same list while a project is
+  open. Destinations are checked against every project input, the project
+  directory and each other before anything is computed. Standalone evidence
+  is unchanged.
+
+#### TraceCanary
+
+- **`campaign run` writes reports and evidence.** New `--format json|human`,
+  `--output FILE` and `--save-evidence FILE`. The human view is the shared
+  value-free renderer, and the evidence document is the
+  `tracecanary.evidence/v1` document the desktop **Save Evidence As...**
+  writes (now built by one shared function, so desktop bytes are unchanged).
+  `--output`, `--save-summary` and `--save-evidence` must name different files
+  outside the project and batch directories, none of them an input, and are
+  checked before the campaign runs; every requested text is checked against
+  the canary values before anything is printed or written.
+- **`campaign compare --fail-on-regression`** adds a gate verdict with
+  value-free reasons (a worse campaign or phase status, a phase that stopped
+  running, a new finding code, or a higher count for a persistent code) and
+  exits 0 pass, 1 regression, 2 unresolved candidate. Without the flag the
+  comparison output and exit status are unchanged.
+- **`project refresh` accepts deliberately edited inputs.**
+  `tracecanary project refresh PROJECT --input LABEL` (`contract`, `input`,
+  `baseline`, `candidate` or `batch`) validates each named input (the contract
+  must load, inputs and candidates must be structurally valid exports, a
+  baseline must satisfy the contract, a batch folder must enumerate within its
+  bounds) and records the new fingerprints only when the project then loads
+  with no problems. It prints labels, paths and `refreshed` or `unchanged`,
+  never a digest of a canary-bearing file, and warns when a refreshed contract
+  no longer accepts the saved baseline.
+
 ### Fixed
+
+- **Both packages: project inputs that resolve outside the project.**
+  `project create` refuses inputs outside the project directory, but loading a
+  project followed a junction or symlinked directory inside it, and on Windows
+  resolved a drive-relative reference such as `C:outside/scenario.json`
+  against the working directory, so such a project validated. These inputs
+  are now reported as problems by `project validate`, `open`, `run`,
+  `campaign run` and the desktop **Open Project...** (exit 2).
+- **Both packages: a failed `project create` blocked its own retry.** A create
+  that failed after copying inputs (an invalid project id, an invalid
+  threshold, a name collision) left the copies in `inputs/`, and the corrected
+  retry then failed with "project input already exists". Settings that need no
+  input are now validated before anything is copied, and a failure before the
+  manifest is written, from the CLI or the desktop save, removes exactly the
+  files and folders that attempt created. Pre-existing files are never touched.
+- **Corridor Lab: saved routes were ignored when the scenario embeds none.**
+  `project create --routes` copied and fingerprinted a route selection that no
+  project command read, so a project laid out like `examples/fictional-corridor`
+  validated while `project run` reported every experiment unresolved and
+  `compare-variants` exited 2. Project commands and the desktop now use the
+  saved routes in that case; scenarios that embed routes behave exactly as
+  before, and the scenario file is never rewritten.
+- **Corridor Lab: variant commands on an invalid project scenario.**
+  `show-variant` crashed with a Python traceback (exit 1) on a scenario that is
+  not an object and printed a diff for an incomplete one, and `add-variant`
+  saved variants onto either. `show-variant`, `compare-variants` and
+  `add-variant` now validate the project scenario first and exit 2 with the
+  validator's message.
+- **Corridor Lab: `add-variant` saved variants the desktop rejects.** Changes
+  such as `transaction.send_amount=-5` or a route the scenario does not have
+  used to print `variant saved` and then made `compare-variants` exit 2 for the
+  whole project. The derived scenario is now validated before the manifest is
+  written, as the desktop does; such variants exit 2 and are not saved.
+- **Corridor Lab: `show-variant --output tight.json` wrote Markdown.** An
+  `--output` ending in `.json` now gives JSON; an explicit `--format` still
+  wins, and Markdown stays the default otherwise.
+- **TraceCanary: half a population gate was dropped silently.** `batch` and
+  `coverage-batch` with only `--population-minimum` passed where a full gate
+  failed, `project create --population-minimum` alone saved no gate, and
+  `campaign run` with one half ran without a population-gate phase. A gate now
+  needs both a scope and a minimum on every CLI and library surface; half a
+  gate exits 2. Saved manifests could never hold half a gate, so no saved
+  project changes outcome.
+- **TraceCanary: `campaign compare` ignored the batch per-file threshold.**
+  Summaries from campaigns with batch thresholds 0 and 1 compared as
+  `pass -> pass`, contrary to the README. Campaigns and summaries now record
+  `coverage.batch_minimum_ratio` (null without a batch phase), and differing
+  values are unsupported (exit 2). A summary saved by 0.3.0 has no such key,
+  which counts as null: it still compares with a new summary whose campaign
+  had no batch threshold, and is unsupported against one that had a threshold.
+- **TraceCanary: contract review missed canary values that clash with report
+  wording.** Values such as `TC004`, `coverage-gate`, `retention-matrix` and
+  `required-0001` reviewed as pass, yet each withholds real reports. The review
+  vocabulary now covers every report mode, every finding code, and real reports
+  with findings from every checker and output format, plus identifiers
+  numbered per draft. Contracts that passed review before can now report such
+  conflicts.
+- **TraceCanary desktop: contract review read up to 5 MB.** Every other
+  contract loader caps at 1 MB and nesting depth 50; desktop review now uses
+  the same limits, and CLI review now accepts the loader's depth 50 instead
+  of 32.
+- **TraceCanary desktop: Run Campaign after Open Project ignored the saved
+  settings.** Opening a project filled a 0.95 ratio and a `span >= 1` gate the
+  project never saved, copied the candidate ratio into the batch-ratio entry,
+  and never passed a batch ratio to the campaign, so the desktop campaign and
+  its summaries differed from `campaign run PROJECT`. The entries now hold the
+  saved values (blank when nothing was saved) and the campaign applies the
+  saved batch threshold.
+- **TraceCanary: `campaign run --save-summary` printed before refusing.** A
+  colliding summary path used to leave a printed campaign report and exit 2;
+  all destinations are now checked before the campaign runs.
 
 - Both packages reject non-regular JSON inputs before reading them, so named
   pipes cannot indefinitely block local checks. Validation uses the opened

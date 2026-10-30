@@ -16,15 +16,17 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import stat as stat_module
 from dataclasses import dataclass
-from decimal import Decimal
-from pathlib import Path, PurePosixPath
+from decimal import Decimal, DecimalException
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from .analysis import deadline_target, resolution_quantiles
 from .variants import (
     DerivedVariant,
+    apply_variant_chain,
     parse_derived_variant,
     validate_variant_graph,
 )
@@ -41,6 +43,7 @@ from .canonical import (
     require_object,
     require_string,
 )
+from .route import load_route_documents
 from .sensitivity import run_sensitivity
 from .stress import run_stress_grid
 from .transaction_sweep import run_transaction_grid, run_transaction_sweep
@@ -273,17 +276,51 @@ def parse_manifest(value: object) -> ProjectManifest:
     )
 
 
+def containment_problem(project_dir: Path, ref_path: str) -> str | None:
+    """Explain why a manifest path would leave the project, or return None.
+
+    ``project create`` refuses inputs outside the project directory, and a
+    loaded project holds the same line. On Windows a drive-relative path
+    such as ``C:outside/scenario.json`` replaces the project directory when
+    joined, so it resolves against the working directory instead. A
+    junction or a symlinked directory inside the project can also lead out
+    of it. Neither input is fingerprinted or resolved.
+    """
+    if os.name == "nt":
+        windows = PureWindowsPath(ref_path)
+        if windows.drive or windows.root:
+            return "is not a portable relative project path"
+    try:
+        (project_dir / ref_path).resolve().relative_to(project_dir.resolve())
+    except (OSError, RuntimeError, ValueError):
+        return "resolves outside the project directory"
+    return None
+
+
+def _manifest_location(path: str | Path) -> Path:
+    location = Path(path)
+    return location / PROJECT_MANIFEST_NAME if location.is_dir() else location
+
+
 def load_project(path: str | Path) -> LoadedProject:
     """Read, resolve, and status a project from its manifest file or directory."""
-    location = Path(path)
-    manifest_path = location / PROJECT_MANIFEST_NAME if location.is_dir() else location
-    project_dir = manifest_path.parent
+    manifest_path = _manifest_location(path)
     value = parse_json_bytes(read_bounded_bytes(manifest_path))
     manifest = parse_manifest(value)
+    resolved, problems = _resolve_inputs(manifest_path.parent, manifest)
+    return LoadedProject(path=manifest_path, manifest=manifest, resolved=resolved, problems=problems)
+
+
+def _resolve_inputs(project_dir: Path, manifest: ProjectManifest) -> tuple[dict[str, Path], tuple[str, ...]]:
+    """Fingerprint every manifest input; return the verified paths and every problem."""
     resolved: dict[str, Path] = {}
     problems: list[str] = []
 
     def resolve(ref: InputRef, label: str) -> None:
+        problem = containment_problem(project_dir, ref.path)
+        if problem is not None:
+            problems.append(f"{label}: {ref.path} {problem}")
+            return
         target = project_dir / ref.path
         try:
             metadata = target.lstat()
@@ -316,19 +353,249 @@ def load_project(path: str | Path) -> LoadedProject:
         resolve(manifest.baseline, "baseline")
     for name, ref in manifest.variants.items():
         resolve(ref, f"variant {name}")
-    return LoadedProject(path=manifest_path, manifest=manifest, resolved=resolved, problems=tuple(problems))
+    return resolved, tuple(problems)
 
 
-def _copy_regular_file(source: Path, target: Path) -> None:
+@dataclass(frozen=True)
+class RefreshOutcome:
+    """One named input of a refresh: its path and its old and new fingerprints."""
+
+    label: str
+    path: str
+    old_sha256: str
+    new_sha256: str
+
+    @property
+    def changed(self) -> bool:
+        return self.old_sha256 != self.new_sha256
+
+
+@dataclass(frozen=True)
+class RefreshResult:
+    """What ``refresh_project`` found; the manifest is written only when ``problems`` is empty."""
+
+    manifest_path: Path
+    outcomes: tuple[RefreshOutcome, ...]
+    problems: tuple[str, ...]
+    warnings: tuple[str, ...]
+    written: bool
+
+
+def _refresh_labels(manifest: ProjectManifest, labels: list[str] | tuple[str, ...]) -> list[tuple[str, InputRef]]:
+    """Map refresh labels to declared manifest inputs, refusing unknown or undeclared ones."""
+    if not labels:
+        raise InputError("project refresh needs at least one --input label")
+    chosen: list[tuple[str, InputRef]] = []
+    seen: set[str] = set()
+    for raw in labels:
+        label = raw.strip()
+        if label in seen:
+            raise InputError(f"refresh input label repeated: {label}")
+        seen.add(label)
+        if label == "scenario":
+            ref: InputRef | None = manifest.scenario
+        elif label in ("routes", "baseline"):
+            ref = getattr(manifest, label)
+        elif label.startswith("variant:") and label[len("variant:"):]:
+            name = label[len("variant:"):]
+            if manifest.derived_variants and name in manifest.derived_variants:
+                raise InputError(
+                    f"{label} is a derived variant; only file variants have a fingerprinted input to refresh"
+                )
+            ref = manifest.variants.get(name)
+        else:
+            raise InputError(f"unknown refresh input label: {label} (use scenario, routes, baseline, or variant:NAME)")
+        if ref is None:
+            raise InputError(f"{label}: the project manifest declares no such input")
+        chosen.append((label, ref))
+    return chosen
+
+
+def _validate_refreshed_input(label: str, target: Path, ref: InputRef) -> None:
+    """Run the input's own validator; refresh accepts only content that loads."""
+    from .route import load_route, load_route_folder
+    from .scenario import load_scenario
+
+    if label == "routes":
+        if ref.folder:
+            load_route_folder(target)
+        else:
+            load_route(target)
+    else:
+        load_scenario(target)
+
+
+def refresh_project(path: str | Path, labels: list[str] | tuple[str, ...]) -> RefreshResult:
+    """Explicitly accept deliberately edited inputs after validating them.
+
+    Each named input must be declared, present with its saved kind (file or
+    folder), resolve inside the project directory, and pass its own
+    validator. The new fingerprints are written, atomically, only when every
+    named input passes and the project would then load with no problems;
+    otherwise the manifest is left byte-identical and every blocking
+    problem is returned, including unnamed inputs that are still modified
+    or missing. Inputs are never rewritten, moved, or deleted, and unnamed
+    inputs are never touched. A manifest whose named inputs are all
+    unchanged is not rewritten either.
+    """
+    from .scenario import parse_scenario
+
+    manifest_path = _manifest_location(path)
+    manifest = parse_manifest(parse_json_bytes(read_bounded_bytes(manifest_path)))
+    project_dir = manifest_path.parent
+    chosen = _refresh_labels(manifest, labels)
+    problems: list[str] = []
+    outcomes: list[RefreshOutcome] = []
+    replacements: dict[str, InputRef] = {}
+    for label, ref in chosen:
+        problem = containment_problem(project_dir, ref.path)
+        if problem is not None:
+            problems.append(f"{label}: {ref.path} {problem}")
+            continue
+        target = project_dir / ref.path
+        try:
+            metadata = target.lstat()
+        except OSError:
+            problems.append(f"{label}: missing input {ref.path}")
+            continue
+        try:
+            if ref.folder:
+                if not stat_module.S_ISDIR(metadata.st_mode):
+                    problems.append(f"{label}: {ref.path} is no longer a folder")
+                    continue
+                digest = fingerprint_tree(target)
+            else:
+                if not stat_module.S_ISREG(metadata.st_mode):
+                    problems.append(f"{label}: {ref.path} is no longer a regular file")
+                    continue
+                digest = fingerprint_file(target)
+            _validate_refreshed_input(label, target, ref)
+        except (InputError, OSError, ValueError, DecimalException) as exc:
+            problems.append(f"{label}: {ref.path} does not validate: {exc}")
+            continue
+        outcomes.append(RefreshOutcome(label, ref.path, ref.sha256, digest))
+        replacements[label] = InputRef(path=ref.path, sha256=digest, folder=ref.folder)
+
+    refreshed = ProjectManifest(
+        project_id=manifest.project_id,
+        description=manifest.description,
+        scenario=replacements.get("scenario", manifest.scenario),
+        routes=replacements.get("routes", manifest.routes),
+        baseline=replacements.get("baseline", manifest.baseline),
+        variants={name: replacements.get(f"variant:{name}", ref) for name, ref in manifest.variants.items()},
+        derived_variants=manifest.derived_variants,
+        experiments=manifest.experiments,
+    )
+    resolved, remaining = _resolve_inputs(project_dir, refreshed)
+    # Named inputs that failed above already carry a more precise problem;
+    # load_project labels file variants "variant NAME".
+    failed = {label.replace("variant:", "variant ", 1) for label, _ in chosen if label not in replacements}
+    problems.extend(problem for problem in remaining
+                    if not any(problem.startswith(f"{label}: ") for label in failed))
+
+    warnings: list[str] = []
+    base_changed = any(label in ("scenario", "routes") for label, _ in chosen)
+    if not problems and base_changed:
+        loaded = LoadedProject(path=manifest_path, manifest=refreshed, resolved=resolved, problems=())
+        try:
+            merged = project_scenario_raw(loaded)
+            parse_scenario(merged)
+        except (InputError, OSError, ValueError, DecimalException) as exc:
+            problems.append(f"project scenario with its saved routes does not validate: {exc}")
+        else:
+            for name in sorted(refreshed.derived_variants or {}):
+                try:
+                    parse_scenario(apply_variant_chain(dict(refreshed.derived_variants or {}), name, merged))
+                except (InputError, ValueError, DecimalException) as exc:
+                    warnings.append(f"variant {name} no longer applies to the refreshed scenario: {exc}")
+
+    written = False
+    if not problems and any(outcome.changed for outcome in outcomes):
+        write_project(manifest_path, refreshed, replace=True)
+        written = True
+    return RefreshResult(
+        manifest_path=manifest_path,
+        outcomes=tuple(outcomes),
+        problems=tuple(problems),
+        warnings=tuple(warnings),
+        written=written,
+    )
+
+
+def project_input_records(manifest: ProjectManifest) -> list[dict[str, object]]:
+    """Every fingerprinted manifest input as {label, path, sha256, folder}, sorted by label.
+
+    Labels are the ones ``project refresh --input`` accepts: scenario,
+    routes, baseline, and variant:NAME for file variants.
+    """
+    refs: list[tuple[str, InputRef]] = [("scenario", manifest.scenario)]
+    if manifest.routes is not None:
+        refs.append(("routes", manifest.routes))
+    if manifest.baseline is not None:
+        refs.append(("baseline", manifest.baseline))
+    refs.extend((f"variant:{name}", ref) for name, ref in manifest.variants.items())
+    return [
+        {"label": label, "path": ref.path, "sha256": ref.sha256, "folder": ref.folder}
+        for label, ref in sorted(refs, key=lambda item: item[0])
+    ]
+
+
+def project_scenario_state(loaded: LoadedProject) -> tuple[object, bool]:
+    """Return the raw project scenario and whether saved routes stand in.
+
+    A scenario that embeds no routes (the key is absent or an empty list)
+    takes the project's saved route selection, when the manifest declares
+    one: the copy gets those route documents in name order, so the ordinary
+    scenario rules (duplicate route ids, the route budget) apply to the
+    result. A scenario that embeds routes is returned unchanged, and
+    nothing on disk is rewritten.
+    """
+    raw = parse_json_bytes(read_bounded_bytes(loaded.resolved["scenario"]))
+    if (
+        isinstance(raw, dict)
+        and "routes" in loaded.resolved
+        and ("routes" not in raw or raw["routes"] == [])
+    ):
+        merged = dict(raw)
+        merged["routes"] = load_route_documents(loaded.resolved["routes"])
+        return merged, True
+    return raw, False
+
+
+def project_scenario_raw(loaded: LoadedProject) -> object:
+    """The raw scenario every project command analyses; see ``project_scenario_state``."""
+    return project_scenario_state(loaded)[0]
+
+
+def remove_created_paths(created: list[Path]) -> None:
+    """Undo a failed project save: remove exactly the paths it created, newest first.
+
+    Files are unlinked and folders removed only when empty, so nothing that
+    existed before the save, or that something else added since, is touched.
+    """
+    for path in reversed(created):
+        try:
+            if path.is_dir() and not path.is_symlink():
+                path.rmdir()
+            else:
+                path.unlink()
+        except OSError:
+            continue
+    created.clear()
+
+
+def _copy_regular_file(source: Path, target: Path, created: list[Path]) -> None:
     if target.exists():
         raise InputError(f"project input already exists: {target}")
+    created.append(target)
     shutil.copyfile(source, target)
 
 
-def _copy_route_folder(source: Path, target: Path) -> None:
+def _copy_route_folder(source: Path, target: Path, created: list[Path]) -> None:
     if target.exists():
         raise InputError(f"project input folder already exists: {target}")
-    target.mkdir(parents=True)
+    target.mkdir()
+    created.append(target)
     copied = 0
     for item in sorted(source.iterdir(), key=lambda child: child.name):
         try:
@@ -337,7 +604,7 @@ def _copy_route_folder(source: Path, target: Path) -> None:
             raise InputError(f"route folder could not be read: {source}") from exc
         if not stat_module.S_ISREG(metadata.st_mode) or not item.name.lower().endswith(".json"):
             continue
-        _copy_regular_file(item, target / item.name)
+        _copy_regular_file(item, target / item.name, created)
         copied += 1
         if copied > MAX_FOLDER_FILES:
             raise InputError(f"route folder exceeds the {MAX_FOLDER_FILES}-file project budget: {source}")
@@ -351,6 +618,8 @@ def prepare_project_directory(
     routes: Path | None = None,
     baseline: Path | None = None,
     variants: dict[str, Path] | None = None,
+    *,
+    created: list[Path] | None = None,
 ) -> dict[str, Path]:
     """Make the chosen inputs self-contained inside the project directory.
 
@@ -358,10 +627,35 @@ def prepare_project_directory(
     explicitly copied into ``inputs/``. The same source chosen twice is stored
     once and referenced twice. Nothing is copied silently: every collision or
     unreadable source raises before the manifest is written.
+
+    Every file and folder this call creates, ``inputs/`` included, is
+    appended to ``created``. A failure here removes them again; a caller
+    that fails later passes the list to ``remove_created_paths`` so a
+    corrected retry finds the directory as it was.
     """
     project_dir = Path(directory).resolve()
     if not project_dir.is_dir():
         raise InputError(f"project directory must exist: {directory}")
+    record: list[Path] = [] if created is None else created
+    start = len(record)
+    try:
+        return _place_project_inputs(project_dir, directory, scenario, routes, baseline, variants, record)
+    except BaseException:
+        mine = record[start:]
+        del record[start:]
+        remove_created_paths(mine)
+        raise
+
+
+def _place_project_inputs(
+    project_dir: Path,
+    directory: Path,
+    scenario: Path,
+    routes: Path | None,
+    baseline: Path | None,
+    variants: dict[str, Path] | None,
+    created: list[Path],
+) -> dict[str, Path]:
     copied_sources: dict[Path, Path] = {}
 
     def place(source: Path | None) -> Path | None:
@@ -377,12 +671,14 @@ def prepare_project_directory(
             target = resolved
         except ValueError:
             inputs_dir = project_dir / "inputs"
-            inputs_dir.mkdir(parents=True, exist_ok=True)
+            if not inputs_dir.exists():
+                inputs_dir.mkdir()
+                created.append(inputs_dir)
             target = inputs_dir / resolved.name
             if resolved.is_dir():
-                _copy_route_folder(resolved, target)
+                _copy_route_folder(resolved, target, created)
             else:
-                _copy_regular_file(resolved, target)
+                _copy_regular_file(resolved, target, created)
         copied_sources[resolved] = target
         return target
 

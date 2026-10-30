@@ -61,6 +61,9 @@ def main():
             summaries.append(summary)
         comparison = json.loads(run("campaign", "compare", *summaries[:2], "--format", "json"))
         assert comparison["campaign_status_change"] == ["pass", "regression"]
+        assert "Gate: REGRESSION" in run("campaign", "compare", *summaries[:2], "--fail-on-regression", expected=1)
+        run("campaign", "compare", summaries[0], summaries[0], "--fail-on-regression")
+        run("campaign", "compare", summaries[0], summaries[2], "--fail-on-regression", expected=2)
         for summary in summaries[:2]:
             original = summary.read_bytes()
             run("campaign", "compare", *summaries[:2], "--output", summary, expected=2)
@@ -71,6 +74,16 @@ def main():
         run("campaign", "run", root / "moved-0", "--input-dir", batch,
             "--save-summary", batch / "summary.json", expected=2)
         assert not (batch / "summary.json").exists()
+        human = root / "campaign.txt"
+        cli_evidence = root / "cli-evidence.json"
+        confirmation = run("campaign", "run", root / "moved-1", "--format", "human", "--output", human,
+                           "--save-evidence", cli_evidence, expected=1)
+        assert confirmation == f"Value-free evidence saved to {cli_evidence}\n", confirmation
+        assert human.read_text(encoding="utf-8").startswith("TraceCanary campaign: REGRESSION")
+        assert json.loads(cli_evidence.read_text(encoding="utf-8"))["evidence_version"] == "tracecanary.evidence/v1"
+        assert all(value not in cli_evidence.read_text(encoding="utf-8") for value in protected)
+        run("campaign", "run", root / "moved-1", "--save-evidence", root / "moved-1" / "evidence.json", expected=2)
+        assert not (root / "moved-1" / "evidence.json").exists()
         controller = TraceCanaryController()
         campaign = controller.run_campaign_selections(contract_path=fixtures / "contract.json",
             input_path=fixtures / "leaked-prompt.json", baseline_path=fixtures / "safe-export.json", batch_path=None)
@@ -81,8 +94,16 @@ def main():
         original = contract.read_bytes()
         assert controller.save_campaign_evidence(contract, campaign).status == "unresolved"
         assert contract.read_bytes() == original
-        (root / "moved-0" / "inputs" / "safe-export.json").write_text("{}", encoding="utf-8")
+        edited = root / "moved-0" / "inputs" / "safe-export.json"
+        edited.write_text("{}", encoding="utf-8")
         run("project", "validate", root / "moved-0", expected=2)
+        manifest = (root / "moved-0" / "tracecanary.project.json").read_bytes()
+        run("project", "refresh", root / "moved-0", "--input", "baseline", "--input", "candidate", expected=2)
+        assert (root / "moved-0" / "tracecanary.project.json").read_bytes() == manifest
+        edited.write_text(json.dumps(files["safe-export.json"], indent=2), encoding="utf-8")
+        refreshed = run("project", "refresh", root / "moved-0", "--input", "baseline", "--input", "candidate")
+        assert "baseline: inputs/safe-export.json refreshed" in refreshed, refreshed
+        run("project", "validate", root / "moved-0")
     print("INSTALLED_TRACECANARY_JOURNEY_OK")
 
 

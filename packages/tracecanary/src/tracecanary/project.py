@@ -13,16 +13,17 @@ modified files honestly.
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 import shutil
 import stat as stat_module
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 from tracecanary.canonical import InputError, canonical_json, load_json
 from tracecanary.contract import DEFAULT_MAX_BATCH_FILES, DEFAULT_MAX_INPUT_BYTES, DEFAULT_MAX_NESTING
-from tracecanary.inspection import _parse_minimum_ratio
+from tracecanary.inspection import _parse_minimum_ratio, population_gate_configured
 from tracecanary.output import write_report
 
 PROJECT_MANIFEST_VERSION = "tracecanary.project/v1"
@@ -258,16 +259,57 @@ def parse_manifest(value: Any) -> ProjectManifest:
     )
 
 
+def containment_problem(project_dir: Path, ref_path: str) -> str | None:
+    """Explain why a manifest path would leave the project, or return None.
+
+    ``project create`` refuses inputs outside the project directory, and a
+    loaded project holds the same line. On Windows a drive-relative path
+    such as ``C:outside/contract.json`` replaces the project directory when
+    joined, so it resolves against the working directory instead. A
+    junction or a symlinked directory inside the project can also lead out
+    of it. Neither input is fingerprinted or resolved.
+    """
+    if os.name == "nt":
+        windows = PureWindowsPath(ref_path)
+        if windows.drive or windows.root:
+            return "is not a portable relative project path"
+    try:
+        (project_dir / ref_path).resolve().relative_to(project_dir.resolve())
+    except (OSError, RuntimeError, ValueError):
+        return "resolves outside the project directory"
+    return None
+
+
 def load_project(path: str | Path, *, max_bytes: int = DEFAULT_MAX_INPUT_BYTES, max_depth: int = DEFAULT_MAX_NESTING, max_batch_files: int = DEFAULT_MAX_BATCH_FILES) -> LoadedProject:
     """Read, resolve, and status a project from its manifest file or directory."""
-    location = Path(path)
-    manifest_path = location / PROJECT_MANIFEST_NAME if location.is_dir() else location
-    project_dir = manifest_path.parent
+    manifest_path = _manifest_location(path)
     manifest = parse_manifest(load_json(manifest_path, max_bytes=max_bytes, max_depth=max_depth))
+    resolved, problems = _resolve_inputs(manifest_path.parent, manifest, max_bytes=max_bytes,
+                                         max_batch_files=max_batch_files)
+    return LoadedProject(path=manifest_path, manifest=manifest, resolved=resolved, problems=problems)
+
+
+def _manifest_location(path: str | Path) -> Path:
+    location = Path(path)
+    return location / PROJECT_MANIFEST_NAME if location.is_dir() else location
+
+
+def _resolve_inputs(
+    project_dir: Path,
+    manifest: ProjectManifest,
+    *,
+    max_bytes: int = DEFAULT_MAX_INPUT_BYTES,
+    max_batch_files: int = DEFAULT_MAX_BATCH_FILES,
+) -> tuple[dict[str, Path], tuple[str, ...]]:
+    """Fingerprint every manifest input; return the verified paths and every problem."""
     resolved: dict[str, Path] = {}
     problems: list[str] = []
 
     def resolve(ref: InputRef, label: str, *, folder: bool = False, max_files: int = max_batch_files, recursive: bool = False) -> None:
+        problem = containment_problem(project_dir, ref.path)
+        if problem is not None:
+            problems.append(f"{label}: {ref.path} {problem}")
+            return
         target = project_dir / ref.path
         try:
             metadata = target.lstat()
@@ -306,7 +348,162 @@ def load_project(path: str | Path, *, max_bytes: int = DEFAULT_MAX_INPUT_BYTES, 
         resolve(manifest.candidate, "candidate")
     if manifest.batch is not None:
         resolve(InputRef(path=manifest.batch.path, sha256=manifest.batch.sha256), "batch directory", folder=True, recursive=manifest.batch.recursive)
-    return LoadedProject(path=manifest_path, manifest=manifest, resolved=resolved, problems=tuple(problems))
+    return resolved, tuple(problems)
+
+
+REFRESH_LABELS = ("contract", "input", "baseline", "candidate", "batch")
+
+
+@dataclass(frozen=True)
+class RefreshOutcome:
+    """One named input of a refresh. Digests stay out of everything printed."""
+
+    label: str
+    path: str
+    changed: bool
+
+
+@dataclass(frozen=True)
+class RefreshResult:
+    """What ``refresh_project`` found; the manifest is written only when ``problems`` is empty."""
+
+    manifest_path: Path
+    outcomes: tuple[RefreshOutcome, ...]
+    problems: tuple[str, ...]
+    warnings: tuple[str, ...]
+    written: bool
+
+
+def _refresh_targets(manifest: ProjectManifest, labels: list[str] | tuple[str, ...]) -> list[tuple[str, str, str]]:
+    """Map refresh labels to (label, path, saved digest), refusing unknown or undeclared ones."""
+    if not labels:
+        raise InputError("project refresh needs at least one --input label")
+    targets: list[tuple[str, str, str]] = []
+    seen: set[str] = set()
+    for raw in labels:
+        label = raw.strip()
+        if label in seen:
+            raise InputError(f"refresh input label repeated: {label}")
+        seen.add(label)
+        if label not in REFRESH_LABELS:
+            raise InputError(f"unknown refresh input label: {label} (use {', '.join(REFRESH_LABELS)})")
+        ref = manifest.batch if label == "batch" else getattr(manifest, label)
+        if ref is None:
+            raise InputError(f"{label}: the project manifest declares no such input")
+        targets.append((label, ref.path, ref.sha256))
+    # The contract is validated first, so the other inputs are checked
+    # against the contract that will be saved.
+    targets.sort(key=lambda item: item[0] != "contract")
+    return targets
+
+
+def refresh_project(path: str | Path, labels: list[str] | tuple[str, ...]) -> RefreshResult:
+    """Explicitly accept deliberately edited inputs after validating them.
+
+    Each named input must be declared, present with its saved kind, resolve
+    inside the project directory, and pass its validator: the contract must
+    load; an input or candidate must be a structurally valid bounded OTLP
+    export (candidates may leak by design, so their findings do not block);
+    a baseline must satisfy the contract, as ``promote-baseline`` requires;
+    a batch folder must enumerate within its bounds with the saved
+    recursive setting (its exports may fail by design). The manifest is
+    replaced atomically only when every named input passes and the project
+    would then load with no problems; otherwise it is left byte-identical
+    and every blocking problem is returned. Inputs are never rewritten, and
+    unnamed inputs are never touched.
+    """
+    from tracecanary.checker import check_trace
+    from tracecanary.contract import ContractError, load_contract
+    from tracecanary.otlp import OtlpError, validate_trace
+
+    manifest_path = _manifest_location(path)
+    manifest = parse_manifest(load_json(manifest_path, max_bytes=DEFAULT_MAX_INPUT_BYTES, max_depth=DEFAULT_MAX_NESTING))
+    project_dir = manifest_path.parent
+    targets = _refresh_targets(manifest, labels)
+    problems: list[str] = []
+    outcomes: list[RefreshOutcome] = []
+    digests: dict[str, str] = {}
+    contract = None
+    contract_error = ""
+    if "contract" not in {label for label, _, _ in targets}:
+        try:
+            contract = load_contract(project_dir / manifest.contract.path)
+        except (ContractError, InputError, OSError, ValueError) as exc:
+            contract_error = str(exc)
+
+    for label, ref_path, saved in targets:
+        problem = containment_problem(project_dir, ref_path)
+        if problem is not None:
+            problems.append(f"{label}: {ref_path} {problem}")
+            continue
+        target = project_dir / ref_path
+        try:
+            metadata = target.lstat()
+        except OSError:
+            problems.append(f"{label}: missing input {ref_path}")
+            continue
+        try:
+            if label == "batch":
+                if not stat_module.S_ISDIR(metadata.st_mode):
+                    problems.append(f"{label}: {ref_path} is no longer a folder")
+                    continue
+                digest = fingerprint_tree(target, max_files=DEFAULT_MAX_BATCH_FILES, max_bytes=DEFAULT_MAX_INPUT_BYTES,
+                                          recursive=manifest.batch.recursive)
+            else:
+                if not stat_module.S_ISREG(metadata.st_mode):
+                    problems.append(f"{label}: {ref_path} is no longer a regular file")
+                    continue
+                digest = fingerprint_file(target, max_bytes=DEFAULT_MAX_INPUT_BYTES)
+                if label == "contract":
+                    contract = load_contract(target)
+                elif contract is None:
+                    problems.append(f"{label}: {ref_path} cannot be validated because the contract does not load"
+                                    + (f" ({contract_error})" if contract_error else ""))
+                    continue
+                else:
+                    payload = load_json(target, max_bytes=contract.max_input_bytes, max_depth=contract.max_nesting)
+                    validate_trace(payload)
+                    if label == "baseline" and check_trace(contract, payload, mode="check")["status"] != "pass":
+                        problems.append(f"{label}: {ref_path} does not satisfy the contract; "
+                                        "a baseline must pass before it is accepted")
+                        continue
+        except (ContractError, InputError, OtlpError, OSError, ValueError) as exc:
+            if label == "contract":
+                contract_error = str(exc)
+            problems.append(f"{label}: {ref_path} does not validate: {exc}")
+            continue
+        digests[label] = digest
+        outcomes.append(RefreshOutcome(label, ref_path, digest != saved))
+
+    document = manifest_document(manifest)
+    for label, digest in digests.items():
+        document[label]["sha256"] = digest
+    refreshed = parse_manifest(document)
+    _, remaining = _resolve_inputs(project_dir, refreshed)
+    # Named inputs that failed above already carry a more precise problem.
+    failed = {"batch directory" if label == "batch" else label for label, _, _ in targets if label not in digests}
+    problems.extend(problem for problem in remaining
+                    if not any(problem.startswith(f"{label}: ") for label in failed))
+
+    warnings: list[str] = []
+    if not problems and "contract" in digests and refreshed.baseline is not None and "baseline" not in digests:
+        try:
+            baseline_payload = load_json(project_dir / refreshed.baseline.path, max_bytes=contract.max_input_bytes,
+                                         max_depth=contract.max_nesting)
+            validate_trace(baseline_payload)
+            satisfied = check_trace(contract, baseline_payload, mode="check")["status"] == "pass"
+        except (InputError, OtlpError, OSError, ValueError):
+            satisfied = False
+        if not satisfied:
+            warnings.append(f"baseline: {refreshed.baseline.path} no longer satisfies the refreshed contract; "
+                            "campaigns will report the baseline phase unresolved until a passing baseline is promoted")
+
+    written = False
+    if not problems and any(outcome.changed for outcome in outcomes):
+        write_report(manifest_path, manifest_text(refreshed))
+        written = True
+    return RefreshResult(manifest_path=manifest_path, outcomes=tuple(outcomes), problems=tuple(problems),
+                         warnings=tuple(warnings), written=written)
 
 
 def manifest_document(manifest: ProjectManifest) -> dict[str, Any]:
@@ -387,14 +584,75 @@ def _holds_identical_copy(target: Path, source: Path) -> bool:
     return existing is not None and existing == incoming
 
 
-def _copy_project_input(project_dir: Path, source: Path, *, folder: bool = False, recursive: bool = False) -> Path:
+def validate_project_settings(
+    *,
+    project_id: str,
+    description: str = "",
+    minimum_ratio: str | None = None,
+    batch_minimum_ratio: str | None = None,
+    population_scope: str | None = None,
+    population_minimum: int | None = None,
+) -> None:
+    """Check every setting that needs no input file, before anything is copied."""
+    _identifier(project_id, "project_id")
+    if not isinstance(description, str) or len(description) > MAX_DESCRIPTION_CHARS:
+        raise InputError(f"project description must be a string of at most {MAX_DESCRIPTION_CHARS} characters")
+    for ratio in (minimum_ratio, batch_minimum_ratio):
+        if ratio is not None:
+            _parse_minimum_ratio(ratio)
+    if population_gate_configured(population_scope, population_minimum):
+        if population_scope not in POPULATION_SCOPES:
+            raise InputError("coverage.population_scope must be one of " + ", ".join(POPULATION_SCOPES))
+        if type(population_minimum) is not int or not 1 <= population_minimum <= 1_000_000:
+            raise InputError("coverage.population_minimum must be a whole number from 1 to 1000000")
+
+
+def remove_created_paths(created: list[Path]) -> None:
+    """Undo a failed project save: remove exactly the paths it created, newest first.
+
+    Files are unlinked and folders removed only when empty, so nothing that
+    existed before the save, or that something else added since, is touched.
+    """
+    for path in reversed(created):
+        try:
+            if path.is_dir() and not path.is_symlink():
+                path.rmdir()
+            else:
+                path.unlink()
+        except OSError:
+            continue
+    created.clear()
+
+
+def _make_directories(directory: Path, created: list[Path]) -> None:
+    missing: list[Path] = []
+    current = directory
+    while not current.exists():
+        missing.append(current)
+        current = current.parent
+    for item in reversed(missing):
+        item.mkdir()
+        created.append(item)
+
+
+def _copy_project_input(
+    project_dir: Path,
+    source: Path,
+    *,
+    folder: bool = False,
+    recursive: bool = False,
+    created: list[Path] | None = None,
+) -> Path:
     """Copy one chosen synthetic input into the project, or use it in place.
 
     A file whose byte-identical copy the project already holds under the
     same name reuses that copy, which is the normal flow when promoting the
     candidate saved by ``project create --candidate``. A different file with
-    the same name is still refused, and folders are never reused.
+    the same name is still refused, and folders are never reused. Every file
+    and folder this call creates is appended to ``created`` so a failed save
+    can remove exactly those; reused copies are never recorded.
     """
+    record: list[Path] = [] if created is None else created
     resolved = Path(source).resolve()
     if resolved.is_dir() and not folder:
         raise InputError(f"project input must be a file, not a directory: {source}")
@@ -406,7 +664,7 @@ def _copy_project_input(project_dir: Path, source: Path, *, folder: bool = False
     except ValueError:
         pass
     inputs_dir = project_dir / "inputs"
-    inputs_dir.mkdir(parents=True, exist_ok=True)
+    _make_directories(inputs_dir, record)
     target = inputs_dir / resolved.name
     if target.exists():
         if not folder and resolved.is_file() and _holds_identical_copy(target, resolved):
@@ -416,6 +674,7 @@ def _copy_project_input(project_dir: Path, source: Path, *, folder: bool = False
         if not resolved.is_dir():
             raise InputError(f"project batch directory is not a folder: {source}")
         target.mkdir()
+        record.append(target)
         copied = 0
         if recursive:
             selected = [item for item in resolved.rglob("*") if _json_export(item, resolved)]
@@ -433,7 +692,8 @@ def _copy_project_input(project_dir: Path, source: Path, *, folder: bool = False
                 sources.append((item, Path(item.name)))
         for item, relative in sources:
             destination = target / relative
-            destination.parent.mkdir(parents=True, exist_ok=True)
+            _make_directories(destination.parent, record)
+            record.append(destination)
             shutil.copyfile(item, destination)
             copied += 1
             if copied > DEFAULT_MAX_BATCH_FILES:
@@ -443,6 +703,7 @@ def _copy_project_input(project_dir: Path, source: Path, *, folder: bool = False
     else:
         if not resolved.is_file():
             raise InputError(f"project input is not a file: {source}")
+        record.append(target)
         shutil.copyfile(resolved, target)
     return target
 
@@ -467,6 +728,7 @@ def build_manifest(
     max_batch_files: int = DEFAULT_MAX_BATCH_FILES,
 ) -> ProjectManifest:
     """Fingerprint the chosen inputs and assemble a validated manifest."""
+    population_gate_configured(population_scope, population_minimum)
     batch_ref = make_input_ref(project_dir, Path(batch), folder=True,
                                max_files=max_batch_files, max_bytes=max_bytes, recursive=batch_recursive) if batch is not None else None
     manifest = ProjectManifest(

@@ -700,9 +700,14 @@ class CorridorLabApp:
             self.baseline_var.set(str(self.controller.baseline_file))
         self._refresh_saved_experiments()
         experiments = result.report["experiments"]
+        routes_note = (
+            " The scenario embeds no routes, so the project's saved routes stand in for them."
+            if result.report.get("saved_routes_stand_in") else ""
+        )
         self.status_var.set(
             f"Project {result.report['project_id']} opened with {len(experiments)} saved experiment(s). "
             "The previous report was cleared; project inputs were validated as present and unchanged."
+            + routes_note
         )
 
     def _save_project(self) -> None:

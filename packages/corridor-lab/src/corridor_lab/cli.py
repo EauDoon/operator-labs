@@ -26,10 +26,9 @@ from .analysis import (
 from .canonical import (
     InputError,
     atomic_write_text,
-    parse_json_bytes,
     protect_report_output,
-    read_bounded_bytes,
     require_decimal_values,
+    require_identifier,
 )
 from .batching import run_scenario_batch as _batch
 from .comparison import compare_routes, evaluate_scenario, pareto_frontier
@@ -41,6 +40,10 @@ from .projects import (
     load_project,
     parse_experiment_argument,
     prepare_project_directory,
+    project_input_records,
+    project_scenario_state,
+    refresh_project,
+    remove_created_paths,
     write_project,
 )
 from .report import render_report
@@ -71,6 +74,10 @@ TARGET_CONSTRAINT_HELP = (
 )
 PARAMETER_HELP = "one of " + ", ".join(SENSITIVITY_PARAMETERS)
 VALUES_HELP = "comma-separated decimal values"
+PROJECT_EVIDENCE_HELP = (
+    "also write a self-explaining evidence document, with the verified SHA-256 of every project input, "
+    "to this JSON path outside the project"
+)
 DEFAULT_REPORT_FORMAT = "json"
 REPORT_FORMAT_ENV = "CORRIDOR_LAB_FORMAT"
 TABULAR_REPORT_FORMATS = ("json", "csv", "markdown")
@@ -326,25 +333,44 @@ def build_parser() -> argparse.ArgumentParser:
     show_variant = project_commands.add_parser("show-variant", help="show the assumption diff of a derived variant")
     show_variant.add_argument("project")
     show_variant.add_argument("--variant", required=True)
-    show_variant.add_argument("--format", choices=("json", "markdown"), default="markdown")
+    show_variant.add_argument("--format", choices=("json", "markdown"), default=None,
+                              help="json or markdown (default: markdown, or json when --output ends in .json; "
+                                   f"{REPORT_FORMAT_ENV} is not consulted)")
     show_variant.add_argument("--output", help="write the diff to this UTF-8 path outside the project")
+    show_variant.add_argument("--evidence", help=PROJECT_EVIDENCE_HELP)
     compare_variants = project_commands.add_parser("compare-variants", help="compare route performance across named variants")
     compare_variants.add_argument("project")
     compare_variants.add_argument("--variant", action="append", help="include only these derived variants")
     compare_variants.add_argument("--format", choices=("json", "csv", "markdown"), default=None)
-    compare_variants.add_argument("--output")
+    compare_variants.add_argument("--output", help="write the comparison to this UTF-8 path outside the project")
+    compare_variants.add_argument("--evidence", help=PROJECT_EVIDENCE_HELP)
     run_variants = project_commands.add_parser("run-variants", help="run one saved experiment across named variants")
     run_variants.add_argument("project")
     run_variants.add_argument("--experiment", required=True)
     run_variants.add_argument("--variant", action="append", help="run only these derived variants")
     run_variants.add_argument("--format", choices=("json", "markdown"), default=None)
-    run_variants.add_argument("--output")
+    run_variants.add_argument("--output", help="write the combined report to this UTF-8 path outside the project")
+    run_variants.add_argument("--evidence", help=PROJECT_EVIDENCE_HELP)
+    refresh = project_commands.add_parser(
+        "refresh",
+        help="accept deliberately edited inputs after validating them (explicit save)",
+        description=(
+            "Validate each named input and record its new SHA-256 in the manifest. The manifest is written only "
+            "when every named input passes its validator and the project then loads with no problems; otherwise "
+            "it is left unchanged and every blocking problem is listed. Inputs themselves are never rewritten, "
+            "and unnamed inputs are never touched."
+        ),
+    )
+    refresh.add_argument("project", help="project directory or manifest JSON path")
+    refresh.add_argument("--input", action="append", required=True, dest="inputs", metavar="LABEL",
+                         help="scenario, routes, baseline, or variant:NAME for a file variant; repeat for several")
     run_project = project_commands.add_parser("run", help="run saved experiments against the project inputs")
     run_project.add_argument("project", help="project directory or manifest JSON path")
     run_project.add_argument("--experiment", action="append", help="run only these named experiments")
     run_project.add_argument("--format", choices=("json", "markdown"), default=None,
                              help="combined project-run report format (default: json)")
     run_project.add_argument("--output", help="write the combined report to this UTF-8 path outside the project")
+    run_project.add_argument("--evidence", help=PROJECT_EVIDENCE_HELP)
     return parser
 
 
@@ -427,36 +453,85 @@ def _project_inputs_for_protection(loaded) -> tuple[list[Path], list[Path]]:
     return inputs, scanned
 
 
-def _project_compare_variants(args: argparse.Namespace) -> int:
+def _load_valid_project(args: argparse.Namespace):
+    """Load the project, or report every problem and return None."""
     loaded = load_project(_require_cli_text(args.project, "project"))
     if loaded.problems:
         for problem in loaded.problems:
             _write_error(problem)
+        return None
+    return loaded
+
+
+def _protect_project_destinations(args: argparse.Namespace, loaded) -> tuple[Path | None, Path | None]:
+    """Refuse --output and --evidence destinations before anything is computed.
+
+    Both are checked against every project input, the project directory,
+    and each other, so a refused evidence path never follows a written report.
+    """
+    inputs, scanned = _project_inputs_for_protection(loaded)
+    return _protect_report_inputs(args, inputs, scanned)
+
+
+def _project_report_text(report: dict[str, object], output_format: str) -> str:
+    if output_format == "json" and report.get("report_version") == "corridor-lab.project-run/v1":
+        return json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    return render_report(report, output_format)
+
+
+def _emit_project_report(
+    args: argparse.Namespace,
+    loaded,
+    report: dict[str, object],
+    text: str,
+    destinations: tuple[Path | None, Path | None],
+    saved_routes: bool,
+) -> None:
+    """Write the report, then the optional evidence, to already-checked destinations."""
+    output_path, evidence_path = destinations
+    if output_path is None:
+        sys.stdout.write(text)
+    else:
+        atomic_write_text(output_path, text)
+    if evidence_path is None:
+        return
+    from .evidence import build_evidence, write_evidence
+
+    manifest = loaded.manifest
+    document = build_evidence(
+        report,
+        scenario_source=manifest.scenario.path,
+        routes_source=manifest.routes.path if saved_routes and manifest.routes is not None else "",
+        project_source=str(loaded.path),
+        notes=f"Generated by corridorlab project {args.project_command}",
+        project_inputs=project_input_records(manifest),
+    )
+    inputs, scanned = _project_inputs_for_protection(loaded)
+    write_evidence(evidence_path, document, inputs=tuple(inputs), scanned_dirs=tuple(scanned))
+
+
+def _project_compare_variants(args: argparse.Namespace) -> int:
+    loaded = _load_valid_project(args)
+    if loaded is None:
         return 2
-    base_raw, derived = _project_variant_state(loaded)
+    destinations = _protect_project_destinations(args, loaded)
+    base_raw, derived, saved_routes = _project_variant_state(loaded)
+    parse_scenario(base_raw)
     chosen = _project_variant_arguments(args, derived)
     report = variant_comparison(base_raw, derived, loaded.manifest.project_id, only=chosen)
     output_format = resolve_report_format(args.format, args.output, ("json", "csv", "markdown"))
-    text = render_report(report, output_format)
-    if args.output is None:
-        sys.stdout.write(text)
-        return 0
-    target = Path(_require_cli_text(args.output, "--output"))
-    inputs, scanned = _project_inputs_for_protection(loaded)
-    protect_report_output(target, inputs, scanned)
-    atomic_write_text(target, text)
+    _emit_project_report(args, loaded, report, render_report(report, output_format), destinations, saved_routes)
     return 0
 
 
 def _project_run_variants(args: argparse.Namespace) -> int:
-    loaded = load_project(_require_cli_text(args.project, "project"))
-    if loaded.problems:
-        for problem in loaded.problems:
-            _write_error(problem)
+    loaded = _load_valid_project(args)
+    if loaded is None:
         return 2
-    # Load the project scenario through the full validator before deriving variants.
-    load_scenario(loaded.resolved["scenario"])
-    base_raw, derived = _project_variant_state(loaded)
+    destinations = _protect_project_destinations(args, loaded)
+    base_raw, derived, saved_routes = _project_variant_state(loaded)
+    # Validate the project scenario through the full validator before deriving variants.
+    parse_scenario(base_raw)
     experiment = next((item for item in loaded.manifest.experiments if item.name == args.experiment), None)
     if experiment is None:
         raise InputError(f"no saved experiment named {args.experiment}")
@@ -477,24 +552,18 @@ def _project_run_variants(args: argparse.Namespace) -> int:
                 "status": "unresolved" if any(item["status"] == "unresolved" for item in items) else "pass",
                 "items": items}
     output_format = resolve_report_format(args.format, args.output, ("json", "markdown"))
-    text = render_report(combined, output_format) if output_format == "markdown" else json.dumps(combined, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-    if args.output is None:
-        sys.stdout.write(text)
-        return 0 if combined["status"] == "pass" else 2
-    target = Path(_require_cli_text(args.output, "--output"))
-    inputs, scanned = _project_inputs_for_protection(loaded)
-    protect_report_output(target, inputs, scanned)
-    atomic_write_text(target, text)
+    _emit_project_report(args, loaded, combined, _project_report_text(combined, output_format), destinations,
+                         saved_routes)
     return 0 if combined["status"] == "pass" else 2
 
 
 def _project_run(args: argparse.Namespace) -> int:
-    loaded = load_project(_require_cli_text(args.project, "project"))
-    if loaded.problems:
-        for problem in loaded.problems:
-            _write_error(problem)
+    loaded = _load_valid_project(args)
+    if loaded is None:
         return 2
-    scenario = load_scenario(loaded.resolved["scenario"])
+    destinations = _protect_project_destinations(args, loaded)
+    raw, saved_routes = project_scenario_state(loaded)
+    scenario = parse_scenario(raw)
     chosen = args.experiment or [experiment.name for experiment in loaded.manifest.experiments]
     selected = [experiment for experiment in loaded.manifest.experiments if experiment.name in chosen]
     if len(selected) != len(chosen):
@@ -515,16 +584,29 @@ def _project_run(args: argparse.Namespace) -> int:
                 "status": "unresolved" if any(item["status"] == "unresolved" for item in items) else "pass",
                 "items": items}
     output_format = resolve_report_format(args.format, args.output, ("json", "markdown"))
-    if args.output is None:
-        text = render_report(combined, output_format) if output_format == "markdown" else json.dumps(combined, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-        sys.stdout.write(text)
-        return 0 if combined["status"] == "pass" else 2
-    target = Path(_require_cli_text(args.output, "--output"))
-    inputs, scanned = _project_inputs_for_protection(loaded)
-    protect_report_output(target, inputs, scanned)
-    text = render_report(combined, output_format) if output_format == "markdown" else json.dumps(combined, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-    atomic_write_text(target, text)
+    _emit_project_report(args, loaded, combined, _project_report_text(combined, output_format), destinations,
+                         saved_routes)
     return 0 if combined["status"] == "pass" else 2
+
+
+def _project_refresh(args: argparse.Namespace) -> int:
+    result = refresh_project(_require_cli_text(args.project, "project"), list(args.inputs))
+    for warning in result.warnings:
+        sys.stderr.write(f"warning: {warning}\n")
+    if result.problems:
+        for problem in result.problems:
+            _write_error(problem)
+        _write_error("manifest left unchanged")
+        return 2
+    for outcome in result.outcomes:
+        if outcome.changed:
+            sys.stdout.write(f"{outcome.label}: {outcome.path} refreshed "
+                             f"({outcome.old_sha256[:12]} -> {outcome.new_sha256[:12]})\n")
+        else:
+            sys.stdout.write(f"{outcome.label}: {outcome.path} unchanged\n")
+    if result.written:
+        sys.stdout.write(f"manifest updated: {result.manifest_path}\n")
+    return 0
 
 
 def _manifest_with_variants(loaded, derived_variants) -> ProjectManifest:
@@ -540,11 +622,26 @@ def _manifest_with_variants(loaded, derived_variants) -> ProjectManifest:
     )
 
 
-def _project_variant_state(loaded) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Return (base raw scenario, derived variants) for variant actions."""
-    base_raw = parse_json_bytes(read_bounded_bytes(loaded.resolved["scenario"]))
+def _project_variant_state(loaded) -> tuple[Any, dict[str, Any], bool]:
+    """Return (base raw scenario, derived variants, saved routes used) for variant actions.
+
+    The base is the project scenario, with the saved route selection standing
+    in when the scenario embeds no routes.
+    """
+    base_raw, saved_routes = project_scenario_state(loaded)
     derived = dict(loaded.manifest.derived_variants or {})
-    return base_raw, derived
+    return base_raw, derived, saved_routes
+
+
+def _show_variant_format(explicit: str | None, output: str | None) -> str:
+    """An explicit --format wins; otherwise .json means JSON and anything else Markdown.
+
+    show-variant has always defaulted to Markdown, so the environment default
+    is deliberately not consulted here.
+    """
+    if explicit is not None:
+        return explicit
+    return "json" if _format_from_output_path(output) == "json" else "markdown"
 
 
 def _project_variant_arguments(args: argparse.Namespace, derived: dict[str, Any]) -> list[str]:
@@ -565,19 +662,29 @@ def _project(args: argparse.Namespace) -> int:
         routes_path = Path(args.routes) if args.routes else None
         baseline_path = Path(args.baseline) if args.baseline else None
         variants = _variants_from_cli(args.variant)
-        placed = prepare_project_directory(directory, scenario_path, routes_path, baseline_path, variants)
+        # Validate everything that needs no input file before copying any.
+        project_id = require_identifier(_require_cli_text(args.project_id, "--project-id"), "--project-id")
         experiments = _project_experiment_args(args.experiment)
-        manifest = build_manifest(
-            directory,
-            project_id=_require_cli_text(args.project_id, "--project-id"),
-            description=args.description or "",
-            scenario=placed["scenario"],
-            routes=placed.get("routes"),
-            baseline=placed.get("baseline"),
-            variants={name: placed[f"variant {name}"] for name in variants},
-            experiments=experiments,
-        )
-        write_project(directory, manifest)
+        created: list[Path] = []
+        placed = prepare_project_directory(directory, scenario_path, routes_path, baseline_path, variants,
+                                           created=created)
+        try:
+            manifest = build_manifest(
+                directory,
+                project_id=project_id,
+                description=args.description or "",
+                scenario=placed["scenario"],
+                routes=placed.get("routes"),
+                baseline=placed.get("baseline"),
+                variants={name: placed[f"variant {name}"] for name in variants},
+                experiments=experiments,
+            )
+            write_project(directory, manifest)
+        except BaseException:
+            # A failed create leaves the directory as it was, so a corrected
+            # retry does not trip over the copies this attempt made.
+            remove_created_paths(created)
+            raise
         sys.stdout.write(f"project created: {directory / 'corridor-lab.project.json'}\n")
         return 0
     if command == "validate":
@@ -634,7 +741,9 @@ def _project(args: argparse.Namespace) -> int:
             for problem in loaded.problems:
                 _write_error(problem)
             return 2
-        _, derived = _project_variant_state(loaded)
+        base_raw, derived, _ = _project_variant_state(loaded)
+        # A variant saved onto a scenario that does not validate could never run.
+        parse_scenario(base_raw)
         # File and derived variants share one name space in the manifest.
         if args.variant.strip() in loaded.manifest.all_variants:
             raise InputError(f"add-variant must not replace an existing variant: {args.variant}")
@@ -642,31 +751,31 @@ def _project(args: argparse.Namespace) -> int:
         variant = parse_derived_variant(args.variant.strip(), {"base": args.base.strip() or "scenario", "changes": {"transaction": transaction, "routes": routes}})
         derived[args.variant.strip()] = variant
         validate_variant_graph(derived)
+        # Prove the variant materializes, as the desktop does, before saving:
+        # a variant that cannot apply used to fail compare-variants for the
+        # whole project.
+        parse_scenario(apply_variant_chain(derived, variant.name, base_raw))
         write_project(loaded.path, _manifest_with_variants(loaded, derived), replace=True)
         sys.stdout.write(f"variant saved: {args.variant.strip()}\n")
         return 0
     if command == "show-variant":
-        loaded = load_project(_require_cli_text(args.project, "project"))
-        if loaded.problems:
-            for problem in loaded.problems:
-                _write_error(problem)
+        loaded = _load_valid_project(args)
+        if loaded is None:
             return 2
-        base_raw, derived = _project_variant_state(loaded)
+        destinations = _protect_project_destinations(args, loaded)
+        base_raw, derived, saved_routes = _project_variant_state(loaded)
+        # Validate the base before deriving: a scenario that is not an object
+        # used to crash here with a traceback.
+        scenario_id = parse_scenario(base_raw).scenario_id
         variant = derived.get(args.variant.strip())
         if variant is None:
             raise InputError(f"no derived variant named {args.variant.strip()}")
-        scenario_id = parse_scenario(base_raw).scenario_id if "scenario_id" in base_raw else loaded.manifest.project_id
         report = variant_diff_report(derived, args.variant.strip(), base_raw, scenario_id)
-        output_format = resolve_report_format(args.format, args.output, ("json", "markdown"))
-        text = render_report(report, output_format)
-        if args.output is None:
-            sys.stdout.write(text)
-            return 0
-        target = Path(_require_cli_text(args.output, "--output"))
-        inputs, scanned = _project_inputs_for_protection(loaded)
-        protect_report_output(target, inputs, scanned)
-        atomic_write_text(target, text)
+        output_format = _show_variant_format(args.format, args.output)
+        _emit_project_report(args, loaded, report, render_report(report, output_format), destinations, saved_routes)
         return 0
+    if command == "refresh":
+        return _project_refresh(args)
     if command == "compare-variants":
         return _project_compare_variants(args)
     if command == "run-variants":
@@ -676,14 +785,20 @@ def _project(args: argparse.Namespace) -> int:
     raise InputError(f"unsupported project command: {command}")
 
 
-def _protect_report_inputs(args: argparse.Namespace) -> None:
+def _protect_report_inputs(
+    args: argparse.Namespace,
+    inputs: list[Path] | None = None,
+    scanned: list[Path] | None = None,
+) -> tuple[Path | None, Path | None]:
     """Refuse report and evidence destinations before anything is computed or written.
 
     Both destinations are checked against every declared input and against
     each other, so a collision on the evidence path can no longer leave a
-    freshly written report behind.
+    freshly written report behind. Project commands pass the project inputs
+    and directory; other commands use the inputs named on the command line.
     """
-    inputs, scanned = _declared_inputs(args)
+    if inputs is None or scanned is None:
+        inputs, scanned = _declared_inputs(args)
     output = getattr(args, "output", None)
     evidence = getattr(args, "evidence", None)
     output_path = Path(_require_cli_text(output, "--output")) if output else None
@@ -692,6 +807,7 @@ def _protect_report_inputs(args: argparse.Namespace) -> None:
         protect_report_output(output_path, inputs + ([evidence_path] if evidence_path else []), scanned)
     if evidence_path is not None:
         protect_report_output(evidence_path, inputs + ([output_path] if output_path else []), scanned)
+    return output_path, evidence_path
 
 
 def _emit(text: str, output: str | None) -> None:
