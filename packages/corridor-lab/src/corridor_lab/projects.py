@@ -42,6 +42,7 @@ from .canonical import (
     require_object,
     require_string,
 )
+from .route import load_route_documents
 from .sensitivity import run_sensitivity
 from .stress import run_stress_grid
 from .transaction_sweep import run_transaction_grid, run_transaction_sweep
@@ -343,6 +344,33 @@ def load_project(path: str | Path) -> LoadedProject:
     for name, ref in manifest.variants.items():
         resolve(ref, f"variant {name}")
     return LoadedProject(path=manifest_path, manifest=manifest, resolved=resolved, problems=tuple(problems))
+
+
+def project_scenario_state(loaded: LoadedProject) -> tuple[object, bool]:
+    """Return the raw project scenario and whether saved routes stand in.
+
+    A scenario that embeds no routes (the key is absent or an empty list)
+    takes the project's saved route selection, when the manifest declares
+    one: the copy gets those route documents in name order, so the ordinary
+    scenario rules (duplicate route ids, the route budget) apply to the
+    result. A scenario that embeds routes is returned unchanged, and
+    nothing on disk is rewritten.
+    """
+    raw = parse_json_bytes(read_bounded_bytes(loaded.resolved["scenario"]))
+    if (
+        isinstance(raw, dict)
+        and "routes" in loaded.resolved
+        and ("routes" not in raw or raw["routes"] == [])
+    ):
+        merged = dict(raw)
+        merged["routes"] = load_route_documents(loaded.resolved["routes"])
+        return merged, True
+    return raw, False
+
+
+def project_scenario_raw(loaded: LoadedProject) -> object:
+    """The raw scenario every project command analyses; see ``project_scenario_state``."""
+    return project_scenario_state(loaded)[0]
 
 
 def _copy_regular_file(source: Path, target: Path) -> None:

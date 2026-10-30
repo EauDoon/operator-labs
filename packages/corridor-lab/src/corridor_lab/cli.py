@@ -26,9 +26,7 @@ from .analysis import (
 from .canonical import (
     InputError,
     atomic_write_text,
-    parse_json_bytes,
     protect_report_output,
-    read_bounded_bytes,
     require_decimal_values,
 )
 from .batching import run_scenario_batch as _batch
@@ -41,6 +39,7 @@ from .projects import (
     load_project,
     parse_experiment_argument,
     prepare_project_directory,
+    project_scenario_raw,
     write_project,
 )
 from .report import render_report
@@ -454,9 +453,9 @@ def _project_run_variants(args: argparse.Namespace) -> int:
         for problem in loaded.problems:
             _write_error(problem)
         return 2
-    # Load the project scenario through the full validator before deriving variants.
-    load_scenario(loaded.resolved["scenario"])
     base_raw, derived = _project_variant_state(loaded)
+    # Validate the project scenario through the full validator before deriving variants.
+    parse_scenario(base_raw)
     experiment = next((item for item in loaded.manifest.experiments if item.name == args.experiment), None)
     if experiment is None:
         raise InputError(f"no saved experiment named {args.experiment}")
@@ -494,7 +493,7 @@ def _project_run(args: argparse.Namespace) -> int:
         for problem in loaded.problems:
             _write_error(problem)
         return 2
-    scenario = load_scenario(loaded.resolved["scenario"])
+    scenario = parse_scenario(project_scenario_raw(loaded))
     chosen = args.experiment or [experiment.name for experiment in loaded.manifest.experiments]
     selected = [experiment for experiment in loaded.manifest.experiments if experiment.name in chosen]
     if len(selected) != len(chosen):
@@ -541,8 +540,12 @@ def _manifest_with_variants(loaded, derived_variants) -> ProjectManifest:
 
 
 def _project_variant_state(loaded) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Return (base raw scenario, derived variants) for variant actions."""
-    base_raw = parse_json_bytes(read_bounded_bytes(loaded.resolved["scenario"]))
+    """Return (base raw scenario, derived variants) for variant actions.
+
+    The base is the project scenario, with the saved route selection standing
+    in when the scenario embeds no routes.
+    """
+    base_raw = project_scenario_raw(loaded)
     derived = dict(loaded.manifest.derived_variants or {})
     return base_raw, derived
 

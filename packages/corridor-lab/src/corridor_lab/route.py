@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import os
 import stat as stat_module
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from .canonical import (
     MAX_INPUT_BYTES,
@@ -28,6 +29,7 @@ from .canonical import (
 from .outcomes import Outcome
 
 ROUTE_CONTRACT_VERSION = "corridor-lab.route/v1"
+T = TypeVar("T")
 MAX_BPS = Decimal(10000)
 SENSITIVITY_PARAMETERS = ("fx_rate", "fixed_fee_send", "percent_fee_bps", "fx_spread_bps")
 
@@ -182,12 +184,12 @@ def load_route(path: str | Path) -> Route:
     return parse_route(load_json(path), str(path))
 
 
-def _read_scanned_route(
+def _read_scanned_bytes(
     directory: Path,
     name: str,
     expected: os.stat_result,
     directory_fd: int | None,
-) -> Route:
+) -> bytes:
     """Read the same regular file observed during the directory scan."""
 
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
@@ -211,11 +213,33 @@ def _read_scanned_route(
             os.close(descriptor)
     if len(raw) > MAX_INPUT_BYTES:
         raise InputError(f"input exceeds {MAX_INPUT_BYTES} bytes")
+    return raw
+
+
+def _read_scanned_route(
+    directory: Path,
+    name: str,
+    expected: os.stat_result,
+    directory_fd: int | None,
+) -> Route:
+    raw = _read_scanned_bytes(directory, name, expected, directory_fd)
     return parse_route(parse_json_bytes(raw), str(directory / name))
 
 
-def load_route_folder(path: str | Path) -> list[Route]:
-    """Load a bounded snapshot of regular JSON files without following links."""
+def _read_scanned_document(
+    directory: Path,
+    name: str,
+    expected: os.stat_result,
+    directory_fd: int | None,
+) -> dict[str, Any]:
+    raw = _read_scanned_bytes(directory, name, expected, directory_fd)
+    value = parse_json_bytes(raw)
+    parse_route(value, str(directory / name))
+    return value
+
+
+def _scan_route_folder(path: str | Path, reader: Callable[[Path, str, os.stat_result, int | None], T]) -> list[T]:
+    """Read a bounded snapshot of regular JSON files without following links."""
 
     directory = Path(path)
     directory_fd: int | None = None
@@ -259,15 +283,44 @@ def load_route_folder(path: str | Path) -> list[Route]:
             raise InputError(f"route folder contains no JSON files: {directory}")
         if len(files) > MAX_ROUTES:
             raise InputError(f"route folder exceeds the {MAX_ROUTES}-route budget")
-        routes = [
-            _read_scanned_route(directory, name, metadata, directory_fd)
+        items = [
+            reader(directory, name, metadata, directory_fd)
             for name, metadata in files
         ]
         if directory_fd is None and not os.path.samestat(expected_directory, os.lstat(directory)):
             raise InputError("route folder changed while being read")
-        return routes
+        return items
     except OSError as exc:
         raise InputError(f"cannot read route folder: {directory}") from exc
     finally:
         if directory_fd is not None:
             os.close(directory_fd)
+
+
+def load_route_folder(path: str | Path) -> list[Route]:
+    """Load a bounded snapshot of regular JSON files without following links."""
+
+    return _scan_route_folder(path, _read_scanned_route)
+
+
+def load_route_documents(path: str | Path) -> list[dict[str, Any]]:
+    """Return the validated raw route objects of a route file or folder.
+
+    A folder uses the same bounded, no-follow scan and name order as
+    ``load_route_folder``; every document must pass ``parse_route``. The raw
+    objects let a caller embed a saved route selection in a scenario and
+    validate the result with the ordinary scenario rules.
+    """
+
+    target = Path(path)
+    try:
+        metadata = os.lstat(target)
+    except OSError as exc:
+        raise InputError(f"cannot read route selection: {target}") from exc
+    if stat_module.S_ISDIR(metadata.st_mode):
+        return _scan_route_folder(target, _read_scanned_document)
+    if stat_module.S_ISREG(metadata.st_mode):
+        value = load_json(target)
+        parse_route(value, str(target))
+        return [value]
+    raise InputError(f"route selection is not a file or folder: {target}")

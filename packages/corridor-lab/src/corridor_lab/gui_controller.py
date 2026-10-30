@@ -38,6 +38,7 @@ from .projects import (
     execute_experiment,
     load_project,
     prepare_project_directory,
+    project_scenario_state,
     validate_experiment,
     write_project,
 )
@@ -478,10 +479,20 @@ class CorridorGuiController:
             scenario_result = self.load_scenario_file(loaded.resolved["scenario"])
             if scenario_result.error is not None:
                 return scenario_result
+            stand_in = False
             if "routes" in loaded.resolved:
                 routes_result = self.load_routes_path(loaded.resolved["routes"])
                 if routes_result.error is not None:
                     return routes_result
+                # A scenario that embeds no routes takes the saved route
+                # selection, exactly as the project CLI commands do. The
+                # scenario file is untouched: saving the project copies it
+                # unmodified, and report protection still names it.
+                merged, stand_in = project_scenario_state(loaded)
+                if stand_in:
+                    merged = _normalize_raw(merged)
+                    self.scenario = parse_scenario(copy.deepcopy(merged))
+                    self.scenario_raw = merged
             else:
                 self.clear_route_selection()
             self.baseline_file = loaded.resolved.get("baseline")
@@ -497,6 +508,7 @@ class CorridorGuiController:
                     "project_id": loaded.manifest.project_id,
                     "description": loaded.manifest.description,
                     "experiments": [experiment.name for experiment in loaded.manifest.experiments],
+                    "saved_routes_stand_in": stand_in,
                 },
                 None,
             )
