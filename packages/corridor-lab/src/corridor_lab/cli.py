@@ -433,6 +433,7 @@ def _project_compare_variants(args: argparse.Namespace) -> int:
             _write_error(problem)
         return 2
     base_raw, derived = _project_variant_state(loaded)
+    parse_scenario(base_raw)
     chosen = _project_variant_arguments(args, derived)
     report = variant_comparison(base_raw, derived, loaded.manifest.project_id, only=chosen)
     output_format = resolve_report_format(args.format, args.output, ("json", "csv", "markdown"))
@@ -637,7 +638,9 @@ def _project(args: argparse.Namespace) -> int:
             for problem in loaded.problems:
                 _write_error(problem)
             return 2
-        _, derived = _project_variant_state(loaded)
+        base_raw, derived = _project_variant_state(loaded)
+        # A variant saved onto a scenario that does not validate could never run.
+        parse_scenario(base_raw)
         # File and derived variants share one name space in the manifest.
         if args.variant.strip() in loaded.manifest.all_variants:
             raise InputError(f"add-variant must not replace an existing variant: {args.variant}")
@@ -655,10 +658,12 @@ def _project(args: argparse.Namespace) -> int:
                 _write_error(problem)
             return 2
         base_raw, derived = _project_variant_state(loaded)
+        # Validate the base before deriving: a scenario that is not an object
+        # used to crash here with a traceback.
+        scenario_id = parse_scenario(base_raw).scenario_id
         variant = derived.get(args.variant.strip())
         if variant is None:
             raise InputError(f"no derived variant named {args.variant.strip()}")
-        scenario_id = parse_scenario(base_raw).scenario_id if "scenario_id" in base_raw else loaded.manifest.project_id
         report = variant_diff_report(derived, args.variant.strip(), base_raw, scenario_id)
         output_format = resolve_report_format(args.format, args.output, ("json", "markdown"))
         text = render_report(report, output_format)
