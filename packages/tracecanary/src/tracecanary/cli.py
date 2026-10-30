@@ -23,6 +23,7 @@ from tracecanary.inspection import (
     dropped_telemetry,
     inspect_contract,
     population_gate,
+    population_gate_configured,
     retention_matrix,
 )
 from tracecanary.otlp import OtlpError
@@ -271,8 +272,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             baseline = _load_trace(args.baseline, contract) if getattr(args, "baseline", None) is not None else None
             population_scope = getattr(args, "population_scope", None)
             population_minimum = getattr(args, "population_minimum", None)
-            if population_scope is not None and population_minimum is None:
-                raise InputError("--population-minimum is required with --population-scope")
+            population_gate_configured(population_scope, population_minimum)
             batch_report = _run_batch(contract, args.input_dir, args.recursive, args.include_paths, baseline,
                                       coverage=args.command == "coverage-batch", minimum_ratio=getattr(args, "minimum_ratio", None),
                                       population_scope=population_scope, population_minimum=population_minimum)
@@ -469,6 +469,9 @@ def _campaign(args: Any) -> int:
             minimum_ratio = args.minimum_ratio if args.minimum_ratio is not None else manifest.coverage.minimum_ratio
             population_scope = args.population_scope or manifest.coverage.population_scope
             population_minimum = args.population_minimum if args.population_minimum is not None else manifest.coverage.population_minimum
+            # Checked after the overrides merge with the saved gate, so one
+            # override over a saved full gate still works.
+            population_gate_configured(population_scope, population_minimum)
             campaign = run_campaign(
                 contract,
                 control_payload=_load_trace(control, contract) if control is not None else None,

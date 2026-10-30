@@ -24,7 +24,13 @@ from tracecanary.canonical import InputError, load_json
 from tracecanary.checker import check_trace
 from tracecanary.comparison import diff_traces
 from tracecanary.contract import Contract
-from tracecanary.inspection import control_check, coverage_gate, population_gate, require_population_gate
+from tracecanary.inspection import (
+    control_check,
+    coverage_gate,
+    population_gate,
+    population_gate_configured,
+    require_population_gate,
+)
 from tracecanary.otlp import OtlpError, validate_trace
 from tracecanary.report import Report, Status, ensure_object_values_absent
 
@@ -110,7 +116,7 @@ def run_campaign(
     else:
         phases["baseline"] = {"status": "skipped", "meaning": "no baseline was configured; candidates run standalone checks"}
 
-    gate_enabled = population_scope is not None and population_minimum is not None
+    gate_enabled = population_gate_configured(population_scope, population_minimum)
     if gate_enabled:
         require_population_gate(population_scope, population_minimum)
     candidate_items: list[dict[str, Any]] = []

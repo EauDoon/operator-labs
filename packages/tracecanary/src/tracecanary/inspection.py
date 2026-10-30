@@ -41,6 +41,18 @@ def control_check(contract: Contract, payload):
     return _privacy_checked(contract, report)
 
 
+def population_gate_configured(scope: str | None, minimum: int | None) -> bool:
+    """True when a population gate is configured; half a gate is an error.
+
+    A scope without a minimum, or a minimum without a scope, used to be
+    dropped silently on some surfaces, so the run passed without the gate
+    the user asked for. Every CLI and library surface now refuses it.
+    """
+    if (scope is None) != (minimum is None):
+        raise InputError("a population gate needs both a scope and a minimum")
+    return scope is not None
+
+
 def require_population_gate(scope: str, minimum: int) -> None:
     """Reject an unsupported population scope or minimum before any input is read."""
     if scope not in ("resource", "scope", "span", "event", "link") or type(minimum) is not int or not 1 <= minimum <= 1_000_000:

@@ -10,7 +10,7 @@ from tracecanary.checker import check_trace
 from tracecanary.comparison import diff_traces
 from tracecanary.contract import Contract
 from tracecanary.coverage import coverage_report
-from tracecanary.inspection import _parse_minimum_ratio, coverage_gate, population_gate
+from tracecanary.inspection import _parse_minimum_ratio, coverage_gate, population_gate, population_gate_configured
 from tracecanary.otlp import OtlpError, validate_trace
 from tracecanary.report import (
     BatchItem,
@@ -56,6 +56,7 @@ def run_batch(
     An explicit population gate applies independently to every structurally
     valid file, keeping each per-file status and the unresolved precedence.
     """
+    gate_enabled = population_gate_configured(population_scope, population_minimum)
     if minimum_ratio is not None:
         _parse_minimum_ratio(minimum_ratio)
         if not coverage:
@@ -98,7 +99,7 @@ def run_batch(
                 report = coverage_gate(contract, payload, minimum_ratio)
             else:
                 report = coverage_report(contract, payload) if coverage else check_trace(contract, payload, mode="batch") if baseline is None else diff_traces(contract, baseline, payload)
-            if population_scope is not None and population_minimum is not None:
+            if gate_enabled:
                 gated = population_gate(contract, payload, population_scope, population_minimum)
                 combined = dict(report)
                 existing = {json.dumps(violation, sort_keys=True) for violation in report["violations"]}

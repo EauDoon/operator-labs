@@ -23,7 +23,7 @@ from typing import Any
 
 from tracecanary.canonical import InputError, canonical_json, load_json
 from tracecanary.contract import DEFAULT_MAX_BATCH_FILES, DEFAULT_MAX_INPUT_BYTES, DEFAULT_MAX_NESTING
-from tracecanary.inspection import _parse_minimum_ratio
+from tracecanary.inspection import _parse_minimum_ratio, population_gate_configured
 from tracecanary.output import write_report
 
 PROJECT_MANIFEST_VERSION = "tracecanary.project/v1"
@@ -493,6 +493,7 @@ def build_manifest(
     max_batch_files: int = DEFAULT_MAX_BATCH_FILES,
 ) -> ProjectManifest:
     """Fingerprint the chosen inputs and assemble a validated manifest."""
+    population_gate_configured(population_scope, population_minimum)
     batch_ref = make_input_ref(project_dir, Path(batch), folder=True,
                                max_files=max_batch_files, max_bytes=max_bytes, recursive=batch_recursive) if batch is not None else None
     manifest = ProjectManifest(
