@@ -346,6 +346,24 @@ def load_project(path: str | Path) -> LoadedProject:
     return LoadedProject(path=manifest_path, manifest=manifest, resolved=resolved, problems=tuple(problems))
 
 
+def project_input_records(manifest: ProjectManifest) -> list[dict[str, object]]:
+    """Every fingerprinted manifest input as {label, path, sha256, folder}, sorted by label.
+
+    Labels are the ones ``project refresh --input`` accepts: scenario,
+    routes, baseline, and variant:NAME for file variants.
+    """
+    refs: list[tuple[str, InputRef]] = [("scenario", manifest.scenario)]
+    if manifest.routes is not None:
+        refs.append(("routes", manifest.routes))
+    if manifest.baseline is not None:
+        refs.append(("baseline", manifest.baseline))
+    refs.extend((f"variant:{name}", ref) for name, ref in manifest.variants.items())
+    return [
+        {"label": label, "path": ref.path, "sha256": ref.sha256, "folder": ref.folder}
+        for label, ref in sorted(refs, key=lambda item: item[0])
+    ]
+
+
 def project_scenario_state(loaded: LoadedProject) -> tuple[object, bool]:
     """Return the raw project scenario and whether saved routes stand in.
 

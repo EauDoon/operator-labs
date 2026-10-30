@@ -39,6 +39,7 @@ from .projects import (
     execute_experiment,
     load_project,
     prepare_project_directory,
+    project_input_records,
     project_scenario_state,
     remove_created_paths,
     validate_experiment,
@@ -174,6 +175,8 @@ class CorridorGuiController:
         self.derived_variants: dict[str, DerivedVariant] = {}
         self.active_variant: str | None = None
         self.project_base_raw: dict | None = None
+        # Verified inputs of the open project, recorded in exported evidence.
+        self.project_inputs: list[dict[str, object]] | None = None
         self.last_report_inputs: tuple[Path, ...] = ()
         self.last_report_scanned_dirs: tuple[Path, ...] = ()
         # Provenance of the current report beyond the active scenario, so
@@ -505,6 +508,7 @@ class CorridorGuiController:
             self.project_source = str(loaded.path)
             self.project_path = loaded.path.parent
             self.project_id = loaded.manifest.project_id
+            self.project_inputs = project_input_records(loaded.manifest)
             return ActionResult(
                 {
                     "project_id": loaded.manifest.project_id,
@@ -547,6 +551,7 @@ class CorridorGuiController:
             self.project_source = str(target / "corridor-lab.project.json")
             self.project_path = target
             self.project_id = manifest.project_id
+            self.project_inputs = project_input_records(manifest)
             return ActionResult({}, None)
         except (InputError, OSError, ValueError, DecimalException) as exc:
             return self._failure(exc)
@@ -836,6 +841,7 @@ class CorridorGuiController:
                 baseline_source=self.last_report_baseline,
                 scenario_directory=self.last_report_directory,
                 notes=notes,
+                project_inputs=self.project_inputs if self.project_path is not None else None,
             )
             target = write_evidence(path, document, inputs=self.last_report_inputs, scanned_dirs=self.last_report_scanned_dirs)
             self.last_error = None
