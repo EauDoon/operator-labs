@@ -28,7 +28,13 @@ from tracecanary.inspection import (
 )
 from tracecanary.otlp import OtlpError
 from tracecanary.output import protect_inputs, write_report
-from tracecanary.project import build_manifest, load_project, write_project
+from tracecanary.project import (
+    build_manifest,
+    load_project,
+    remove_created_paths,
+    validate_project_settings,
+    write_project,
+)
 from tracecanary.report import (
     BatchReport,
     Report,
@@ -304,32 +310,49 @@ def _project(args: Any) -> int:
             directory = args.directory
             if not directory.is_dir():
                 raise InputError(f"--directory must be an existing project directory: {directory}")
-            placed = _project_prepare(
-                directory,
-                contract=args.contract,
-                input=args.input,
-                baseline=args.baseline,
-                candidate=args.candidate,
-                batch=args.batch_dir,
-                batch_recursive=bool(args.batch_recursive),
-            )
-            manifest = build_manifest(
-                directory,
+            # Validate every setting that needs no input before copying any.
+            validate_project_settings(
                 project_id=args.project_id,
                 description=args.description or "",
-                contract=placed["contract"],
-                input=placed.get("input"),
-                baseline=placed.get("baseline"),
-                candidate=placed.get("candidate"),
-                batch=placed.get("batch directory"),
-                batch_recursive=bool(args.batch_recursive),
-                batch_include_paths=bool(args.batch_include_paths),
-                batch_minimum_ratio=args.batch_minimum_ratio,
                 minimum_ratio=args.minimum_ratio,
+                batch_minimum_ratio=args.batch_minimum_ratio,
                 population_scope=args.population_scope,
                 population_minimum=args.population_minimum,
             )
-            write_project(directory, manifest)
+            created: list[Path] = []
+            try:
+                placed = _project_prepare(
+                    directory,
+                    contract=args.contract,
+                    input=args.input,
+                    baseline=args.baseline,
+                    candidate=args.candidate,
+                    batch=args.batch_dir,
+                    batch_recursive=bool(args.batch_recursive),
+                    created=created,
+                )
+                manifest = build_manifest(
+                    directory,
+                    project_id=args.project_id,
+                    description=args.description or "",
+                    contract=placed["contract"],
+                    input=placed.get("input"),
+                    baseline=placed.get("baseline"),
+                    candidate=placed.get("candidate"),
+                    batch=placed.get("batch directory"),
+                    batch_recursive=bool(args.batch_recursive),
+                    batch_include_paths=bool(args.batch_include_paths),
+                    batch_minimum_ratio=args.batch_minimum_ratio,
+                    minimum_ratio=args.minimum_ratio,
+                    population_scope=args.population_scope,
+                    population_minimum=args.population_minimum,
+                )
+                write_project(directory, manifest)
+            except BaseException:
+                # A failed create leaves the directory as it was, so a
+                # corrected retry does not trip over this attempt's copies.
+                remove_created_paths(created)
+                raise
             print(f"Project created: {directory / 'tracecanary.project.json'}")
             return EXIT_PASS
         if command == "validate":
@@ -370,7 +393,7 @@ def _project(args: Any) -> int:
         return EXIT_UNRESOLVED
 
 
-def _project_prepare(directory: Path, *, contract: Path, input: Path | None, baseline: Path | None, candidate: Path | None, batch: Path | None, batch_recursive: bool = False) -> dict[str, Path]:
+def _project_prepare(directory: Path, *, contract: Path, input: Path | None, baseline: Path | None, candidate: Path | None, batch: Path | None, batch_recursive: bool = False, created: list[Path] | None = None) -> dict[str, Path]:
     """Make the chosen synthetic inputs self-contained inside the project directory."""
     from tracecanary.project import _copy_project_input
 
@@ -386,7 +409,7 @@ def _project_prepare(directory: Path, *, contract: Path, input: Path | None, bas
         resolved_source = source.resolve()
         if resolved_source in copied_sources:
             return copied_sources[resolved_source]
-        target = _copy_project_input(project_dir, source, folder=folder, recursive=recursive)
+        target = _copy_project_input(project_dir, source, folder=folder, recursive=recursive, created=created)
         copied_sources[resolved_source] = target
         return target
 

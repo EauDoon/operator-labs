@@ -26,7 +26,14 @@ from tracecanary.contract import Contract, ContractError, load_contract, parse_c
 from tracecanary.coverage import coverage_report
 from tracecanary.fixture import bundle, write_bundle
 from tracecanary.output import protect_inputs, write_report
-from tracecanary.project import _copy_project_input, build_manifest, load_project, write_project
+from tracecanary.project import (
+    _copy_project_input,
+    build_manifest,
+    load_project,
+    remove_created_paths,
+    validate_project_settings,
+    write_project,
+)
 from tracecanary.inspection import (
     control_check,
     coverage_diff,
@@ -462,10 +469,19 @@ class TraceCanaryController:
         )
         if guidance is not None:
             return guidance
+        created: list[Path] = []
         try:
             project_dir = Path(destination).resolve()
             if not project_dir.is_dir():
                 raise InputError(f"the project destination must be an existing directory: {destination}")
+            validate_project_settings(
+                project_id=project_id,
+                description=description,
+                minimum_ratio=minimum_ratio,
+                batch_minimum_ratio=batch_minimum_ratio,
+                population_scope=population_scope,
+                population_minimum=population_minimum,
+            )
             placed: dict[str, Path] = {}
             copied_sources: dict[Path, Path] = {}
 
@@ -475,7 +491,8 @@ class TraceCanaryController:
                 resolved_source = Path(source).resolve()
                 if resolved_source in copied_sources:
                     return copied_sources[resolved_source]
-                target = _copy_project_input(project_dir, Path(source), folder=folder, recursive=recursive)
+                target = _copy_project_input(project_dir, Path(source), folder=folder, recursive=recursive,
+                                             created=created)
                 copied_sources[resolved_source] = target
                 return target
 
@@ -505,7 +522,11 @@ class TraceCanaryController:
             )
             write_project(project_dir, manifest)
         except (InputError, OSError, ValueError) as exc:
+            remove_created_paths(created)
             return self._guidance("project-save", GUI006, f"The project could not be saved. ({exc})")
+        except BaseException:
+            remove_created_paths(created)
+            raise
         report = build_report("tracecanary/v1", "pass", [], mode="project-save")
         human = f"TraceCanary project {project_id} saved to {project_dir / 'tracecanary.project.json'}\n"
         return GuiResult("pass", EXIT_PASS, human, render_json(report), None, (), None, "project-save",

@@ -413,14 +413,75 @@ def _holds_identical_copy(target: Path, source: Path) -> bool:
     return existing is not None and existing == incoming
 
 
-def _copy_project_input(project_dir: Path, source: Path, *, folder: bool = False, recursive: bool = False) -> Path:
+def validate_project_settings(
+    *,
+    project_id: str,
+    description: str = "",
+    minimum_ratio: str | None = None,
+    batch_minimum_ratio: str | None = None,
+    population_scope: str | None = None,
+    population_minimum: int | None = None,
+) -> None:
+    """Check every setting that needs no input file, before anything is copied."""
+    _identifier(project_id, "project_id")
+    if not isinstance(description, str) or len(description) > MAX_DESCRIPTION_CHARS:
+        raise InputError(f"project description must be a string of at most {MAX_DESCRIPTION_CHARS} characters")
+    for ratio in (minimum_ratio, batch_minimum_ratio):
+        if ratio is not None:
+            _parse_minimum_ratio(ratio)
+    if population_gate_configured(population_scope, population_minimum):
+        if population_scope not in POPULATION_SCOPES:
+            raise InputError("coverage.population_scope must be one of " + ", ".join(POPULATION_SCOPES))
+        if type(population_minimum) is not int or not 1 <= population_minimum <= 1_000_000:
+            raise InputError("coverage.population_minimum must be a whole number from 1 to 1000000")
+
+
+def remove_created_paths(created: list[Path]) -> None:
+    """Undo a failed project save: remove exactly the paths it created, newest first.
+
+    Files are unlinked and folders removed only when empty, so nothing that
+    existed before the save, or that something else added since, is touched.
+    """
+    for path in reversed(created):
+        try:
+            if path.is_dir() and not path.is_symlink():
+                path.rmdir()
+            else:
+                path.unlink()
+        except OSError:
+            continue
+    created.clear()
+
+
+def _make_directories(directory: Path, created: list[Path]) -> None:
+    missing: list[Path] = []
+    current = directory
+    while not current.exists():
+        missing.append(current)
+        current = current.parent
+    for item in reversed(missing):
+        item.mkdir()
+        created.append(item)
+
+
+def _copy_project_input(
+    project_dir: Path,
+    source: Path,
+    *,
+    folder: bool = False,
+    recursive: bool = False,
+    created: list[Path] | None = None,
+) -> Path:
     """Copy one chosen synthetic input into the project, or use it in place.
 
     A file whose byte-identical copy the project already holds under the
     same name reuses that copy, which is the normal flow when promoting the
     candidate saved by ``project create --candidate``. A different file with
-    the same name is still refused, and folders are never reused.
+    the same name is still refused, and folders are never reused. Every file
+    and folder this call creates is appended to ``created`` so a failed save
+    can remove exactly those; reused copies are never recorded.
     """
+    record: list[Path] = [] if created is None else created
     resolved = Path(source).resolve()
     if resolved.is_dir() and not folder:
         raise InputError(f"project input must be a file, not a directory: {source}")
@@ -432,7 +493,7 @@ def _copy_project_input(project_dir: Path, source: Path, *, folder: bool = False
     except ValueError:
         pass
     inputs_dir = project_dir / "inputs"
-    inputs_dir.mkdir(parents=True, exist_ok=True)
+    _make_directories(inputs_dir, record)
     target = inputs_dir / resolved.name
     if target.exists():
         if not folder and resolved.is_file() and _holds_identical_copy(target, resolved):
@@ -442,6 +503,7 @@ def _copy_project_input(project_dir: Path, source: Path, *, folder: bool = False
         if not resolved.is_dir():
             raise InputError(f"project batch directory is not a folder: {source}")
         target.mkdir()
+        record.append(target)
         copied = 0
         if recursive:
             selected = [item for item in resolved.rglob("*") if _json_export(item, resolved)]
@@ -459,7 +521,8 @@ def _copy_project_input(project_dir: Path, source: Path, *, folder: bool = False
                 sources.append((item, Path(item.name)))
         for item, relative in sources:
             destination = target / relative
-            destination.parent.mkdir(parents=True, exist_ok=True)
+            _make_directories(destination.parent, record)
+            record.append(destination)
             shutil.copyfile(item, destination)
             copied += 1
             if copied > DEFAULT_MAX_BATCH_FILES:
@@ -469,6 +532,7 @@ def _copy_project_input(project_dir: Path, source: Path, *, folder: bool = False
     else:
         if not resolved.is_file():
             raise InputError(f"project input is not a file: {source}")
+        record.append(target)
         shutil.copyfile(resolved, target)
     return target
 
