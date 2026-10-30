@@ -63,5 +63,50 @@ class InvalidProjectScenarioTests(unittest.TestCase):
                 self.assertEqual(manifest_path.read_bytes(), before)
 
 
+# (CLI --changes text, controller changes, saved?)
+CHANGE_TABLE = (
+    ("transaction.send_amount=-5", {"transaction": {"send_amount": "-5"}}, False),
+    ("route.no-such-route.fixed_fee_send=1", {"routes": {"no-such-route": {"fixed_fee_send": "1"}}}, False),
+    ("route.fictional-route.percent_fee_bps=20000", {"routes": {"fictional-route": {"percent_fee_bps": "20000"}}}, False),
+    ("transaction.deadline_hours=2", {"transaction": {"deadline_hours": "2"}}, True),
+    ("route.fictional-route.fixed_fee_send=2", {"routes": {"fictional-route": {"fixed_fee_send": "2"}}}, True),
+)
+
+
+class AddVariantValidationTests(unittest.TestCase):
+    def test_cli_and_desktop_give_the_same_verdict_for_each_change_set(self):
+        from corridor_lab.gui_controller import CorridorGuiController
+
+        for text, changes, saved in CHANGE_TABLE:
+            with self.subTest(changes=text), tempfile.TemporaryDirectory() as temporary:
+                project = create_project(Path(temporary), scenario(routes=[route()]))
+                manifest_path = project / PROJECT_MANIFEST_NAME
+                before = manifest_path.read_bytes()
+                code, stdout, stderr = run_cli("project", "add-variant", project, "--variant", "case", "--changes", text)
+                self.assertEqual(code, 0 if saved else 2, stderr)
+                if saved:
+                    self.assertEqual(stdout, "variant saved: case\n")
+                    self.assertEqual(run_cli("project", "compare-variants", project)[0], 0)
+                else:
+                    self.assertEqual(manifest_path.read_bytes(), before)
+                    self.assertNotIn("Traceback", stderr)
+                controller = CorridorGuiController()
+                self.assertIsNone(controller.load_scenario_file(project / "inputs" / "scenario.json").error)
+                verdict = controller.add_variant("case", changes)
+                self.assertEqual(verdict.error is None, saved, verdict.error)
+
+    def test_a_chain_over_a_base_that_cannot_materialize_is_refused(self):
+        broken = {"broken": {"base": "scenario", "changes": {"routes": {"no-such-route": {"fixed_fee_send": "1"}}}}}
+        with tempfile.TemporaryDirectory() as temporary:
+            project = create_project(Path(temporary), scenario(routes=[route()]), variants=broken)
+            manifest_path = project / PROJECT_MANIFEST_NAME
+            before = manifest_path.read_bytes()
+            code, _, stderr = run_cli("project", "add-variant", project, "--variant", "child", "--base", "broken",
+                                      "--changes", "transaction.deadline_hours=2")
+            self.assertEqual(code, 2)
+            self.assertIn("no route no-such-route", stderr)
+            self.assertEqual(manifest_path.read_bytes(), before)
+
+
 if __name__ == "__main__":
     unittest.main()

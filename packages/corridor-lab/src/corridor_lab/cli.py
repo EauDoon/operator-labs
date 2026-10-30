@@ -648,6 +648,10 @@ def _project(args: argparse.Namespace) -> int:
         variant = parse_derived_variant(args.variant.strip(), {"base": args.base.strip() or "scenario", "changes": {"transaction": transaction, "routes": routes}})
         derived[args.variant.strip()] = variant
         validate_variant_graph(derived)
+        # Prove the variant materializes, as the desktop does, before saving:
+        # a variant that cannot apply used to fail compare-variants for the
+        # whole project.
+        parse_scenario(apply_variant_chain(derived, variant.name, base_raw))
         write_project(loaded.path, _manifest_with_variants(loaded, derived), replace=True)
         sys.stdout.write(f"variant saved: {args.variant.strip()}\n")
         return 0
