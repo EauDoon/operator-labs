@@ -108,5 +108,105 @@ class AddVariantValidationTests(unittest.TestCase):
             self.assertEqual(manifest_path.read_bytes(), before)
 
 
+def snapshot(directory: Path) -> dict[str, bytes | None]:
+    """Every path under ``directory`` with file bytes, so a rollback can be compared exactly."""
+    return {
+        path.relative_to(directory).as_posix(): (path.read_bytes() if path.is_file() else None)
+        for path in sorted(directory.rglob("*"))
+    }
+
+
+class FailedCreateRollbackTests(unittest.TestCase):
+    def _sources(self, root: Path) -> tuple[Path, Path]:
+        source = root / "source"
+        other = root / "other"
+        source.mkdir()
+        other.mkdir()
+        (source / "s.json").write_text(json.dumps(scenario(routes=[route()])), encoding="utf-8", newline="\n")
+        (other / "s.json").write_text(json.dumps(scenario(routes=[route("fictional-other")])), encoding="utf-8", newline="\n")
+        (source / "routes").mkdir()
+        (source / "routes" / "r.json").write_text(json.dumps(route("fictional-saved")), encoding="utf-8", newline="\n")
+        return source, other
+
+    def test_every_failed_create_leaves_the_directory_as_it_was_and_a_retry_works(self):
+        long_description = "x" * 201
+        cases = (
+            ("bad id", ("--project-id", "bad id!")),
+            ("duplicate experiments", ("--experiment", "one:deadline-target:probability=0.5",
+                                       "--experiment", "one:deadline-target:probability=0.6")),
+            ("long description", ("--description", long_description)),
+            ("colliding names", ("--baseline", "OTHER")),
+            ("bad variant name", ("--variant", "bad name!=SCENARIO")),
+        )
+        for label, extra in cases:
+            with self.subTest(case=label), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                source, other = self._sources(root)
+                project = root / "project"
+                (project / "inputs").mkdir(parents=True)
+                (project / "inputs" / "notes.txt").write_text("kept", encoding="utf-8")
+                before = snapshot(project)
+                arguments = [str(other / "s.json") if item == "OTHER" else item.replace("SCENARIO", str(source / "s.json"))
+                             for item in extra]
+                base = ["project", "create", "--directory", project, "--scenario", source / "s.json",
+                        "--routes", source / "routes"]
+                if "--project-id" not in arguments:
+                    base += ["--project-id", "fictional-retry"]
+                code, _, stderr = run_cli(*base, *arguments)
+                self.assertEqual(code, 2, stderr)
+                self.assertNotIn("Traceback", stderr)
+                self.assertEqual(snapshot(project), before)
+                code, _, stderr = run_cli("project", "create", "--directory", project, "--project-id", "fictional-retry",
+                                          "--scenario", source / "s.json", "--routes", source / "routes")
+                self.assertEqual(code, 0, stderr)
+                self.assertEqual(run_cli("project", "validate", project)[0], 0)
+                self.assertEqual((project / "inputs" / "notes.txt").read_text(encoding="utf-8"), "kept")
+
+    def test_a_failed_create_removes_an_inputs_folder_it_created(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source, _ = self._sources(root)
+            project = root / "project"
+            project.mkdir()
+            code, _, _ = run_cli("project", "create", "--directory", project, "--project-id", "bad id!",
+                                 "--scenario", source / "s.json", "--routes", source / "routes")
+            self.assertEqual(code, 2)
+            self.assertEqual(snapshot(project), {})
+
+    def test_inputs_already_inside_the_project_are_never_removed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = root / "project"
+            (project / "inputs").mkdir(parents=True)
+            (project / "inputs" / "s.json").write_text(json.dumps(scenario(routes=[route()])), encoding="utf-8", newline="\n")
+            before = snapshot(project)
+            code, _, _ = run_cli("project", "create", "--directory", project, "--project-id", "bad id!",
+                                 "--scenario", project / "inputs" / "s.json")
+            self.assertEqual(code, 2)
+            self.assertEqual(snapshot(project), before)
+
+    def test_a_failed_desktop_save_project_rolls_back_too(self):
+        from corridor_lab.gui_controller import CorridorGuiController
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source, other = self._sources(root)
+            project = root / "project"
+            project.mkdir()
+            controller = CorridorGuiController()
+            self.assertIsNone(controller.load_scenario_file(source / "s.json").error)
+            self.assertIsNone(controller.load_routes_path(source / "routes").error)
+            result = controller.save_project(project, "bad id!")
+            self.assertIsNotNone(result.error)
+            self.assertEqual(snapshot(project), {})
+            controller.baseline_file = other / "s.json"
+            result = controller.save_project(project, "fictional-desktop")
+            self.assertIsNotNone(result.error)
+            self.assertEqual(snapshot(project), {})
+            controller.baseline_file = None
+            self.assertIsNone(controller.save_project(project, "fictional-desktop").error)
+            self.assertEqual(run_cli("project", "validate", project)[0], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

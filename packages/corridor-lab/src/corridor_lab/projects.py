@@ -373,16 +373,35 @@ def project_scenario_raw(loaded: LoadedProject) -> object:
     return project_scenario_state(loaded)[0]
 
 
-def _copy_regular_file(source: Path, target: Path) -> None:
+def remove_created_paths(created: list[Path]) -> None:
+    """Undo a failed project save: remove exactly the paths it created, newest first.
+
+    Files are unlinked and folders removed only when empty, so nothing that
+    existed before the save, or that something else added since, is touched.
+    """
+    for path in reversed(created):
+        try:
+            if path.is_dir() and not path.is_symlink():
+                path.rmdir()
+            else:
+                path.unlink()
+        except OSError:
+            continue
+    created.clear()
+
+
+def _copy_regular_file(source: Path, target: Path, created: list[Path]) -> None:
     if target.exists():
         raise InputError(f"project input already exists: {target}")
+    created.append(target)
     shutil.copyfile(source, target)
 
 
-def _copy_route_folder(source: Path, target: Path) -> None:
+def _copy_route_folder(source: Path, target: Path, created: list[Path]) -> None:
     if target.exists():
         raise InputError(f"project input folder already exists: {target}")
-    target.mkdir(parents=True)
+    target.mkdir()
+    created.append(target)
     copied = 0
     for item in sorted(source.iterdir(), key=lambda child: child.name):
         try:
@@ -391,7 +410,7 @@ def _copy_route_folder(source: Path, target: Path) -> None:
             raise InputError(f"route folder could not be read: {source}") from exc
         if not stat_module.S_ISREG(metadata.st_mode) or not item.name.lower().endswith(".json"):
             continue
-        _copy_regular_file(item, target / item.name)
+        _copy_regular_file(item, target / item.name, created)
         copied += 1
         if copied > MAX_FOLDER_FILES:
             raise InputError(f"route folder exceeds the {MAX_FOLDER_FILES}-file project budget: {source}")
@@ -405,6 +424,8 @@ def prepare_project_directory(
     routes: Path | None = None,
     baseline: Path | None = None,
     variants: dict[str, Path] | None = None,
+    *,
+    created: list[Path] | None = None,
 ) -> dict[str, Path]:
     """Make the chosen inputs self-contained inside the project directory.
 
@@ -412,10 +433,35 @@ def prepare_project_directory(
     explicitly copied into ``inputs/``. The same source chosen twice is stored
     once and referenced twice. Nothing is copied silently: every collision or
     unreadable source raises before the manifest is written.
+
+    Every file and folder this call creates, ``inputs/`` included, is
+    appended to ``created``. A failure here removes them again; a caller
+    that fails later passes the list to ``remove_created_paths`` so a
+    corrected retry finds the directory as it was.
     """
     project_dir = Path(directory).resolve()
     if not project_dir.is_dir():
         raise InputError(f"project directory must exist: {directory}")
+    record: list[Path] = [] if created is None else created
+    start = len(record)
+    try:
+        return _place_project_inputs(project_dir, directory, scenario, routes, baseline, variants, record)
+    except BaseException:
+        mine = record[start:]
+        del record[start:]
+        remove_created_paths(mine)
+        raise
+
+
+def _place_project_inputs(
+    project_dir: Path,
+    directory: Path,
+    scenario: Path,
+    routes: Path | None,
+    baseline: Path | None,
+    variants: dict[str, Path] | None,
+    created: list[Path],
+) -> dict[str, Path]:
     copied_sources: dict[Path, Path] = {}
 
     def place(source: Path | None) -> Path | None:
@@ -431,12 +477,14 @@ def prepare_project_directory(
             target = resolved
         except ValueError:
             inputs_dir = project_dir / "inputs"
-            inputs_dir.mkdir(parents=True, exist_ok=True)
+            if not inputs_dir.exists():
+                inputs_dir.mkdir()
+                created.append(inputs_dir)
             target = inputs_dir / resolved.name
             if resolved.is_dir():
-                _copy_route_folder(resolved, target)
+                _copy_route_folder(resolved, target, created)
             else:
-                _copy_regular_file(resolved, target)
+                _copy_regular_file(resolved, target, created)
         copied_sources[resolved] = target
         return target
 
