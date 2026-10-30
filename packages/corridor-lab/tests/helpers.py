@@ -66,3 +66,37 @@ def scenario(routes: list[dict] | None = None, objective: dict | None = None) ->
     if objective is not None:
         result["objective"] = copy.deepcopy(objective)
     return result
+
+
+def make_directory_link(link: Path, target: Path) -> bool:
+    """Create a directory symlink, or a junction on Windows; False if neither works.
+
+    Some Windows accounts cannot create symlinks, while junctions need no
+    privilege, so containment tests cover both kinds of directory link.
+    """
+    import os
+
+    try:
+        os.symlink(target, link, target_is_directory=True)
+        return True
+    except (OSError, NotImplementedError):
+        pass
+    if os.name == "nt":
+        try:
+            import _winapi
+
+            _winapi.CreateJunction(str(target), str(link))
+            return True
+        except (ImportError, AttributeError, OSError):
+            pass
+    return False
+
+
+def remove_directory_link(link: Path) -> None:
+    """Remove only the link itself, never the directory it points at."""
+    import os
+
+    if os.name == "nt":
+        os.rmdir(link)
+    else:
+        os.unlink(link)

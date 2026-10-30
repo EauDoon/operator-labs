@@ -16,11 +16,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import stat as stat_module
 from dataclasses import dataclass
 from decimal import Decimal
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from .analysis import deadline_target, resolution_quantiles
 from .variants import (
@@ -273,6 +274,27 @@ def parse_manifest(value: object) -> ProjectManifest:
     )
 
 
+def containment_problem(project_dir: Path, ref_path: str) -> str | None:
+    """Explain why a manifest path would leave the project, or return None.
+
+    ``project create`` refuses inputs outside the project directory, and a
+    loaded project holds the same line. On Windows a drive-relative path
+    such as ``C:outside/scenario.json`` replaces the project directory when
+    joined, so it resolves against the working directory instead. A
+    junction or a symlinked directory inside the project can also lead out
+    of it. Neither input is fingerprinted or resolved.
+    """
+    if os.name == "nt":
+        windows = PureWindowsPath(ref_path)
+        if windows.drive or windows.root:
+            return "is not a portable relative project path"
+    try:
+        (project_dir / ref_path).resolve().relative_to(project_dir.resolve())
+    except (OSError, RuntimeError, ValueError):
+        return "resolves outside the project directory"
+    return None
+
+
 def load_project(path: str | Path) -> LoadedProject:
     """Read, resolve, and status a project from its manifest file or directory."""
     location = Path(path)
@@ -284,6 +306,10 @@ def load_project(path: str | Path) -> LoadedProject:
     problems: list[str] = []
 
     def resolve(ref: InputRef, label: str) -> None:
+        problem = containment_problem(project_dir, ref.path)
+        if problem is not None:
+            problems.append(f"{label}: {ref.path} {problem}")
+            return
         target = project_dir / ref.path
         try:
             metadata = target.lstat()
