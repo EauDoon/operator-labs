@@ -227,6 +227,8 @@ def run_campaign(
             "minimum_ratio": minimum_ratio,
             "population_scope": population_scope,
             "population_minimum": population_minimum,
+            # The batch phase's own per-file threshold; null without a batch phase.
+            "batch_minimum_ratio": batch_minimum_ratio if batch is not None else None,
         },
     }
     ensure_object_values_absent(campaign, tuple(canary.value for canary in contract.canaries))
@@ -340,6 +342,18 @@ def _require_summary_shape(summary: dict[str, Any], label: str) -> None:
         fail("coverage object")
 
 
+def _coverage_identity(identity: dict[str, Any]) -> dict[str, Any]:
+    """The coverage settings a comparison must match.
+
+    Summaries saved before 0.4.0 did not record the batch per-file
+    threshold; a missing key counts as null, so they still compare with a
+    summary whose campaign had no batch threshold.
+    """
+    coverage = dict(identity.get("coverage") or {})
+    coverage.setdefault("batch_minimum_ratio", None)
+    return coverage
+
+
 def compare_summaries(baseline_summary: dict[str, Any], candidate_summary: dict[str, Any]) -> dict[str, Any]:
     """Compare two saved campaign summaries with strict compatibility checks.
 
@@ -365,10 +379,11 @@ def compare_summaries(baseline_summary: dict[str, Any], candidate_summary: dict[
             "campaign comparison is unsupported: the summaries declare different required retained fields "
             "(identity is scope plus key); run both campaigns with the same contract"
         )
-    if (baseline_identity.get("coverage") or {}) != (candidate_identity.get("coverage") or {}):
+    if _coverage_identity(baseline_identity) != _coverage_identity(candidate_identity):
         raise InputError(
             "campaign comparison is unsupported: the summaries were run with different coverage thresholds "
-            "or population definitions; rerun one of the campaigns with matching configuration"
+            "(including the batch per-file threshold) or population definitions; rerun one of the campaigns "
+            "with matching configuration"
         )
     phases: dict[str, Any] = {}
     for name in sorted(set(baseline_summary.get("phases", {})) | set(candidate_summary.get("phases", {}))):
