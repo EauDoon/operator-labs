@@ -42,6 +42,7 @@ from .projects import (
     prepare_project_directory,
     project_input_records,
     project_scenario_state,
+    refresh_project,
     remove_created_paths,
     write_project,
 )
@@ -350,6 +351,19 @@ def build_parser() -> argparse.ArgumentParser:
     run_variants.add_argument("--format", choices=("json", "markdown"), default=None)
     run_variants.add_argument("--output", help="write the combined report to this UTF-8 path outside the project")
     run_variants.add_argument("--evidence", help=PROJECT_EVIDENCE_HELP)
+    refresh = project_commands.add_parser(
+        "refresh",
+        help="accept deliberately edited inputs after validating them (explicit save)",
+        description=(
+            "Validate each named input and record its new SHA-256 in the manifest. The manifest is written only "
+            "when every named input passes its validator and the project then loads with no problems; otherwise "
+            "it is left unchanged and every blocking problem is listed. Inputs themselves are never rewritten, "
+            "and unnamed inputs are never touched."
+        ),
+    )
+    refresh.add_argument("project", help="project directory or manifest JSON path")
+    refresh.add_argument("--input", action="append", required=True, dest="inputs", metavar="LABEL",
+                         help="scenario, routes, baseline, or variant:NAME for a file variant; repeat for several")
     run_project = project_commands.add_parser("run", help="run saved experiments against the project inputs")
     run_project.add_argument("project", help="project directory or manifest JSON path")
     run_project.add_argument("--experiment", action="append", help="run only these named experiments")
@@ -575,6 +589,26 @@ def _project_run(args: argparse.Namespace) -> int:
     return 0 if combined["status"] == "pass" else 2
 
 
+def _project_refresh(args: argparse.Namespace) -> int:
+    result = refresh_project(_require_cli_text(args.project, "project"), list(args.inputs))
+    for warning in result.warnings:
+        sys.stderr.write(f"warning: {warning}\n")
+    if result.problems:
+        for problem in result.problems:
+            _write_error(problem)
+        _write_error("manifest left unchanged")
+        return 2
+    for outcome in result.outcomes:
+        if outcome.changed:
+            sys.stdout.write(f"{outcome.label}: {outcome.path} refreshed "
+                             f"({outcome.old_sha256[:12]} -> {outcome.new_sha256[:12]})\n")
+        else:
+            sys.stdout.write(f"{outcome.label}: {outcome.path} unchanged\n")
+    if result.written:
+        sys.stdout.write(f"manifest updated: {result.manifest_path}\n")
+    return 0
+
+
 def _manifest_with_variants(loaded, derived_variants) -> ProjectManifest:
     return ProjectManifest(
         project_id=loaded.manifest.project_id,
@@ -740,6 +774,8 @@ def _project(args: argparse.Namespace) -> int:
         output_format = _show_variant_format(args.format, args.output)
         _emit_project_report(args, loaded, report, render_report(report, output_format), destinations, saved_routes)
         return 0
+    if command == "refresh":
+        return _project_refresh(args)
     if command == "compare-variants":
         return _project_compare_variants(args)
     if command == "run-variants":
