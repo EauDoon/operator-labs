@@ -21,6 +21,11 @@ are now deprecated; see the deprecation note at the top of each.
   `PYTHONPATH=src` setting that CI uses, so the documented command failed on
   a clean checkout. The README now shows the command that CI runs and that
   `CONTRIBUTING.md` documents.
+- Corridor Lab desktop: after **Open Project...**, **Save Report...** and
+  evidence export protected only the scenario file, so they could overwrite the
+  project manifest, baseline, or variant files and leave a project that no
+  longer validates. Reports now refuse any destination inside the open project
+  directory, as `project run --output` already did.
 
 ## [0.3.0] - 2026-10-09
 

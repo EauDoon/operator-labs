@@ -102,6 +102,31 @@ class ControllerProjectTests(unittest.TestCase):
             self.assertEqual(sorted(fresh.saved_experiment_names()), ["deadline-sweep", "volume-grid"])
             self.assertIsNone(fresh.run_saved_experiment("volume-grid").error)
 
+    def test_reports_and_evidence_never_write_into_the_open_project(self):
+        with tempfile.TemporaryDirectory() as temporary, __import__("contextlib").redirect_stdout(__import__("io").StringIO()):
+            project_root = Path(temporary) / "project"
+            project_root.mkdir()
+            manifest_path = make_project(project_root)
+            baseline_path = project_root / "inputs" / "baseline.json"
+            manifest_before = manifest_path.read_bytes()
+            baseline_before = baseline_path.read_bytes()
+            controller = CorridorGuiController()
+            self.assertIsNone(controller.open_project(manifest_path).error)
+            self.assertIsNone(controller.run_saved_experiment("deadline-sweep").error)
+            for target in (manifest_path, baseline_path, project_root / "report.md"):
+                with self.subTest(target=target.name):
+                    saved = controller.save_last_report(target, "markdown")
+                    self.assertIsNotNone(saved.error)
+                    exported = controller.export_evidence(target)
+                    self.assertIsNotNone(exported.error)
+            self.assertEqual(manifest_path.read_bytes(), manifest_before)
+            self.assertEqual(baseline_path.read_bytes(), baseline_before)
+            self.assertFalse((project_root / "report.md").exists())
+            self.assertEqual(cli_main(["project", "validate", str(project_root)]), 0)
+            outside = Path(temporary) / "report.md"
+            self.assertIsNone(controller.save_last_report(outside, "markdown").error)
+            self.assertTrue(outside.is_file())
+
     def test_save_project_requires_file_backed_scenario(self):
         controller = CorridorGuiController()
         self.assertIsNone(controller.load_builtin_demo().error)

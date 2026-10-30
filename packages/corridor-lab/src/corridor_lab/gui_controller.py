@@ -188,6 +188,10 @@ class CorridorGuiController:
                 scanned.append(self.routes_path)
             else:
                 inputs.append(self.routes_path)
+        # As with `project run --output`, reports never land inside the open
+        # project: its manifest, baseline, and variants live there.
+        if self.project_path is not None:
+            scanned.append(self.project_path)
         return tuple(inputs), tuple(scanned)
 
     def _success(
