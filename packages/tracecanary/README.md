@@ -99,11 +99,15 @@ It refuses a non-empty output directory. From a fresh checkout, set `PYTHONPATH=
 
 ## Saved local projects
 
-`tracecanary project create --directory investigation --project-id fictional-campaign --contract contract.json [--input export.json] [--baseline before.json] [--candidate after.json] [--batch-dir exports --batch-recursive --batch-include-paths --batch-minimum-ratio 0.95] [--minimum-ratio 0.95] [--population-scope span --population-minimum 1]` saves a self-contained, portable project: the validated `tracecanary.project/v1` manifest plus explicitly copied synthetic inputs. Relative paths resolve against the project directory, and each input (including the batch directory) records a SHA-256 fingerprint, so `project validate` and `project open` explain missing or modified inputs instead of accepting them silently. Saved settings are separate from result evidence; the desktop **Open Project...** applies them to the selectors only, and reports still require an explicit save.
+`tracecanary project create --directory investigation --project-id fictional-campaign --contract contract.json [--input export.json] [--baseline before.json] [--candidate after.json] [--batch-dir exports --batch-recursive --batch-include-paths --batch-minimum-ratio 0.95] [--minimum-ratio 0.95] [--population-scope span --population-minimum 1]` saves a self-contained, portable project: the validated `tracecanary.project/v1` manifest plus explicitly copied synthetic inputs. Relative paths resolve against the project directory, and each input (including the batch directory) records a SHA-256 fingerprint, so `project validate` and `project open` explain missing or modified inputs instead of accepting them silently. Saved settings are separate from result evidence; the desktop **Open Project...** applies them to the selectors only, and reports still require an explicit save. It fills each threshold entry with the saved value and leaves it blank when the project saved none, so **Run Campaign** gates exactly what `campaign run PROJECT` gates, including the saved batch per-file threshold while the batch selector still names the project's batch directory.
+
+A population gate needs both `--population-scope` and `--population-minimum`; half a gate is refused with exit 2 by `project create`, `batch`, `coverage-batch` and `campaign run` (after command-line overrides merge with the saved gate, so overriding one half of a saved gate still works). Every input a manifest names must resolve inside the project directory when the project loads, just as `project create` requires: a junction or symlinked directory that leads out of the project, or (on Windows) a drive-relative reference such as `C:outside/contract.json`, is reported as a problem. A `project create` or desktop **Save Project As...** that fails part-way removes the copies it made, so a corrected retry starts from the directory as it was.
+
+`tracecanary project refresh PROJECT --input LABEL [--input LABEL ...]` explicitly accepts a deliberate edit (a new canary in the contract, a regenerated batch folder) that `project validate` would otherwise report as changed since the project was saved. Labels are `contract`, `input`, `baseline`, `candidate` and `batch`. Each named input must still be present, resolve inside the project, and pass its check: the contract must load; an input or candidate must be a bounded, structurally valid OTLP export (candidates may leak by design, so their findings do not block); a baseline must satisfy the contract, as `promote-baseline` requires; a batch folder must enumerate within its bounds with the saved recursive setting (its exports may fail by design). The new fingerprints are written only when every named input passes and the project then loads with no problems; otherwise the command exits 2, lists every blocking problem (including unnamed inputs that are still modified or missing) and leaves the manifest byte-identical. A refreshed contract that the saved baseline no longer satisfies is reported as a warning. Output names only the label, the path and `refreshed` or `unchanged`, never a digest of a canary-bearing file. Refresh validates content, which `project create` does not; it never rewrites an input and never touches an input you did not name.
 
 ## Regression campaigns
 
-`tracecanary campaign run PROJECT [--control control.json] [--save-summary summary.json]` runs one bounded campaign from a saved project: contract validity, canary exercise in the unsanitized positive control (a control pass confirms exercise, never a privacy pass), baseline validity (a failing baseline is never used), per-candidate privacy and retention findings, the batch directory through the bounded batch engine, and the configured coverage and population gates. A population gate applies to every named candidate, whose `TC013` findings appear in the population-gate phase while privacy findings stay with the candidate, and to every batch file in the batch phase. Every phase keeps its own status; the campaign status applies unresolved precedence. Value-free, deterministic summaries are saved only through the explicit `--save-summary` action (outside the project directory), and `tracecanary campaign compare baseline.json candidate.json` compares two saved summaries after strict compatibility checks (same contract version, identical required retained fields by scope and key, and identical coverage thresholds and population definitions; incompatible pairs are reported as unsupported rather than compared loosely), aggregating findings by value-free code as persistent, resolved, or new — no entity identity or causal attribution is implied. `tracecanary project promote-baseline PROJECT --candidate candidate.json` promotes a candidate to the project baseline only after the candidate satisfies the contract. The desktop **Regression Campaign** tab runs the same campaign over the current selectors, including **Recursive** and **Include paths** for the batch directory, saves summaries, and compares saved summaries. A population minimum that is not a whole number shows guidance instead of being ignored.
+`tracecanary campaign run PROJECT [--control control.json] [--format json|human] [--output FILE] [--save-summary summary.json] [--save-evidence evidence.json]` runs one bounded campaign from a saved project: contract validity, canary exercise in the unsanitized positive control (a control pass confirms exercise, never a privacy pass), baseline validity (a failing baseline is never used), per-candidate privacy and retention findings, the batch directory through the bounded batch engine, and the configured coverage and population gates. A population gate applies to every named candidate, whose `TC013` findings appear in the population-gate phase while privacy findings stay with the candidate, and to every batch file in the batch phase. Every phase keeps its own status; the campaign status applies unresolved precedence. Value-free, deterministic summaries are saved only through the explicit `--save-summary` action (outside the project directory), and `tracecanary campaign compare baseline.json candidate.json` compares two saved summaries after strict compatibility checks (same contract version, identical required retained fields by scope and key, and identical coverage thresholds and population definitions; incompatible pairs are reported as unsupported rather than compared loosely), aggregating findings by value-free code as persistent, resolved, or new — no entity identity or causal attribution is implied. `tracecanary project promote-baseline PROJECT --candidate candidate.json` promotes a candidate to the project baseline only after the candidate satisfies the contract. The desktop **Regression Campaign** tab runs the same campaign over the current selectors, including **Recursive** and **Include paths** for the batch directory, saves summaries, and compares saved summaries. A population minimum that is not a whole number shows guidance instead of being ignored.
 
 `campaign run PROJECT` evaluates both the saved `input` and the saved `candidate`, when present.
 `campaign run --candidate extra.json` adds a candidate; it does not replace or
@@ -111,9 +115,34 @@ skip either saved selection. A project containing only a baseline and candidate
 therefore checks that candidate against the baseline without requiring the path
 again on the command line. Its findings appear in the campaign and saved summary:
 safe candidates return 0, privacy or retention regressions return 1, and malformed
-candidates or failing baselines keep the campaign unresolved (2). Summary
-comparison still returns 0 when the comparison itself succeeds; inspect the
-reported campaign statuses and findings for the privacy outcome.
+candidates or failing baselines keep the campaign unresolved (2). Summary comparison returns 0 when the comparison itself succeeds; add
+`--fail-on-regression` to gate on the privacy outcome (see below).
+
+`campaign run` prints the campaign as JSON by default; `--format human` prints
+the same value-free view the desktop shows, and `--output FILE` writes the
+report atomically instead of printing it, leaving stdout for the save
+confirmations. `--save-evidence FILE` saves the value-free
+`tracecanary.evidence/v1` document (the summary, the tool version and the
+standing meaning, never canary values, contracts or traces), the same document
+the desktop **Save Evidence As...** writes. Before the campaign runs,
+`--output`, `--save-summary` and `--save-evidence` must name different files,
+outside the project directory and the batch directory, none of them a campaign
+input; a refused destination exits 2 with nothing printed or written. Every
+requested text is checked against the canary values before the first byte goes
+out, and a hit withholds all of them (exit 2, no output).
+
+`tracecanary campaign compare baseline.json candidate.json --fail-on-regression`
+turns the comparison into a CI gate. The output gains a `gate` verdict (`Gate:
+PASS`, `REGRESSION` or `UNRESOLVED` in the human view) with value-free reasons
+that each name a phase and a status or finding code: the campaign or a phase
+status got worse (pass, then regression, then unresolved), a phase that ran in
+the baseline is absent or skipped in the candidate, a finding code is new in a
+phase, or a persistent code's count increased (`candidates: TC001 1 -> 3`). A
+phase that was absent or skipped in the baseline is judged by its own status
+and findings. The exit status is 0 for pass, 1 for regression, and 2 when the
+candidate campaign is unresolved, even when the baseline was unresolved too;
+incompatible or malformed summaries stay unresolved (2). Without the flag the
+output and exit status are unchanged.
 
 Campaigns inherit the project's saved `coverage.minimum_ratio` for every named
 candidate (saved input, saved candidate, and any additional candidate). For
@@ -121,7 +150,12 @@ example, a project created with `--minimum-ratio 0.95` applies that gate when
 running `campaign run PROJECT`; the threshold need not be repeated. An explicit
 `campaign run PROJECT --minimum-ratio VALUE` overrides it for that run, including
 `0`, without changing the saved project. Reports and saved summaries record the
-effective threshold, and summary comparison rejects different thresholds.
+effective threshold, and summary comparison rejects different thresholds. They
+also record the batch per-file threshold as `coverage.batch_minimum_ratio`
+(null without a batch phase), and comparison rejects summaries whose batch
+thresholds differ. Summaries saved before 0.4.0 did not record it: they still
+compare with a summary whose campaign had no batch threshold, and are
+unsupported against one that had a threshold.
 With neither a saved nor an explicit threshold, the existing baseline-diff or
 standalone-check behavior remains. The saved `batch.minimum_ratio` remains
 independent of the saved named-candidate threshold; an explicit campaign
@@ -129,7 +163,7 @@ independent of the saved named-candidate threshold; an explicit campaign
 
 ## Contract development and diagnosis
 
-`tracecanary contract template --output new-contract.json` writes a minimal valid synthetic contract (never overwritten; replace the placeholder canary value before use). `tracecanary contract review draft.json` adds conservative, value-free diagnostics on top of the strict runtime validator: direct retention conflicts with actionable rule locations, malformed wildcard path prefixes that can never match, forbidden paths that stop before a scalar value, forbidden exact keys shadowed by broader prefix rules, and canary values that occur in TraceCanary's own report wording (a `conflict` at `canaries[N]`: every report containing that wording would be withheld with exit 2 and no output). If the review's own text contains such a value, the review itself is withheld the same way. Every diagnostic names a safe structural location, explains the issue, and suggests a correction without weakening the contract; canary values never appear, and passing review is not a privacy guarantee. The desktop **Is the Contract Usable?** tab gains **Review Contract** and **Edit Contract JSON...** — a transactional editor with a minimal template, strict validation, and an explicit **Save Contract As...** action that is clearly labeled as writing canary configuration, distinct from value-free report exports.
+`tracecanary contract template --output new-contract.json` writes a minimal valid synthetic contract (never overwritten; replace the placeholder canary value before use). `tracecanary contract review draft.json` reads the draft with the contract loader's limits (1 MB, nesting depth 50), on the CLI and in the desktop alike, and adds conservative, value-free diagnostics on top of the strict runtime validator: direct retention conflicts with actionable rule locations, malformed wildcard path prefixes that can never match, forbidden paths that stop before a scalar value, forbidden exact keys shadowed by broader prefix rules, and canary values that occur in TraceCanary's own report wording (a `conflict` at `canaries[N]`: every report containing that wording would be withheld with exit 2 and no output). That wording covers every report mode, every finding code, and the text of real reports with findings from every checker, batch format, campaign view, summary, comparison and evidence document, plus identifiers numbered per draft such as `required-0001` and `item-0001`. If the review's own text contains such a value, the review itself is withheld the same way. Every diagnostic names a safe structural location, explains the issue, and suggests a correction without weakening the contract; canary values never appear, and passing review is not a privacy guarantee. The desktop **Is the Contract Usable?** tab gains **Review Contract** and **Edit Contract JSON...** — a transactional editor with a minimal template, strict validation, and an explicit **Save Contract As...** action that is clearly labeled as writing canary configuration, distinct from value-free report exports.
 
 ## Commands and exit status
 

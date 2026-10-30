@@ -78,7 +78,12 @@ This tab groups the assumption analyses on the declared data:
   baseline.
 
 Infeasible or unreachable outcomes are explained in the report rather than
-hidden. Every analysis runs against embedded routes.
+hidden. Every analysis runs against embedded routes. One exception keeps
+saved projects working: when **Open Project...** loads a project whose
+scenario embeds no routes but which saved a route selection, the saved
+routes stand in for the embedded ones, as they do for the `corridorlab
+project` commands, and the status line says so. The scenario file is not
+rewritten, and **Save Project As...** copies it unmodified.
 
 ## 4. Report
 
@@ -90,7 +95,10 @@ Report...** is the only action that writes a report file, after you choose a
 path in the save dialog. Report destinations that would replace a tracked
 scenario or route input, including symlinks, hard links, and paths inside a
 selected route folder, are rejected before anything is written, and a failed
-save preserves any previous report file.
+save preserves any previous report file. **Export Evidence...** writes the
+current report as a self-explaining evidence document; while a project is
+open it also lists every project input with its verified SHA-256 under
+`inputs.project_inputs`, as `corridorlab project run --evidence` does.
 
 The GUI calls Corridor Lab library functions directly. It does not start a
 subprocess, fetch live data, send telemetry, or persist state. For a headless
