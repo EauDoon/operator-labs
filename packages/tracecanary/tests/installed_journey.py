@@ -94,8 +94,16 @@ def main():
         original = contract.read_bytes()
         assert controller.save_campaign_evidence(contract, campaign).status == "unresolved"
         assert contract.read_bytes() == original
-        (root / "moved-0" / "inputs" / "safe-export.json").write_text("{}", encoding="utf-8")
+        edited = root / "moved-0" / "inputs" / "safe-export.json"
+        edited.write_text("{}", encoding="utf-8")
         run("project", "validate", root / "moved-0", expected=2)
+        manifest = (root / "moved-0" / "tracecanary.project.json").read_bytes()
+        run("project", "refresh", root / "moved-0", "--input", "baseline", "--input", "candidate", expected=2)
+        assert (root / "moved-0" / "tracecanary.project.json").read_bytes() == manifest
+        edited.write_text(json.dumps(files["safe-export.json"], indent=2), encoding="utf-8")
+        refreshed = run("project", "refresh", root / "moved-0", "--input", "baseline", "--input", "candidate")
+        assert "baseline: inputs/safe-export.json refreshed" in refreshed, refreshed
+        run("project", "validate", root / "moved-0")
     print("INSTALLED_TRACECANARY_JOURNEY_OK")
 
 

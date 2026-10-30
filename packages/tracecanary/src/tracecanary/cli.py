@@ -192,6 +192,19 @@ def build_parser() -> argparse.ArgumentParser:
     project_validate.add_argument("project", type=_cli_path)
     project_open = project_commands.add_parser("open", help="resolve a project and report missing or changed inputs")
     project_open.add_argument("project", type=_cli_path)
+    refresh = project_commands.add_parser(
+        "refresh",
+        help="accept deliberately edited inputs after validating them (explicit save)",
+        description=(
+            "Validate each named input and record its new fingerprint in the manifest. The manifest is written "
+            "only when every named input passes and the project then loads with no problems; otherwise it is "
+            "left unchanged and every blocking problem is listed. Inputs are never rewritten, unnamed inputs are "
+            "never touched, and no digest is printed."
+        ),
+    )
+    refresh.add_argument("project", type=_cli_path, help="project directory or manifest path")
+    refresh.add_argument("--input", action="append", required=True, dest="inputs", metavar="LABEL",
+                         help="contract, input, baseline, candidate, or batch; repeat for several")
     promote = project_commands.add_parser("promote-baseline", help="explicitly promote a passing candidate to the project baseline")
     promote.add_argument("project", type=_cli_path)
     promote.add_argument("--candidate", required=True, type=_cli_path, help="candidate export that must satisfy the contract first")
@@ -398,6 +411,8 @@ def _project(args: Any) -> int:
             return EXIT_PASS if loaded.ok else EXIT_UNRESOLVED
         if command == "promote-baseline":
             return _project_promote_baseline(args.project, args.candidate)
+        if command == "refresh":
+            return _project_refresh(args.project, args.inputs)
         raise InputError(f"unsupported project command: {command}")
     except (InputError, ValueError) as exc:
         print(f"TraceCanary: UNRESOLVED: {exc}", file=sys.stderr)
@@ -436,6 +451,24 @@ def _project_prepare(directory: Path, *, contract: Path, input: Path | None, bas
     if batch_target is not None:
         placed["batch directory"] = batch_target
     return placed
+
+
+def _project_refresh(project: Path, labels: list[str]) -> int:
+    from tracecanary.project import refresh_project
+
+    result = refresh_project(project, labels)
+    for warning in result.warnings:
+        print(f"TraceCanary: WARNING: {warning}", file=sys.stderr)
+    if result.problems:
+        for problem in result.problems:
+            print(f"TraceCanary: UNRESOLVED: {problem}", file=sys.stderr)
+        print("TraceCanary: UNRESOLVED: manifest left unchanged", file=sys.stderr)
+        return EXIT_UNRESOLVED
+    for outcome in result.outcomes:
+        print(f"{outcome.label}: {outcome.path} {'refreshed' if outcome.changed else 'unchanged'}")
+    if result.written:
+        print(f"Manifest updated: {result.manifest_path}")
+    return EXIT_PASS
 
 
 def _project_promote_baseline(directory: Path, candidate: Path) -> int:
