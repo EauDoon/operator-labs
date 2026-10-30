@@ -525,13 +525,15 @@ class TraceCanaryController:
         population_minimum: int | None = None,
         batch_recursive: bool = False,
         batch_include_paths: bool = False,
+        candidate_path: str | Path | None = None,
     ) -> GuiResult:
         """Run the regression campaign from plain selector values in one bounded pass.
 
         The window captures all values on the main thread; this method never
         touches Tk. Input paths are recorded on the result so saved summaries
         and reports stay protected. The batch selectors apply exactly as they
-        do for ``campaign run`` and saved projects.
+        do for ``campaign run`` and saved projects. Like ``campaign run``, the
+        selected input and the selected candidate are both checked.
         """
         inputs: list[Path] = [Path(contract_path)]
         if baseline_path and str(baseline_path).strip():
@@ -540,14 +542,19 @@ class TraceCanaryController:
             inputs.append(Path(control_path))
         batch = Path(batch_path) if batch_path and str(batch_path).strip() else None
         input_dir = batch
-        if input_path and str(input_path).strip() and Path(input_path) not in inputs:
-            inputs.append(Path(input_path))
+        candidate_paths: list[Path] = []
+        for selected in (input_path, candidate_path):
+            if selected and str(selected).strip() and Path(selected) not in candidate_paths:
+                candidate_paths.append(Path(selected))
+        for path in candidate_paths:
+            if path not in inputs:
+                inputs.append(path)
 
         def operation() -> tuple[dict[str, Any], str, str]:
             contract = load_contract(Path(contract_path))
             control_payload = self._load_trace(Path(control_path), contract) if control_path and str(control_path).strip() else None
             baseline_payload = self._load_trace(Path(baseline_path), contract) if baseline_path and str(baseline_path).strip() else None
-            candidates = [(Path(input_path).name, Path(input_path))] if input_path and str(input_path).strip() else []
+            candidates = [(path.name, path) for path in candidate_paths]
             campaign = run_campaign_engine(
                 contract,
                 control_payload=control_payload,

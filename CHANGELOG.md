@@ -31,6 +31,12 @@ are now deprecated; see the deprecation note at the top of each.
   `project create --variant NAME=PATH` silently replaced that entry in the
   manifest. It now refuses any existing variant name with exit 2 and leaves the
   manifest unchanged.
+- TraceCanary desktop: **Run Campaign** checked only the Input selector and
+  ignored the Candidate selector, which **Open Project...** fills from a saved
+  `--candidate`. A project with a passing baseline and a leaking candidate
+  therefore passed in the desktop while `campaign run` reported the
+  regression. The desktop campaign now checks both selections, as
+  `campaign run` does, and protects the candidate from summary saves.
 
 ## [0.3.0] - 2026-10-09
 

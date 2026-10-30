@@ -225,6 +225,31 @@ class ControllerCampaignTests(unittest.TestCase):
         self.assertNotIn("TCANARY", summary_path.read_text(encoding="utf-8"))
         self.assertEqual(saved["phases"]["candidates"]["finding_counts"], {"TC001": 1, "TC002": 1})
 
+    def test_controller_campaign_checks_the_selected_candidate(self):
+        # The desktop Candidate selector, as Open Project fills it from a
+        # project saved with only --baseline and --candidate.
+        leaking = self.controller.run_campaign_selections(
+            contract_path=str(self.root / "contract.json"),
+            input_path=None,
+            baseline_path=str(self.root / "safe-export.json"),
+            candidate_path=str(self.root / "leaked-prompt.json"),
+            batch_path=None,
+        )
+        self.assertEqual((leaking.status, leaking.exit_code), ("regression", 1))
+        candidates = json.loads(leaking.json)["phases"]["candidates"]
+        self.assertEqual([item["label"] for item in candidates["items"]], ["leaked-prompt.json"])
+        self.assertEqual(candidates["finding_counts"], {"TC001": 1, "TC002": 1})
+        self.assertIn(self.root / "leaked-prompt.json", leaking.inputs)
+        both = self.controller.run_campaign_selections(
+            contract_path=str(self.root / "contract.json"),
+            input_path=str(self.root / "safe-export.json"),
+            baseline_path=None,
+            candidate_path=str(self.root / "leaked-prompt.json"),
+            batch_path=None,
+        )
+        self.assertEqual(both.status, "regression")
+        self.assertEqual(json.loads(both.json)["phases"]["candidates"]["count"], 2)
+
     def test_summary_save_refuses_inputs_and_project_directories(self):
         result = self.controller.run_campaign_selections(
             contract_path=str(self.root / "contract.json"),
