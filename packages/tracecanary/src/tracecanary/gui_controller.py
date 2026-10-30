@@ -117,6 +117,8 @@ class ProjectPaths:
     candidate: Path | None
     batch_dir: Path | None
     coverage: tuple[str, str, int | None]
+    # The saved batch per-file threshold; None when the project saved none.
+    batch_minimum_ratio: str | None = None
 
 
 class TraceCanaryController:
@@ -447,6 +449,7 @@ class TraceCanaryController:
             coverage=(manifest.coverage.minimum_ratio or "",
                       manifest.coverage.population_scope or "",
                       manifest.coverage.population_minimum),
+            batch_minimum_ratio=manifest.batch.minimum_ratio if manifest.batch is not None else None,
         )
         return GuiResult("pass", EXIT_PASS, human, human, None, (loaded.path,), None, "project-open", project_paths)
 
@@ -555,6 +558,7 @@ class TraceCanaryController:
         batch_recursive: bool = False,
         batch_include_paths: bool = False,
         candidate_path: str | Path | None = None,
+        batch_minimum_ratio: str | None = None,
     ) -> GuiResult:
         """Run the regression campaign from plain selector values in one bounded pass.
 
@@ -563,6 +567,8 @@ class TraceCanaryController:
         and reports stay protected. The batch selectors apply exactly as they
         do for ``campaign run`` and saved projects. Like ``campaign run``, the
         selected input and the selected candidate are both checked.
+        ``batch_minimum_ratio`` is the batch phase's per-file threshold, which
+        the window passes for a campaign over an opened project's batch.
         """
         inputs: list[Path] = [Path(contract_path)]
         if baseline_path and str(baseline_path).strip():
@@ -592,6 +598,7 @@ class TraceCanaryController:
                 batch=batch,
                 batch_recursive=bool(batch_recursive),
                 batch_include_paths=bool(batch_include_paths),
+                batch_minimum_ratio=batch_minimum_ratio,
                 minimum_ratio=minimum_ratio,
                 population_scope=population_scope,
                 population_minimum=population_minimum,
