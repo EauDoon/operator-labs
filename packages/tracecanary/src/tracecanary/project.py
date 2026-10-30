@@ -13,11 +13,12 @@ modified files honestly.
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 import shutil
 import stat as stat_module
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 from tracecanary.canonical import InputError, canonical_json, load_json
@@ -258,6 +259,27 @@ def parse_manifest(value: Any) -> ProjectManifest:
     )
 
 
+def containment_problem(project_dir: Path, ref_path: str) -> str | None:
+    """Explain why a manifest path would leave the project, or return None.
+
+    ``project create`` refuses inputs outside the project directory, and a
+    loaded project holds the same line. On Windows a drive-relative path
+    such as ``C:outside/contract.json`` replaces the project directory when
+    joined, so it resolves against the working directory instead. A
+    junction or a symlinked directory inside the project can also lead out
+    of it. Neither input is fingerprinted or resolved.
+    """
+    if os.name == "nt":
+        windows = PureWindowsPath(ref_path)
+        if windows.drive or windows.root:
+            return "is not a portable relative project path"
+    try:
+        (project_dir / ref_path).resolve().relative_to(project_dir.resolve())
+    except (OSError, RuntimeError, ValueError):
+        return "resolves outside the project directory"
+    return None
+
+
 def load_project(path: str | Path, *, max_bytes: int = DEFAULT_MAX_INPUT_BYTES, max_depth: int = DEFAULT_MAX_NESTING, max_batch_files: int = DEFAULT_MAX_BATCH_FILES) -> LoadedProject:
     """Read, resolve, and status a project from its manifest file or directory."""
     location = Path(path)
@@ -268,6 +290,10 @@ def load_project(path: str | Path, *, max_bytes: int = DEFAULT_MAX_INPUT_BYTES, 
     problems: list[str] = []
 
     def resolve(ref: InputRef, label: str, *, folder: bool = False, max_files: int = max_batch_files, recursive: bool = False) -> None:
+        problem = containment_problem(project_dir, ref.path)
+        if problem is not None:
+            problems.append(f"{label}: {ref.path} {problem}")
+            return
         target = project_dir / ref.path
         try:
             metadata = target.lstat()
