@@ -19,6 +19,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from tracecanary import __version__
 from tracecanary.batching import run_batch
 from tracecanary.canonical import InputError, load_json
 from tracecanary.checker import check_trace
@@ -35,6 +36,13 @@ from tracecanary.otlp import OtlpError, validate_trace
 from tracecanary.report import Report, Status, ensure_object_values_absent
 
 CAMPAIGN_VERSION = "tracecanary.campaign/v1"
+EVIDENCE_VERSION = "tracecanary.evidence/v1"
+EVIDENCE_MEANING = (
+    "Deterministic value-free evidence for a synthetic regression campaign. "
+    "Canary values, contracts, and trace inputs are not bundled; hashes of "
+    "protected values are not treated as anonymization. Detection is bounded "
+    "by the declared contract and does not claim absence of all sensitive data."
+)
 STATUS_RANK: dict[str, int] = {"pass": 0, "regression": 1, "unresolved": 2, "skipped": -1}
 
 
@@ -254,6 +262,22 @@ def campaign_summary(campaign: dict[str, Any]) -> dict[str, Any]:
         },
         "candidate_count": campaign["phases"]["candidates"].get("count", 0),
         "compatibility": _compatibility_identity(campaign),
+    }
+
+
+def campaign_evidence(campaign: dict[str, Any]) -> dict[str, Any]:
+    """The value-free tracecanary.evidence/v1 document for a finished campaign.
+
+    It bundles the campaign summary, the configured thresholds it records,
+    the tool version, and the standing meaning. It never contains canary
+    values, contracts, or trace inputs, and it is not a privacy guarantee.
+    The CLI (``campaign run --save-evidence``) and the desktop share it.
+    """
+    return {
+        "evidence_version": EVIDENCE_VERSION,
+        "tool": {"name": "tracecanary", "version": __version__},
+        "summary": campaign_summary(campaign),
+        "meaning": EVIDENCE_MEANING,
     }
 
 

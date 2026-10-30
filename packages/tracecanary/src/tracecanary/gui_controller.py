@@ -9,10 +9,10 @@ from typing import Any
 
 import json
 
-from tracecanary import __version__
 from tracecanary.authoring import draft_canary_values, empty_template, render_review_human, review_contract, validate_draft
 from tracecanary.batching import run_batch
 from tracecanary.campaign import (
+    campaign_evidence,
     campaign_summary,
     compare_summaries as compare_summaries_engine,
     render_campaign_human,
@@ -643,19 +643,7 @@ class TraceCanaryController:
         values, contracts, or trace inputs, and it is not a privacy guarantee.
         """
         try:
-            summary = campaign_summary(json.loads(result.json))
-            evidence = {
-                "evidence_version": "tracecanary.evidence/v1",
-                "tool": {"name": "tracecanary", "version": __version__},
-                "summary": summary,
-                "meaning": (
-                    "Deterministic value-free evidence for a synthetic regression campaign. "
-                    "Canary values, contracts, and trace inputs are not bundled; hashes of "
-                    "protected values are not treated as anonymization. Detection is bounded "
-                    "by the declared contract and does not claim absence of all sensitive data."
-                ),
-            }
-            text = render_json(evidence)
+            text = render_json(campaign_evidence(json.loads(result.json)))
             ensure_text_values_absent(text, self._redacted_values(Path(result.inputs[0])))
             protect_inputs(Path(evidence_path), list(result.inputs), result.input_dir)
             write_report(Path(evidence_path), text)

@@ -202,6 +202,12 @@ def build_parser() -> argparse.ArgumentParser:
     campaign_run.add_argument("project", type=_cli_path, help="project directory or manifest path")
     campaign_run.add_argument("--control", type=_cli_path, help="unsanitized synthetic positive control")
     campaign_run.add_argument("--save-summary", type=_cli_path, help="explicitly save the value-free summary to this JSON path")
+    campaign_run.add_argument("--save-evidence", type=_cli_path,
+                              help="explicitly save the value-free tracecanary.evidence/v1 document to this JSON path")
+    campaign_run.add_argument("--format", choices=("json", "human"), default="json",
+                              help="campaign report format (default: json)")
+    campaign_run.add_argument("--output", type=_cli_path,
+                              help="write the campaign report atomically to this path instead of stdout")
     campaign_compare = campaign_commands.add_parser("compare", help="compare two saved value-free campaign summaries")
     campaign_compare.add_argument("baseline_summary", type=_cli_path)
     campaign_compare.add_argument("candidate_summary", type=_cli_path)
@@ -464,7 +470,14 @@ def canonical_json_text(value: Any) -> str:
 
 
 def _campaign(args: Any) -> int:
-    from tracecanary.campaign import campaign_summary, compare_summaries, render_comparison_human, run_campaign
+    from tracecanary.campaign import (
+        campaign_evidence,
+        campaign_summary,
+        compare_summaries,
+        render_campaign_human,
+        render_comparison_human,
+        run_campaign,
+    )
     from tracecanary.project import load_project
     from tracecanary.report import ensure_text_values_absent
 
@@ -478,7 +491,6 @@ def _campaign(args: Any) -> int:
                 return EXIT_UNRESOLVED
             manifest = loaded.manifest
             contract_path = args.contract or loaded.resolved["contract"]
-            contract = load_contract(contract_path)
             control = args.control
             baseline = args.baseline or loaded.resolved.get("baseline")
             candidates: list[tuple[str, Path]] = []
@@ -495,6 +507,13 @@ def _campaign(args: Any) -> int:
             # Checked after the overrides merge with the saved gate, so one
             # override over a saved full gate still works.
             population_gate_configured(population_scope, population_minimum)
+            sources = [path for path in (contract_path, control, baseline, *(path for _, path in candidates))
+                       if path is not None]
+            _protect_campaign_destinations(
+                (("--output", args.output), ("--save-summary", args.save_summary), ("--save-evidence", args.save_evidence)),
+                sources, loaded.path.parent, batch,
+            )
+            contract = load_contract(contract_path)
             campaign = run_campaign(
                 contract,
                 control_payload=_load_trace(control, contract) if control is not None else None,
@@ -509,22 +528,21 @@ def _campaign(args: Any) -> int:
                 population_minimum=population_minimum,
             )
             canary_values = tuple(canary.value for canary in contract.canaries)
-            output = render_json(campaign)
+            # Render and check every requested text before the first byte goes
+            # out: any hit withholds the report, summary and evidence alike.
+            output = render_json(campaign) if args.format == "json" else render_campaign_human(campaign)
             ensure_text_values_absent(output, canary_values)
-            summary_path = args.save_summary
-            summary_text = ""
-            if summary_path is not None:
-                # Check the summary before anything is emitted, so a withheld
-                # summary never follows a printed campaign report.
-                summary_text = render_json(campaign_summary(campaign))
-                ensure_text_values_absent(summary_text, canary_values)
-            _emit(output, args.output if hasattr(args, "output") else None)
-            if summary_path is not None:
-                sources = [contract_path, control, baseline, batch, *(path for _, path in candidates)]
-                protect_inputs(summary_path, [path for path in sources if path is not None], loaded.path.parent)
-                protect_inputs(summary_path, [], batch)
-                write_report(summary_path, summary_text)
-                print(f"Value-free campaign summary saved to {summary_path}")
+            summary_text = render_json(campaign_summary(campaign)) if args.save_summary is not None else ""
+            ensure_text_values_absent(summary_text, canary_values)
+            evidence_text = render_json(campaign_evidence(campaign)) if args.save_evidence is not None else ""
+            ensure_text_values_absent(evidence_text, canary_values)
+            _emit(output, args.output)
+            if args.save_summary is not None:
+                write_report(args.save_summary, summary_text)
+                print(f"Value-free campaign summary saved to {args.save_summary}")
+            if args.save_evidence is not None:
+                write_report(args.save_evidence, evidence_text)
+                print(f"Value-free evidence saved to {args.save_evidence}")
             return _status_exit(campaign["status"])
         if command == "compare":
             protect_inputs(args.output, [args.baseline_summary, args.candidate_summary])
@@ -547,6 +565,31 @@ def _campaign(args: Any) -> int:
 
 
 MAX_CAMPAIGN_SUMMARY_BYTES = 1_000_000
+
+
+def _protect_campaign_destinations(
+    destinations: tuple[tuple[str, Path | None], ...],
+    sources: list[Path],
+    project_dir: Path,
+    batch: Path | None,
+) -> None:
+    """Refuse campaign output destinations before the campaign runs.
+
+    The report, summary, and evidence destinations must name different
+    files, stay outside the project directory and the batch directory, and
+    never replace a campaign input.
+    """
+    named = [(flag, path) for flag, path in destinations if path is not None]
+    for index, (flag, path) in enumerate(named):
+        for other_flag, other in named[index + 1:]:
+            if path.resolve() == other.resolve() or (path.exists() and other.exists() and path.samefile(other)):
+                raise InputError(f"{flag} and {other_flag} must name different files")
+    for flag, path in named:
+        try:
+            protect_inputs(path, sources, project_dir)
+            protect_inputs(path, [], batch)
+        except InputError as exc:
+            raise InputError(f"{flag}: {exc}") from exc
 
 
 def _contract_authoring(args: Any) -> int:

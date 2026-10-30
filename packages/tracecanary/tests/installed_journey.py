@@ -71,6 +71,16 @@ def main():
         run("campaign", "run", root / "moved-0", "--input-dir", batch,
             "--save-summary", batch / "summary.json", expected=2)
         assert not (batch / "summary.json").exists()
+        human = root / "campaign.txt"
+        cli_evidence = root / "cli-evidence.json"
+        confirmation = run("campaign", "run", root / "moved-1", "--format", "human", "--output", human,
+                           "--save-evidence", cli_evidence, expected=1)
+        assert confirmation == f"Value-free evidence saved to {cli_evidence}\n", confirmation
+        assert human.read_text(encoding="utf-8").startswith("TraceCanary campaign: REGRESSION")
+        assert json.loads(cli_evidence.read_text(encoding="utf-8"))["evidence_version"] == "tracecanary.evidence/v1"
+        assert all(value not in cli_evidence.read_text(encoding="utf-8") for value in protected)
+        run("campaign", "run", root / "moved-1", "--save-evidence", root / "moved-1" / "evidence.json", expected=2)
+        assert not (root / "moved-1" / "evidence.json").exists()
         controller = TraceCanaryController()
         campaign = controller.run_campaign_selections(contract_path=fixtures / "contract.json",
             input_path=fixtures / "leaked-prompt.json", baseline_path=fixtures / "safe-export.json", batch_path=None)
