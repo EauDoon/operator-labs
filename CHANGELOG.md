@@ -67,6 +67,8 @@ are now deprecated; see the deprecation note at the top of each.
 
 ### Fixed
 
+- Corridor Lab robustness reviews now preflight the 512-row report budget, including summary rows, and reject mismatched scenario labels before evaluating any route.
+
 - **Both packages: project inputs that resolve outside the project.**
   `project create` refuses inputs outside the project directory, but loading a
   project followed a junction or symlinked directory inside it, and on Windows

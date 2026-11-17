@@ -190,12 +190,18 @@ def robustness_review(scenarios: list[Scenario], scenario_labels: list[str], con
         raise InputError("robustness review requires at least one scenario")
     if len(scenarios) > MAX_SCENARIOS:
         raise InputError(f"robustness review accepts at most {MAX_SCENARIOS} scenarios")
+    if len(scenario_labels) != len(scenarios):
+        raise InputError("robustness review requires one label per scenario")
     first = scenarios[0]
     for scenario in scenarios[1:]:
         for field in ("send_currency", "receive_currency", "send_precision", "receive_precision", "rounding"):
             if getattr(scenario.transaction, field) != getattr(first.transaction, field):
                 raise InputError("robustness review requires matching currencies, precisions, and rounding across scenarios")
     parsed_constraints = _scenario_units(first, constraints)
+    route_ids = {route.route_id for scenario in scenarios for route in scenario.routes}
+    row_count = sum(len(scenario.routes) for scenario in scenarios) * len(parsed_constraints) + len(route_ids)
+    if row_count > MAX_SENSITIVITY_ROWS:
+        raise InputError("robustness review exceeds the row budget; reduce scenarios, routes, or constraints")
     rows: list[dict[str, Any]] = []
     first_failure: dict[str, str] = {}
     seen_routes: set[str] = set()
