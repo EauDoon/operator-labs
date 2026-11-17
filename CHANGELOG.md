@@ -16,6 +16,10 @@ are now deprecated; see the deprecation note at the top of each.
 
 #### Corridor Lab
 
+- One-axis transaction sweeps report each candidate's objective guardrail
+  result and failed guardrail names in JSON, CSV, and Markdown. Without an
+  objective the state is unknown, not a pass; this is not a route ranking.
+
 - **`project refresh` accepts deliberately edited inputs.** After a
   deliberate edit to a project input, every project command refused the
   project as changed since it was saved, and nothing could accept the change

@@ -37,12 +37,16 @@ def run_transaction_sweep(scenario: Scenario, parameter: str, values: list[Decim
     rows = []
     for route in sorted(scenario.routes, key=lambda item: item.route_id):
         for value, transaction in transactions:
-            metrics = evaluate_route(route, transaction).as_dict()
+            evaluation = evaluate_route(route, transaction)
+            metrics = evaluation.as_dict()
+            passes, failures = _guardrail_status(evaluation, scenario.objective) if scenario.objective else (None, None)
             rows.append({"route_id": route.route_id, "parameter": parameter, "value": decimal_text(value),
+                         "guardrails_pass": passes, "failed_guardrails": failures,
                          **{key: metrics[key] for key in ("expected_recipient_amount", "expected_sender_cost", "probability_by_deadline", "tail_completion_time_hours")},
                          "probability_by_deadline_definition": "successful completion by declared deadline"})
     return {"report_version": "corridor-lab.transaction-sweep/v1", "scenario_id": scenario.scenario_id,
-            "fictional": True, "parameter": parameter, "transaction": _declared_transaction(scenario.transaction), "rows": rows}
+            "fictional": True, "parameter": parameter, "transaction": _declared_transaction(scenario.transaction), "rows": rows,
+            "scope": "Declared transaction values only. Null guardrail state means no objective was declared; passing guardrails does not rank or recommend a route."}
 
 
 def run_transaction_grid(scenario: Scenario, parameter_a: str, values_a: list[Decimal],
