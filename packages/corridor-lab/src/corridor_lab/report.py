@@ -80,7 +80,7 @@ def render_csv(report: dict[str, object]) -> str:
                 "probability_by_deadline",
                 "probability_by_deadline_definition",
                 "tail_completion_time_hours",
-            ],
+            ] + (["guardrails_pass", "failed_guardrails"] if report.get("report_version") == "corridor-lab.transaction-sweep/v1" else []),
         )
     routes = report.get("routes")
     if not isinstance(routes, list):
@@ -348,10 +348,11 @@ def render_markdown(report: dict[str, object]) -> str:
                 lines.extend(["", "Counts describe only the explicit grid, not a probability of robustness. JSON and CSV retain cell-level failures."])
             lines.extend(["", "This is an explicit two-parameter stress grid. No composite score is calculated."])
             return "\n".join(lines) + "\n"
+        transaction_sweep = report.get("report_version") == "corridor-lab.transaction-sweep/v1"
         lines.extend(
             [
-                "| Route | Parameter | Value | Expected recipient | Expected sender cost | Successful by deadline probability | Tail hours |",
-                "| --- | --- | ---: | ---: | ---: | ---: | ---: |",
+                "| Route | Parameter | Value | Expected recipient | Expected sender cost | Successful by deadline probability | Tail hours |" + (" guardrails_pass | failed_guardrails |" if transaction_sweep else ""),
+                "| --- | --- | ---: | ---: | ---: | ---: | ---: |" + (" --- | --- |" if transaction_sweep else ""),
             ]
         )
         for row in report["rows"]:
@@ -369,9 +370,11 @@ def render_markdown(report: dict[str, object]) -> str:
                         "tail_completion_time_hours",
                     )
                 )
+                + (" | " + " | ".join(_cell(row.get(name) if row.get(name) is not None else "unknown") for name in ("guardrails_pass", "failed_guardrails")) if transaction_sweep else "")
                 + " |"
             )
         if report.get("report_version") == "corridor-lab.transaction-sweep/v1":
+            lines.extend(["", "Unknown guardrail state means no objective was declared or this is an older report without guardrail results; passing guardrails does not rank or recommend a route."])
             lines.extend(["", "Each row changes one declared transaction assumption. Route fees and recovery amounts remain fixed; invalid combinations fail closed. No forecast or recommendation is implied."])
         else:
             lines.extend(_sensitivity_explanation())
