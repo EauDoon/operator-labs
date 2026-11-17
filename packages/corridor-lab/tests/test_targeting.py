@@ -5,6 +5,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from decimal import Decimal
 from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
 
 from corridor_lab.canonical import InputError
 from corridor_lab.cli import main as cli_main
@@ -156,6 +157,28 @@ class RobustnessTests(unittest.TestCase):
         with self.assertRaisesRegex(InputError, "matching currencies"):
             robustness_review([parse_scenario(base), parse_scenario(other)], ["a.json", "b.json"],
                               ["expected_sender_cost_at_most=1"])
+
+
+class RobustnessBudgetTests(unittest.TestCase):
+    def test_budget_counts_summary_rows_and_refuses_before_evaluation(self):
+        case = parse_scenario(scenario(routes=[route("fictional-route-one"), route("fictional-route-two")]))
+        constraints = ["expected_sender_cost_at_most=100"]
+        # 255 two-route scenarios would be 510 detail rows plus two summaries;
+        # use a small patched cap to test the exact same inclusive boundary.
+        with patch("corridor_lab.targeting.MAX_SENSITIVITY_ROWS", 6):
+            self.assertEqual(len(robustness_review([case, case], ["a", "b"], constraints)["rows"]), 6)
+        with patch("corridor_lab.targeting.MAX_SENSITIVITY_ROWS", 5), patch("corridor_lab.targeting.evaluate_route") as evaluate:
+            with self.assertRaisesRegex(InputError, "row budget"):
+                robustness_review([case, case], ["a", "b"], constraints)
+            evaluate.assert_not_called()
+
+    def test_label_count_refused_before_evaluation(self):
+        case = parse_scenario(scenario(routes=[route()]))
+        for labels in ([], ["a", "b"]):
+            with self.subTest(labels=labels), patch("corridor_lab.targeting.evaluate_route") as evaluate:
+                with self.assertRaisesRegex(InputError, "one label per scenario"):
+                    robustness_review([case], labels, ["expected_sender_cost_at_most=100"])
+                evaluate.assert_not_called()
 
 
 class TargetingCliTests(unittest.TestCase):
