@@ -269,16 +269,13 @@ def protect_report_output(
     return output
 
 
-def publish_new_file(staged: str | Path, target: Path) -> None:
-    """Publish a closed, same-filesystem file only if its destination name is free.
-
-    Windows rename refuses an existing destination. On POSIX, a hard link
-    installs the finished file atomically. The caller cleans up the staging name.
-    """
+def publish_new_file(staged: Path, target: Path) -> Path | None:
+    """Claim the destination name and return the staging link left to clean up."""
     if os.name == "nt":
-        os.rename(staged, target)
-    else:
-        os.link(staged, target)
+        os.rename(staged, target)  # Refuses an existing target and consumes staged.
+        return None
+    os.link(staged, target)
+    return staged
 
 
 def atomic_write_text(
@@ -290,10 +287,10 @@ def atomic_write_text(
         raise InputError(f"output exceeds {max_bytes} bytes")
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    temporary: str | None = None
+    temporary: Path | None = None
     try:
         with tempfile.NamedTemporaryFile("wb", prefix=f".{target.name}.", suffix=".tmp", dir=target.parent, delete=False) as handle:
-            temporary = handle.name
+            temporary = Path(handle.name)
             handle.write(raw)
             handle.flush()
             os.fsync(handle.fileno())
@@ -301,7 +298,7 @@ def atomic_write_text(
             os.replace(temporary, target)
             temporary = None
         else:
-            publish_new_file(temporary, target)
+            temporary = publish_new_file(temporary, target)
     finally:
         if temporary:
             try:

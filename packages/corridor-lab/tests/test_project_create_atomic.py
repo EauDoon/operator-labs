@@ -58,14 +58,19 @@ class AtomicProjectCreateTests(unittest.TestCase):
             code, _, error = self.create()
             desktop_error = desktop.result().error
         self.assertEqual(sorted([code, 2 if desktop_error else 0]), [0, 2])
-        self.assertIn("project manifest already exists", error or desktop_error)
+        failure = error or desktop_error
+        self.assertIn("project manifest already exists", failure)
         winner = self.first if code == 0 else self.second
+        loser = self.second if code == 0 else self.first
+        retained = [line.strip() for line in failure.splitlines() if line.startswith("  ")]
+        self.assertEqual(retained, [str(self.inputs / loser.name)])
+        self.assertIn("new empty project directory", failure)
         loaded = load_project(self.project)
         self.assertTrue(loaded.ok, loaded.problems)
         self.assertEqual(loaded.manifest.project_id, winner.stem)
         self.assertEqual(snapshot(self.project), {
             PROJECT_MANIFEST_NAME: self.manifest.read_bytes(), "inputs": None,
-            f"inputs/{winner.name}": winner.read_bytes(),
+            "inputs/first.json": self.first.read_bytes(), "inputs/second.json": self.second.read_bytes(),
         })
 
     def test_simultaneous_input_copies_with_same_basename_preserve_winners_bytes(self):
@@ -95,7 +100,8 @@ class AtomicProjectCreateTests(unittest.TestCase):
             first, second = pool.map(copy, [self.first, other])
         self.assertEqual([first, second].count(None), 1)
         self.assertIn("project input already exists", first or second)
-        self.assertEqual(target.read_bytes(), (self.first if first is None else other).read_bytes())
+        winner = self.first if first is None else other
+        self.assertEqual(snapshot(self.inputs), {target.name: winner.read_bytes()})
 
     def test_simultaneous_input_preparation_can_share_a_new_inputs_directory(self):
         ready = Barrier(2, timeout=10)
@@ -115,6 +121,8 @@ class AtomicProjectCreateTests(unittest.TestCase):
     def test_route_file_added_to_new_route_folder_survives_a_collision(self):
         routes = self.root / "routes"
         routes.mkdir()
+        earlier = routes / "first.json"
+        earlier.write_text(json.dumps(route("fictional-first")), encoding="utf-8")
         (routes / "route.json").write_text(json.dumps(route("fictional-saved")), encoding="utf-8")
         target = self.inputs / "routes" / "route.json"
         other = json.dumps(route("fictional-other")).encode()
@@ -128,10 +136,16 @@ class AtomicProjectCreateTests(unittest.TestCase):
         with patch.object(Path, "iterdir", add_route):
             code, _, error = self.create("--routes", routes)
         self.assertEqual(code, 2, error)
-        self.assertEqual(snapshot(self.project), {"inputs": None, "inputs/routes": None,
-                                                  "inputs/routes/route.json": other})
+        retained = [line.strip() for line in error.splitlines() if line.startswith("  ")]
+        self.assertCountEqual(retained, [str(self.inputs), str(self.inputs / self.first.name),
+                                         str(target.parent), str(target.parent / earlier.name)])
+        self.assertIn("new empty project directory", error)
+        self.assertEqual(snapshot(self.project), {
+            "inputs": None, "inputs/first.json": self.first.read_bytes(), "inputs/routes": None,
+            "inputs/routes/first.json": earlier.read_bytes(), "inputs/routes/route.json": other,
+        })
 
-    def test_rollback_preserves_a_replacement_saved_by_an_editor(self):
+    def test_failed_project_preserves_and_reports_a_replacement_saved_by_an_editor(self):
         target = self.inputs / self.first.name
         replacement = self.second.read_bytes()
 
@@ -142,19 +156,28 @@ class AtomicProjectCreateTests(unittest.TestCase):
         with patch("os.fsync", fail_after_edit):
             code, _, error = self.create()
         self.assertEqual(code, 2, error)
+        self.assertIn(str(target), error)
+        self.assertIn("new empty project directory", error)
         self.assertEqual(snapshot(self.project), {"inputs": None, "inputs/first.json": replacement})
 
-    def test_rollback_preserves_edits_written_in_place_to_a_copied_input(self):
+    def test_desktop_save_preserves_and_reports_in_place_edits_to_a_published_input(self):
         target = self.inputs / self.first.name
-        edited = self.first.read_bytes() + b"\n"
+        original = self.first.read_bytes()
+        edited = original.replace(b"fictional-first", b"fictional-third")
+        self.assertNotEqual(edited, original)
+        self.assertEqual(len(edited), len(original))
 
         def fail_after_edit(_fd):
             target.write_bytes(edited)
             raise OSError("simulated sync failure")
 
+        controller = CorridorGuiController()
+        self.assertIsNone(controller.load_scenario_file(self.first).error)
         with patch("os.fsync", fail_after_edit):
-            code, _, error = self.create()
-        self.assertEqual(code, 2, error)
+            result = controller.save_project(self.project, "first")
+        self.assertIn("simulated sync failure", result.error)
+        self.assertIn(str(target), result.error)
+        self.assertIn("new empty project directory", result.error)
         self.assertEqual(snapshot(self.project), {"inputs": None, "inputs/first.json": edited})
 
     def test_existing_manifest_and_notes_survive_a_failed_second_create(self):
@@ -166,7 +189,7 @@ class AtomicProjectCreateTests(unittest.TestCase):
         self.assertIn("project manifest already exists", error)
         self.assertEqual(snapshot(self.project), before)
 
-    def test_failed_manifest_sync_leaves_no_partial_project_and_retry_succeeds(self):
+    def test_sync_failure_retains_published_inputs_and_fresh_directory_retry_succeeds(self):
         def fail_sync(_fd):
             self.assertFalse(self.manifest.exists())
             raise OSError("simulated sync failure")
@@ -175,9 +198,18 @@ class AtomicProjectCreateTests(unittest.TestCase):
             code, _, error = self.create()
         self.assertEqual(code, 2)
         self.assertIn("simulated sync failure", error)
-        self.assertEqual(snapshot(self.project), {})
-        self.assertEqual(self.create()[0], 0)
-        self.assertTrue(load_project(self.project).ok)
+        target = self.inputs / self.first.name
+        self.assertIn(str(target), error)
+        self.assertIn("new empty project directory", error)
+        retained = {"inputs": None, "inputs/first.json": self.first.read_bytes()}
+        self.assertEqual(snapshot(self.project), retained)
+        retry = self.root / "retry"
+        retry.mkdir()
+        code, _, error = run_cli("project", "create", "--directory", retry, "--project-id", "retry",
+                                 "--scenario", target)
+        self.assertEqual(code, 0, error)
+        self.assertTrue(load_project(retry).ok)
+        self.assertEqual(snapshot(self.project), retained)
 
     def test_explicit_update_keeps_old_manifest_readable_until_publication(self):
         self.assertEqual(self.create()[0], 0)
