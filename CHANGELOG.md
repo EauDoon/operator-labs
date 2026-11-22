@@ -71,9 +71,10 @@ are now deprecated; see the deprecation note at the top of each.
 
 ### Fixed
 
-- When two Corridor Lab project saves overlap, only one can claim a manifest
-  or copied input name. Rollback preserves files replaced or edited since
-  the copy when their identity, size, or modification time has changed.
+- Corridor Lab project creation now claims each new manifest and copied input
+  name atomically. This requires hard-link support on POSIX. Cleanup after
+  a collision is best effort. It skips files with visibly changed metadata,
+  but can miss edits made during cleanup or edits with matching metadata.
 
 - Corridor Lab robustness reviews now preflight the 512-row report budget, including summary rows, and reject mismatched scenario labels before evaluating any route.
 
@@ -88,9 +89,9 @@ are now deprecated; see the deprecation note at the top of each.
   that failed after copying inputs (an invalid project id, an invalid
   threshold, a name collision) left the copies in `inputs/`, and the corrected
   retry then failed with "project input already exists". Settings that need no
-  input are now validated before anything is copied, and a failure before the
-  manifest is written, from the CLI or the desktop save, removes exactly the
-  files and folders that attempt created. Pre-existing files are never touched.
+  input are now validated before anything is copied. If the CLI or desktop
+  save fails before writing the manifest, it attempts to remove the files
+  and folders that it created so a corrected save can proceed.
 - **Corridor Lab: saved routes were ignored when the scenario embeds none.**
   `project create --routes` copied and fingerprinted a route selection that no
   project command read, so a project laid out like `examples/fictional-corridor`

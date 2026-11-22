@@ -681,8 +681,6 @@ def _project(args: argparse.Namespace) -> int:
             )
             write_project(directory, manifest)
         except BaseException:
-            # A failed create leaves the directory as it was, so a corrected
-            # retry does not trip over the copies this attempt made.
             created.rollback()
             raise
         sys.stdout.write(f"project created: {directory / 'corridor-lab.project.json'}\n")

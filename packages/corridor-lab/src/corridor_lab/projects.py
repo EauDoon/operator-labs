@@ -576,6 +576,7 @@ class ProjectCreation:
         self.entries: list[tuple[Path, os.stat_result]] = []
 
     def rollback(self) -> None:
+        """Best-effort cleanup. An edit can preserve metadata or follow the lstat."""
         for path, original in reversed(self.entries):
             try:
                 current = path.lstat()
