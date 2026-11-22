@@ -22,6 +22,7 @@ import stat as stat_module
 from dataclasses import dataclass
 from decimal import Decimal, DecimalException
 from pathlib import Path, PurePosixPath, PureWindowsPath
+from uuid import uuid4
 
 from .analysis import deadline_target, resolution_quantiles
 from .variants import (
@@ -35,6 +36,7 @@ from .canonical import (
     atomic_write_text,
     decimal_text,
     parse_json_bytes,
+    publish_new_file,
     read_bounded_bytes,
     require_decimal,
     require_decimal_values,
@@ -567,12 +569,29 @@ def project_scenario_raw(loaded: LoadedProject) -> object:
     return project_scenario_state(loaded)[0]
 
 
-def remove_created_paths(created: list[Path]) -> None:
-    """Undo a failed project save: remove exactly the paths it created, newest first.
+class ProjectCreation:
+    """Filesystem entries acquired by one save, in creation order."""
 
-    Files are unlinked and folders removed only when empty, so nothing that
-    existed before the save, or that something else added since, is touched.
-    """
+    def __init__(self) -> None:
+        self.entries: list[tuple[Path, os.stat_result]] = []
+
+    def rollback(self) -> None:
+        for path, original in reversed(self.entries):
+            try:
+                current = path.lstat()
+                if not os.path.samestat(original, current):
+                    continue
+                if stat_module.S_ISDIR(original.st_mode):
+                    path.rmdir()  # Other writers may have added files.
+                elif (current.st_size, current.st_mtime_ns) == (original.st_size, original.st_mtime_ns):
+                    path.unlink()
+            except OSError:
+                continue
+        self.entries.clear()
+
+
+def remove_created_paths(created: list[Path]) -> None:
+    """Remove paths from a legacy path-only creation list, newest first."""
     for path in reversed(created):
         try:
             if path.is_dir() and not path.is_symlink():
@@ -584,18 +603,30 @@ def remove_created_paths(created: list[Path]) -> None:
     created.clear()
 
 
-def _copy_regular_file(source: Path, target: Path, created: list[Path]) -> None:
+def _copy_regular_file(source: Path, target: Path, created: ProjectCreation) -> None:
     if target.exists():
         raise InputError(f"project input already exists: {target}")
-    created.append(target)
-    shutil.copyfile(source, target)
+    # Stage next to the target with the same permissions a normal copy would get.
+    staged = target.with_name(f".corridor-input-{uuid4().hex}.tmp")
+    staged.touch(mode=0o666, exist_ok=False)
+    try:
+        shutil.copyfile(source, staged)
+        original = staged.stat()
+        try:
+            publish_new_file(staged, target)
+        except FileExistsError as exc:
+            raise InputError(f"project input already exists: {target}") from exc
+        created.entries.append((target, original))
+    finally:
+        staged.unlink(missing_ok=True)
 
 
-def _copy_route_folder(source: Path, target: Path, created: list[Path]) -> None:
-    if target.exists():
-        raise InputError(f"project input folder already exists: {target}")
-    target.mkdir()
-    created.append(target)
+def _copy_route_folder(source: Path, target: Path, created: ProjectCreation) -> None:
+    try:
+        target.mkdir()
+    except FileExistsError as exc:
+        raise InputError(f"project input folder already exists: {target}") from exc
+    created.entries.append((target, target.lstat()))
     copied = 0
     for item in sorted(source.iterdir(), key=lambda child: child.name):
         try:
@@ -619,7 +650,7 @@ def prepare_project_directory(
     baseline: Path | None = None,
     variants: dict[str, Path] | None = None,
     *,
-    created: list[Path] | None = None,
+    created: ProjectCreation | list[Path] | None = None,
 ) -> dict[str, Path]:
     """Make the chosen inputs self-contained inside the project directory.
 
@@ -628,23 +659,23 @@ def prepare_project_directory(
     once and referenced twice. Nothing is copied silently: every collision or
     unreadable source raises before the manifest is written.
 
-    Every file and folder this call creates, ``inputs/`` included, is
-    appended to ``created``. A failure here removes them again; a caller
-    that fails later passes the list to ``remove_created_paths`` so a
-    corrected retry finds the directory as it was.
+    A ProjectCreation records copies and their identities for rollback on a
+    later failure. A plain list still receives the paths created by this call.
     """
     project_dir = Path(directory).resolve()
     if not project_dir.is_dir():
         raise InputError(f"project directory must exist: {directory}")
-    record: list[Path] = [] if created is None else created
-    start = len(record)
+    record = ProjectCreation()
     try:
-        return _place_project_inputs(project_dir, directory, scenario, routes, baseline, variants, record)
+        placed = _place_project_inputs(project_dir, directory, scenario, routes, baseline, variants, record)
     except BaseException:
-        mine = record[start:]
-        del record[start:]
-        remove_created_paths(mine)
+        record.rollback()
         raise
+    if isinstance(created, ProjectCreation):
+        created.entries.extend(record.entries)
+    elif created is not None:
+        created.extend(path for path, _ in record.entries)
+    return placed
 
 
 def _place_project_inputs(
@@ -654,7 +685,7 @@ def _place_project_inputs(
     routes: Path | None,
     baseline: Path | None,
     variants: dict[str, Path] | None,
-    created: list[Path],
+    created: ProjectCreation,
 ) -> dict[str, Path]:
     copied_sources: dict[Path, Path] = {}
 
@@ -671,9 +702,13 @@ def _place_project_inputs(
             target = resolved
         except ValueError:
             inputs_dir = project_dir / "inputs"
-            if not inputs_dir.exists():
+            try:
                 inputs_dir.mkdir()
-                created.append(inputs_dir)
+            except FileExistsError:
+                if not inputs_dir.is_dir():
+                    raise InputError(f"project inputs path must be a directory: {inputs_dir}")
+            else:
+                created.entries.append((inputs_dir, inputs_dir.lstat()))
             target = inputs_dir / resolved.name
             if resolved.is_dir():
                 _copy_route_folder(resolved, target, created)
@@ -794,7 +829,12 @@ def write_project(manifest_path: Path, manifest: ProjectManifest, *, replace: bo
     # build a manifest directly, so a budget miss used to replace a valid
     # project with one project validate could not open.
     parse_manifest(json.loads(text))
-    atomic_write_text(target, text)
+    try:
+        atomic_write_text(target, text, replace=replace)
+    except FileExistsError as exc:
+        if replace:
+            raise
+        raise InputError(f"project manifest already exists: {target}") from exc
 
 
 def parse_experiment_argument(text: str) -> Experiment:

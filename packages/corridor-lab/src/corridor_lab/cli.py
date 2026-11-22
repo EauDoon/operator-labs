@@ -34,6 +34,7 @@ from .batching import run_scenario_batch as _batch
 from .comparison import compare_routes, evaluate_scenario, pareto_frontier
 from .model import evaluate_route
 from .projects import (
+    ProjectCreation,
     ProjectManifest,
     build_manifest,
     execute_experiment,
@@ -43,7 +44,6 @@ from .projects import (
     project_input_records,
     project_scenario_state,
     refresh_project,
-    remove_created_paths,
     write_project,
 )
 from .report import render_report
@@ -665,7 +665,7 @@ def _project(args: argparse.Namespace) -> int:
         # Validate everything that needs no input file before copying any.
         project_id = require_identifier(_require_cli_text(args.project_id, "--project-id"), "--project-id")
         experiments = _project_experiment_args(args.experiment)
-        created: list[Path] = []
+        created = ProjectCreation()
         placed = prepare_project_directory(directory, scenario_path, routes_path, baseline_path, variants,
                                            created=created)
         try:
@@ -683,7 +683,7 @@ def _project(args: argparse.Namespace) -> int:
         except BaseException:
             # A failed create leaves the directory as it was, so a corrected
             # retry does not trip over the copies this attempt made.
-            remove_created_paths(created)
+            created.rollback()
             raise
         sys.stdout.write(f"project created: {directory / 'corridor-lab.project.json'}\n")
         return 0

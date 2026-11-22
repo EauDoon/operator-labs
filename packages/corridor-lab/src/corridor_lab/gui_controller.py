@@ -34,6 +34,7 @@ from .evidence import build_evidence, write_evidence
 from .comparison import compare_routes, evaluate_scenario, pareto_frontier
 from .model import evaluate_route
 from .projects import (
+    ProjectCreation,
     Experiment,
     build_manifest,
     execute_experiment,
@@ -41,7 +42,6 @@ from .projects import (
     prepare_project_directory,
     project_input_records,
     project_scenario_state,
-    remove_created_paths,
     validate_experiment,
     write_project,
 )
@@ -530,7 +530,7 @@ class CorridorGuiController:
             if not target.is_dir():
                 raise InputError(f"choose an existing project directory before saving: {target}")
             require_identifier(project_id, "project_id")
-            created: list[Path] = []
+            created = ProjectCreation()
             placed = prepare_project_directory(target, self.scenario_file, self.routes_path, self.baseline_file,
                                                created=created)
             try:
@@ -546,7 +546,7 @@ class CorridorGuiController:
                 )
                 write_project(target, manifest)
             except BaseException:
-                remove_created_paths(created)
+                created.rollback()
                 raise
             self.project_source = str(target / "corridor-lab.project.json")
             self.project_path = target

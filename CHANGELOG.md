@@ -71,6 +71,10 @@ are now deprecated; see the deprecation note at the top of each.
 
 ### Fixed
 
+- When two Corridor Lab project saves overlap, only one can claim a manifest
+  or copied input name. Rollback preserves files replaced or edited since
+  the copy when their identity, size, or modification time has changed.
+
 - Corridor Lab robustness reviews now preflight the 512-row report budget, including summary rows, and reject mismatched scenario labels before evaluating any route.
 
 - **Both packages: project inputs that resolve outside the project.**

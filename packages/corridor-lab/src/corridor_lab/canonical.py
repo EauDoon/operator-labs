@@ -269,8 +269,22 @@ def protect_report_output(
     return output
 
 
-def atomic_write_text(path: str | Path, text: str, *, max_bytes: int = MAX_REPORT_BYTES) -> None:
-    """Write UTF-8 text using a same-directory replace after a bounded fsync."""
+def publish_new_file(staged: str | Path, target: Path) -> None:
+    """Publish a closed, same-filesystem file only if its destination name is free.
+
+    Windows rename refuses an existing destination. On POSIX, a hard link
+    installs the finished file atomically. The caller cleans up the staging name.
+    """
+    if os.name == "nt":
+        os.rename(staged, target)
+    else:
+        os.link(staged, target)
+
+
+def atomic_write_text(
+    path: str | Path, text: str, *, max_bytes: int = MAX_REPORT_BYTES, replace: bool = True
+) -> None:
+    """Publish complete UTF-8 text from the same directory after a bounded fsync."""
     raw = text.encode("utf-8")
     if len(raw) > max_bytes:
         raise InputError(f"output exceeds {max_bytes} bytes")
@@ -283,8 +297,11 @@ def atomic_write_text(path: str | Path, text: str, *, max_bytes: int = MAX_REPOR
             handle.write(raw)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, target)
-        temporary = None
+        if replace:
+            os.replace(temporary, target)
+            temporary = None
+        else:
+            publish_new_file(temporary, target)
     finally:
         if temporary:
             try:
