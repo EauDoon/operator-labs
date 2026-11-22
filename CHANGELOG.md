@@ -71,6 +71,11 @@ are now deprecated; see the deprecation note at the top of each.
 
 ### Fixed
 
+- Corridor Lab project creation now claims each new manifest and copied input
+  name atomically. This requires hard-link support on POSIX. A failed save
+  retains all published inputs, lists the paths it created, and gives a
+  retry path using a fresh directory.
+
 - Corridor Lab robustness reviews now preflight the 512-row report budget, including summary rows, and reject mismatched scenario labels before evaluating any route.
 
 - **Both packages: project inputs that resolve outside the project.**
@@ -84,9 +89,9 @@ are now deprecated; see the deprecation note at the top of each.
   that failed after copying inputs (an invalid project id, an invalid
   threshold, a name collision) left the copies in `inputs/`, and the corrected
   retry then failed with "project input already exists". Settings that need no
-  input are now validated before anything is copied, and a failure before the
-  manifest is written, from the CLI or the desktop save, removes exactly the
-  files and folders that attempt created. Pre-existing files are never touched.
+  input are now validated before anything is copied. Corridor Lab also
+  checks external input names for collisions before publishing copies.
+  TraceCanary attempts to remove the paths created by its failed save.
 - **Corridor Lab: saved routes were ignored when the scenario embeds none.**
   `project create --routes` copied and fingerprinted a route selection that no
   project command read, so a project laid out like `examples/fictional-corridor`

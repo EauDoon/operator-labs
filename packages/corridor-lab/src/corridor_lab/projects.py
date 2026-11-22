@@ -19,9 +19,12 @@ import json
 import os
 import shutil
 import stat as stat_module
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from decimal import Decimal, DecimalException
 from pathlib import Path, PurePosixPath, PureWindowsPath
+from uuid import uuid4
 
 from .analysis import deadline_target, resolution_quantiles
 from .variants import (
@@ -35,6 +38,7 @@ from .canonical import (
     atomic_write_text,
     decimal_text,
     parse_json_bytes,
+    publish_new_file,
     read_bounded_bytes,
     require_decimal,
     require_decimal_values,
@@ -220,6 +224,13 @@ def _parse_experiment(value: object, index: int) -> Experiment:
     return Experiment(name=name, analysis=analysis, fields=parsed)
 
 
+def _project_description(value: object) -> str:
+    description = require_string(value, "project manifest.description")
+    if len(description) > MAX_DESCRIPTION_CHARS:
+        raise InputError(f"project manifest.description must be at most {MAX_DESCRIPTION_CHARS} characters")
+    return description
+
+
 def parse_manifest(value: object) -> ProjectManifest:
     """Parse and validate a strict corridor-lab project manifest."""
     manifest = require_object(value, "project manifest")
@@ -234,9 +245,7 @@ def parse_manifest(value: object) -> ProjectManifest:
     project_id = require_identifier(manifest["project_id"], "project manifest.project_id")
     description = ""
     if "description" in manifest:
-        description = require_string(manifest["description"], "project manifest.description")
-        if len(description) > MAX_DESCRIPTION_CHARS:
-            raise InputError(f"project manifest.description must be at most {MAX_DESCRIPTION_CHARS} characters")
+        description = _project_description(manifest["description"])
     scenario = _parse_input_ref(manifest["scenario"], "scenario")
     routes = _parse_input_ref(manifest["routes"], "routes") if "routes" in manifest else None
     baseline = _parse_input_ref(manifest["baseline"], "baseline") if "baseline" in manifest else None
@@ -567,34 +576,58 @@ def project_scenario_raw(loaded: LoadedProject) -> object:
     return project_scenario_state(loaded)[0]
 
 
-def remove_created_paths(created: list[Path]) -> None:
-    """Undo a failed project save: remove exactly the paths it created, newest first.
+def _retained_paths_message(paths: list[Path]) -> str:
+    entries = "\n".join(f"  {path}" for path in paths)
+    return (
+        f"Project paths left in place:\n{entries}\n"
+        "After correcting the error, retry in a new empty project directory."
+    )
 
-    Files are unlinked and folders removed only when empty, so nothing that
-    existed before the save, or that something else added since, is touched.
-    """
-    for path in reversed(created):
-        try:
-            if path.is_dir() and not path.is_symlink():
-                path.rmdir()
-            else:
-                path.unlink()
-        except OSError:
-            continue
-    created.clear()
+
+def remove_created_paths(created: list[Path]) -> None:
+    """Tell legacy rollback callers which published paths must be retained."""
+    if created:
+        raise InputError(_retained_paths_message(created))
+
+
+@contextmanager
+def _record_project_paths(created: list[Path] | None = None) -> Iterator[list[Path]]:
+    """Report every published path on failure. Other saves may already use it."""
+    published: list[Path] = []
+    try:
+        yield published
+    except (OSError, ValueError, DecimalException) as exc:
+        if published:
+            raise InputError(f"{exc}\n{_retained_paths_message(published)}") from exc
+        raise
+    finally:
+        if created is not None:
+            created.extend(published)
 
 
 def _copy_regular_file(source: Path, target: Path, created: list[Path]) -> None:
     if target.exists():
         raise InputError(f"project input already exists: {target}")
-    created.append(target)
-    shutil.copyfile(source, target)
+    # Stage next to the target with the same permissions a normal copy would get.
+    staged: Path | None = target.with_name(f".corridor-input-{uuid4().hex}.tmp")
+    staged.touch(mode=0o666, exist_ok=False)
+    try:
+        shutil.copyfile(source, staged)
+        try:
+            staged = publish_new_file(staged, target)
+        except FileExistsError as exc:
+            raise InputError(f"project input already exists: {target}") from exc
+        created.append(target)
+    finally:
+        if staged is not None:
+            staged.unlink(missing_ok=True)
 
 
 def _copy_route_folder(source: Path, target: Path, created: list[Path]) -> None:
-    if target.exists():
-        raise InputError(f"project input folder already exists: {target}")
-    target.mkdir()
+    try:
+        target.mkdir()
+    except FileExistsError as exc:
+        raise InputError(f"project input folder already exists: {target}") from exc
     created.append(target)
     copied = 0
     for item in sorted(source.iterdir(), key=lambda child: child.name):
@@ -628,27 +661,14 @@ def prepare_project_directory(
     once and referenced twice. Nothing is copied silently: every collision or
     unreadable source raises before the manifest is written.
 
-    Every file and folder this call creates, ``inputs/`` included, is
-    appended to ``created``. A failure here removes them again; a caller
-    that fails later passes the list to ``remove_created_paths`` so a
-    corrected retry finds the directory as it was.
+    Published files and directories stay in place on failure. An optional
+    list receives their paths, including those published before an error.
     """
-    project_dir = Path(directory).resolve()
-    if not project_dir.is_dir():
-        raise InputError(f"project directory must exist: {directory}")
-    record: list[Path] = [] if created is None else created
-    start = len(record)
-    try:
-        return _place_project_inputs(project_dir, directory, scenario, routes, baseline, variants, record)
-    except BaseException:
-        mine = record[start:]
-        del record[start:]
-        remove_created_paths(mine)
-        raise
+    with _record_project_paths(created) as published:
+        return _place_project_inputs(directory, scenario, routes, baseline, variants, published)
 
 
 def _place_project_inputs(
-    project_dir: Path,
     directory: Path,
     scenario: Path,
     routes: Path | None,
@@ -656,50 +676,54 @@ def _place_project_inputs(
     variants: dict[str, Path] | None,
     created: list[Path],
 ) -> dict[str, Path]:
-    copied_sources: dict[Path, Path] = {}
+    project_dir = Path(directory).resolve()
+    if not project_dir.is_dir():
+        raise InputError(f"project directory must exist: {directory}")
+    sources = {"scenario": scenario}
+    if routes is not None:
+        sources["routes"] = routes
+    if baseline is not None:
+        sources["baseline"] = baseline
+    for name, source in sorted((variants or {}).items()):
+        sources[f"variant {name}"] = source
+    if len(sources) > MAX_PROJECT_INPUTS:
+        raise InputError(f"project exceeds the {MAX_PROJECT_INPUTS}-input budget")
 
-    def place(source: Path | None) -> Path | None:
+    # Plan names before publishing anything. Different external sources can
+    # share a basename, while selecting one source twice needs just one copy.
+    inputs_dir = project_dir / "inputs"
+    placed: dict[str, Path] = {}
+    copies: dict[Path, Path] = {}
+    for label, source in sources.items():
         if source is None:
-            return None
+            raise InputError(f"project {label} needs a readable input")
         resolved = Path(source).resolve()
         if resolved == project_dir or not (resolved.is_file() or resolved.is_dir()):
             raise InputError(f"project input is not a readable file or folder: {source}")
-        if resolved in copied_sources:
-            return copied_sources[resolved]
-        try:
-            resolved.relative_to(project_dir)
-            target = resolved
-        except ValueError:
-            inputs_dir = project_dir / "inputs"
-            if not inputs_dir.exists():
-                inputs_dir.mkdir()
-                created.append(inputs_dir)
+        if label == "scenario" and not resolved.is_file():
+            raise InputError(f"project scenario must be a file: {source}")
+        if resolved.is_relative_to(project_dir):
+            placed[label] = resolved
+        else:
             target = inputs_dir / resolved.name
-            if resolved.is_dir():
-                _copy_route_folder(resolved, target, created)
-            else:
-                _copy_regular_file(resolved, target, created)
-        copied_sources[resolved] = target
-        return target
+            if target in copies and copies[target] != resolved:
+                raise InputError(f"project input name collision: {target}")
+            copies[target] = resolved
+            placed[label] = target
 
-    placed: dict[str, Path] = {}
-    placed_scenario = place(scenario)
-    if placed_scenario is None or not placed_scenario.is_file():
-        raise InputError(f"project scenario must be a file: {scenario}")
-    placed["scenario"] = placed_scenario
-    placed_routes = place(routes)
-    if placed_routes is not None:
-        placed["routes"] = placed_routes
-    placed_baseline = place(baseline)
-    if placed_baseline is not None:
-        placed["baseline"] = placed_baseline
-    for name, source in sorted((variants or {}).items()):
-        placed_variant = place(source)
-        if placed_variant is None:
-            raise InputError(f"variant {name} input is not readable: {source}")
-        placed[f"variant {name}"] = placed_variant
-    if len(placed) > MAX_PROJECT_INPUTS:
-        raise InputError(f"project exceeds the {MAX_PROJECT_INPUTS}-input budget")
+    if copies:
+        try:
+            inputs_dir.mkdir()
+        except FileExistsError:
+            if not inputs_dir.is_dir():
+                raise InputError(f"project inputs path must be a directory: {inputs_dir}")
+        else:
+            created.append(inputs_dir)
+    for target, source in copies.items():
+        if source.is_dir():
+            _copy_route_folder(source, target, created)
+        else:
+            _copy_regular_file(source, target, created)
     return placed
 
 
@@ -780,6 +804,39 @@ def build_manifest(
     return manifest
 
 
+def create_project(
+    directory: Path,
+    *,
+    project_id: str,
+    scenario: Path,
+    description: str = "",
+    routes: Path | None = None,
+    baseline: Path | None = None,
+    variants: dict[str, Path] | None = None,
+    derived_variants: dict[str, DerivedVariant] | None = None,
+    experiments: tuple[Experiment, ...] = (),
+) -> ProjectManifest:
+    """Publish inputs and then the manifest. Report retained paths on failure."""
+    manifest_path = directory / PROJECT_MANIFEST_NAME
+    if manifest_path.exists():
+        raise InputError(f"project manifest already exists: {manifest_path}")
+    require_identifier(project_id, "project_id")
+    if description:
+        _project_description(description)
+    for name in variants or {}:
+        require_identifier(name, "variants name")
+    with _record_project_paths() as published:
+        placed = _place_project_inputs(directory, scenario, routes, baseline, variants, published)
+        manifest = build_manifest(
+            directory, project_id=project_id, description=description, scenario=placed["scenario"],
+            routes=placed.get("routes"), baseline=placed.get("baseline"),
+            variants={name: placed[f"variant {name}"] for name in variants or {}},
+            derived_variants=derived_variants, experiments=experiments,
+        )
+        write_project(directory, manifest)
+    return manifest
+
+
 def write_project(manifest_path: Path, manifest: ProjectManifest, *, replace: bool = False) -> None:
     """Explicitly write a manifest; create refuses replacement, updates replace atomically."""
     target = Path(manifest_path)
@@ -794,7 +851,12 @@ def write_project(manifest_path: Path, manifest: ProjectManifest, *, replace: bo
     # build a manifest directly, so a budget miss used to replace a valid
     # project with one project validate could not open.
     parse_manifest(json.loads(text))
-    atomic_write_text(target, text)
+    try:
+        atomic_write_text(target, text, replace=replace)
+    except FileExistsError as exc:
+        if replace:
+            raise
+        raise InputError(f"project manifest already exists: {target}") from exc
 
 
 def parse_experiment_argument(text: str) -> Experiment:

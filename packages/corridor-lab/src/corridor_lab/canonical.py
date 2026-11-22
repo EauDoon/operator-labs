@@ -269,22 +269,36 @@ def protect_report_output(
     return output
 
 
-def atomic_write_text(path: str | Path, text: str, *, max_bytes: int = MAX_REPORT_BYTES) -> None:
-    """Write UTF-8 text using a same-directory replace after a bounded fsync."""
+def publish_new_file(staged: Path, target: Path) -> Path | None:
+    """Claim the destination name and return the staging link left to clean up."""
+    if os.name == "nt":
+        os.rename(staged, target)  # Refuses an existing target and consumes staged.
+        return None
+    os.link(staged, target)
+    return staged
+
+
+def atomic_write_text(
+    path: str | Path, text: str, *, max_bytes: int = MAX_REPORT_BYTES, replace: bool = True
+) -> None:
+    """Publish complete UTF-8 text from the same directory after a bounded fsync."""
     raw = text.encode("utf-8")
     if len(raw) > max_bytes:
         raise InputError(f"output exceeds {max_bytes} bytes")
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    temporary: str | None = None
+    temporary: Path | None = None
     try:
         with tempfile.NamedTemporaryFile("wb", prefix=f".{target.name}.", suffix=".tmp", dir=target.parent, delete=False) as handle:
-            temporary = handle.name
+            temporary = Path(handle.name)
             handle.write(raw)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, target)
-        temporary = None
+        if replace:
+            os.replace(temporary, target)
+            temporary = None
+        else:
+            temporary = publish_new_file(temporary, target)
     finally:
         if temporary:
             try:

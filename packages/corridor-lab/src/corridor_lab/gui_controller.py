@@ -35,15 +35,12 @@ from .comparison import compare_routes, evaluate_scenario, pareto_frontier
 from .model import evaluate_route
 from .projects import (
     Experiment,
-    build_manifest,
+    create_project,
     execute_experiment,
     load_project,
-    prepare_project_directory,
     project_input_records,
     project_scenario_state,
-    remove_created_paths,
     validate_experiment,
-    write_project,
 )
 from .report import render_report
 from .variants import (
@@ -530,24 +527,11 @@ class CorridorGuiController:
             if not target.is_dir():
                 raise InputError(f"choose an existing project directory before saving: {target}")
             require_identifier(project_id, "project_id")
-            created: list[Path] = []
-            placed = prepare_project_directory(target, self.scenario_file, self.routes_path, self.baseline_file,
-                                               created=created)
-            try:
-                manifest = build_manifest(
-                    target,
-                    project_id=project_id,
-                    description=description,
-                    scenario=placed["scenario"],
-                    routes=placed.get("routes"),
-                    baseline=placed.get("baseline"),
-                    experiments=self.experiments,
-                    derived_variants=self.derived_variants or None,
-                )
-                write_project(target, manifest)
-            except BaseException:
-                remove_created_paths(created)
-                raise
+            manifest = create_project(
+                target, project_id=project_id, description=description, scenario=self.scenario_file,
+                routes=self.routes_path, baseline=self.baseline_file,
+                experiments=self.experiments, derived_variants=self.derived_variants or None,
+            )
             self.project_source = str(target / "corridor-lab.project.json")
             self.project_path = target
             self.project_id = manifest.project_id

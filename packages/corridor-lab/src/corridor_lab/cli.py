@@ -35,15 +35,13 @@ from .comparison import compare_routes, evaluate_scenario, pareto_frontier
 from .model import evaluate_route
 from .projects import (
     ProjectManifest,
-    build_manifest,
+    create_project,
     execute_experiment,
     load_project,
     parse_experiment_argument,
-    prepare_project_directory,
     project_input_records,
     project_scenario_state,
     refresh_project,
-    remove_created_paths,
     write_project,
 )
 from .report import render_report
@@ -665,26 +663,10 @@ def _project(args: argparse.Namespace) -> int:
         # Validate everything that needs no input file before copying any.
         project_id = require_identifier(_require_cli_text(args.project_id, "--project-id"), "--project-id")
         experiments = _project_experiment_args(args.experiment)
-        created: list[Path] = []
-        placed = prepare_project_directory(directory, scenario_path, routes_path, baseline_path, variants,
-                                           created=created)
-        try:
-            manifest = build_manifest(
-                directory,
-                project_id=project_id,
-                description=args.description or "",
-                scenario=placed["scenario"],
-                routes=placed.get("routes"),
-                baseline=placed.get("baseline"),
-                variants={name: placed[f"variant {name}"] for name in variants},
-                experiments=experiments,
-            )
-            write_project(directory, manifest)
-        except BaseException:
-            # A failed create leaves the directory as it was, so a corrected
-            # retry does not trip over the copies this attempt made.
-            remove_created_paths(created)
-            raise
+        create_project(
+            directory, project_id=project_id, description=args.description or "", scenario=scenario_path,
+            routes=routes_path, baseline=baseline_path, variants=variants, experiments=experiments,
+        )
         sys.stdout.write(f"project created: {directory / 'corridor-lab.project.json'}\n")
         return 0
     if command == "validate":
