@@ -196,6 +196,31 @@ class TargetingCliTests(unittest.TestCase):
                                     [Decimal("10"), Decimal("50"), Decimal("100")], ["expected_sender_cost_at_most=10"])
             self.assertEqual(report, library)
 
+    def test_cli_distinguishes_incomplete_route_coverage_from_pass_and_failure(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            a, b = Path(temporary) / "a.json", Path(temporary) / "b.json"
+            shared, only_a, only_b = map(route, ("fictional-shared", "fictional-a", "fictional-b"))
+            first = scenario(routes=[shared, only_a])
+            second = scenario(routes=[shared, only_b])
+            second["transaction"]["deadline_hours"] = "0.1"
+            for path, raw in ((a, first), (b, second)):
+                path.write_text(json.dumps(raw), encoding="utf-8")
+            for fmt in ("json", "csv", "markdown"):
+                out = Path(temporary) / ("report." + fmt)
+                self.assertEqual(cli_main(["robustness-review", str(a), str(b), "--constraint",
+                                           "probability_by_deadline_at_least=0.8", "--format", fmt,
+                                           "--output", str(out)]), 0)
+                content = out.read_text(encoding="utf-8")
+                self.assertIn("evaluated_scenarios", content)
+                if fmt == "json":
+                    summary = {r["route_id"]: r for r in json.loads(content)["rows"]
+                               if r["constraint"] == "first_failing_scenario"}
+                    self.assertIsNone(summary["fictional-a"]["satisfied"])
+                    self.assertEqual(summary["fictional-a"]["evaluated_scenarios"], 1)
+                    self.assertEqual(summary["fictional-a"]["supplied_scenarios"], 2)
+                    self.assertIs(summary["fictional-b"]["satisfied"], False)
+                    self.assertIs(summary["fictional-shared"]["satisfied"], False)
+
     def test_robustness_cli_reports_protection_and_errors(self):
         with tempfile.TemporaryDirectory() as temporary, redirect_stdout(StringIO()), redirect_stderr(StringIO()):
             first = Path(temporary) / "a.json"
