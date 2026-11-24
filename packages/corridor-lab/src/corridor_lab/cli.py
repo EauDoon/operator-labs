@@ -50,7 +50,7 @@ from .scenario import Scenario, load_scenario, parse_scenario
 from .scenario_diff import diff_scenarios
 from .sensitivity import run_sensitivity
 from .stress import run_stress_grid
-from .targeting import robustness_review, target_search
+from .targeting import MAX_SCENARIOS, robustness_review, target_search
 from .variants import (
     apply_variant_chain,
     parse_derived_variant,
@@ -827,6 +827,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             # Project subcommands resolve their own formats and protect their
             # own outputs; several emit no report at all.
             return _project(args)
+        # The list itself is available after argument parsing. Refuse an
+        # oversized job before resolving output collisions or loading inputs.
+        if args.command == "robustness-review" and len(args.scenario) > MAX_SCENARIOS:
+            raise InputError(f"robustness review accepts at most {MAX_SCENARIOS} scenarios")
         _protect_report_inputs(args)
         output_format = resolve_report_format(
             getattr(args, "format", None),

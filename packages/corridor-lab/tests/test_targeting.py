@@ -182,6 +182,21 @@ class RobustnessBudgetTests(unittest.TestCase):
 
 
 class TargetingCliTests(unittest.TestCase):
+    def test_oversized_robustness_input_is_refused_before_any_path_or_scenario_work(self):
+        for count in (65, 80):
+            with self.subTest(count=count), patch("corridor_lab.cli._protect_report_inputs") as paths, \
+                    patch("corridor_lab.cli.load_scenario") as load, redirect_stderr(StringIO()) as err:
+                self.assertEqual(cli_main(["robustness-review", *(["fixture.json"] * count),
+                    "--constraint", "expected_sender_cost_at_most=10", "--output", "report.json"]), 2)
+                self.assertIn("at most 64", err.getvalue())
+                paths.assert_not_called()
+                load.assert_not_called()
+        case = parse_scenario(scenario(routes=[route()]))
+        with patch("corridor_lab.cli.load_scenario", return_value=case) as load, redirect_stdout(StringIO()):
+            self.assertEqual(cli_main(["robustness-review", *(["fixture.json"] * 64),
+                "--constraint", "expected_sender_cost_at_most=10", "--format", "json"]), 0)
+            self.assertEqual(load.call_count, 64)
+
     def test_target_search_cli_matches_library(self):
         with tempfile.TemporaryDirectory() as temporary, redirect_stdout(StringIO()), redirect_stderr(StringIO()):
             scenario_path = Path(temporary) / "scenario.json"
