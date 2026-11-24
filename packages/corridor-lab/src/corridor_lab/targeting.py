@@ -204,7 +204,7 @@ def robustness_review(scenarios: list[Scenario], scenario_labels: list[str], con
         raise InputError("robustness review exceeds the row budget; reduce scenarios, routes, or constraints")
     rows: list[dict[str, Any]] = []
     first_failure: dict[str, str] = {}
-    seen_routes: set[str] = set()
+    evaluated_count = dict.fromkeys(route_ids, 0)
     # Derived variants keep the base scenario id. The caller label is the
     # only name that distinguishes those cases; unique ids stay as ids.
     ids_collide = len({scenario.scenario_id for scenario in scenarios}) != len(scenarios)
@@ -212,7 +212,7 @@ def robustness_review(scenarios: list[Scenario], scenario_labels: list[str], con
         scenario_name = label if ids_collide else scenario.scenario_id
         routes = sorted(scenario.routes, key=lambda item: item.route_id)
         for route in routes:
-            seen_routes.add(route.route_id)
+            evaluated_count[route.route_id] += 1
             evaluation = evaluate_route(route, scenario.transaction).as_dict()
             all_pass = True
             for constraint in parsed_constraints:
@@ -230,17 +230,20 @@ def robustness_review(scenarios: list[Scenario], scenario_labels: list[str], con
                 })
             if not all_pass and route.route_id not in first_failure:
                 first_failure[route.route_id] = scenario_name
-    for route_id in sorted(seen_routes):
+    for route_id in sorted(route_ids):
+        complete = evaluated_count[route_id] == len(scenarios)
         rows.append({
-            "scenario": first_failure.get(route_id, "none in the supplied order"),
+            "scenario": first_failure.get(route_id, "none in the supplied order" if complete else "none among evaluated scenarios"),
             "route_id": route_id,
             "constraint": "first_failing_scenario",
             "observed": None, "threshold": None,
-            "satisfied": route_id not in first_failure,
+            "satisfied": False if route_id in first_failure else (True if complete else None),
+            "evaluated_scenarios": evaluated_count[route_id], "supplied_scenarios": len(scenarios),
             "unit": "scenario order",
         })
     return {"report_version": "corridor-lab.analysis/v1", "analysis": "robustness-review",
             "scenario_id": first.scenario_id, "fictional": True,
-            "columns": ["scenario", "route_id", "constraint", "observed", "threshold", "satisfied", "unit"],
+            "columns": ["scenario", "route_id", "constraint", "observed", "threshold", "satisfied", "unit",
+                        "evaluated_scenarios", "supplied_scenarios"],
             "rows": rows,
-            "scope": "Constraints are evaluated against each declared scenario separately. Scenarios are declared cases, not forecasts; routes absent from a scenario are simply not evaluated there."}
+            "scope": "Constraints are evaluated against each declared scenario separately. Scenarios are declared cases, not forecasts; an absent route is not evaluated. Summary satisfaction is null if no constraint failed but the route was absent from any supplied scenario."}

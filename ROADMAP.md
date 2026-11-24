@@ -6,6 +6,10 @@ evidence exports, cross-platform checks, and integrated journeys. See
 [CHANGELOG.md](CHANGELOG.md) for behavior and fixes. Historical development
 checkpoints remain in PROGRESS.md; implementation does not imply a release.
 
+## Next release candidate
+
+Corridor Lab robustness summaries distinguish observed constraint failures, full-case passes and partial scenario coverage. Verify JSON, CSV and Markdown exports together; do not infer a pass for a route missing in a declared case.
+
 ## Remaining verification and release gates
 
 - Run both package workflows on the exact release candidate, including the
