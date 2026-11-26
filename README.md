@@ -24,6 +24,14 @@ python -m pip install ./packages/tracecanary
 The packages remain independent; there is no shared runtime or root Python
 distribution.
 
+## Architecture atlas
+
+Open [the architecture atlas](docs/atlas/index.html) in a local checkout with a
+browser. The atlas maps selected Python imports, compares the four fictional
+route outcomes, explains the two collector checks, and generates replay
+commands for POSIX and PowerShell. Its package filter can export a read-only
+JSON graph. The module directory and worked cases also read without JavaScript.
+
 ## Worked cases
 
 Both cases use fictional fixtures and run offline from a source checkout. They
