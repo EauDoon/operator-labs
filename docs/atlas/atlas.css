@@ -31,3 +31,77 @@ th,td {text-align:left;padding:9px 12px;border-bottom:1px solid var(--rule)}thea
 #save {cursor:pointer;text-decoration:underline}footer {border-top:1px solid var(--rule);border-bottom:0;margin-top:2rem}
 @media(max-width:560px){.point {max-width:83px;min-height:44px;padding:4px}.toolbar {padding:8px}.toolbar button {padding:7px 9px}.field {height:360px}.toolbar,.picks {gap:6px}.directory{grid-template-columns:1fr 1fr}.hint{padding-left:10px}.table-wrap {font-size:.87rem}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+
+/* The panel bounds are shared with the camera, so labels and connectors stay
+   with their package even when two modules line up at the same angle. */
+.field {
+  container-type: inline-size;
+  height: clamp(340px, 31vw, 385px);
+  background: #0b151b;
+}
+.lanes { position: absolute; inset: 0; display: flex; }
+.lane {
+  position: relative; flex: 1 1 0; min-width: 0; min-height: 0;
+  --lane-ink: var(--blue); --lane-light: #1f4053;
+  background-image: radial-gradient(circle, #56727c66 .8px, transparent 1px),
+    radial-gradient(ellipse at bottom left, var(--lane-light) -35%, transparent 76%);
+  background-size: 16px 16px, auto;
+}
+.lane[data-package="tracecanary"] { --lane-ink: var(--green); --lane-light: #234e40; }
+.lane:not([hidden]) + .lane { box-shadow: inset 1px 0 var(--rule); }
+.lane span {
+  position: absolute; top: 10px; left: 13px; color: var(--lane-ink);
+  display: flex; align-items: center; gap: 8px;
+  font: 650 .76rem/1.4 ui-monospace, monospace; letter-spacing: .025em;
+}
+.lane span::before {
+  content: ''; width: 9px; height: 9px; border: 1px solid currentColor;
+  box-shadow: -2px 2px 0 var(--lane-light), -3px 3px 0 currentColor;
+}
+.point {
+  width: max-content; max-width: 144px; border-radius: 5px;
+  border-top-color: #9dbed2; color: #d4eaff; background: #192c39;
+  box-shadow: 0 3px 0 #0b1318, 0 4px 0 #456170;
+}
+.point[data-package="tracecanary"] {
+  color: #c4f4e0; background: #15332e; border-top-color: #7dbba5;
+  box-shadow: 0 3px 0 #0b1318, 0 4px 0 #3c6657;
+}
+.point[aria-pressed="true"] { color: #ffdfab; border-color: #ffcf81; background: #343029; }
+#wires line { stroke: #91a8b5; stroke-width: 1.4; }
+#wires line.active { stroke: #ffd08a; stroke-width: 2.2; }
+.inspector { display: grid; grid-template-columns: 1fr auto; gap: 2px 16px; }
+.inspector > strong { grid-column: 1; font-size: 1.17rem; }
+.inspector > p, .inspector > .imports { grid-column: 1 / -1; }
+.inspector > .source { grid-column: 2; grid-row: 1; align-self: center; font-family: ui-monospace, monospace; }
+@container (max-width: 739px) {
+  .lanes { flex-direction: column; }
+  .lane:not([hidden]) + .lane { box-shadow: inset 0 1px var(--rule); }
+  .point { max-width: 116px; }
+}
+@media (max-width: 850px) {
+  .field:has(.lane:not([hidden]) + .lane:not([hidden])) { height: 480px; }
+}
+@media (max-width: 560px) {
+  header { padding-block: 11px; row-gap: 8px; }
+  h1 { font-size: clamp(2.6rem, 11.5vw, 3.6rem); margin-top: 1.25rem; }
+  .intro { margin-block: .6rem 1.1rem; }
+  .toolbar > div { display: flex; gap: 4px; }
+  .toolbar button { min-width: 44px; min-height: 44px; }
+  .field { height: 270px; }
+  .point { font-size: .75rem; max-width: 96px; }
+}
+
+.selection { display: none; }
+@media (max-width: 850px) {
+  .observatory { overflow: clip; }
+  .selection {
+    position: sticky; top: 0; z-index: 40;
+    display: flex; align-items: center; gap: .45rem; padding: 8px 13px;
+    background: #1c2a30; border-bottom: 1px solid var(--rule);
+    color: #e2eff4; font-size: .85rem; text-decoration: none; min-height: 44px;
+  }
+  .selection strong { color: #ffdfab; text-decoration: underline; text-underline-offset: 3px; }
+  .selection span { margin-left: auto; }
+  .inspector { scroll-margin-top: 48px; }
+}
