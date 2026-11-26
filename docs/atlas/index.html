@@ -36,11 +36,17 @@
       <p>For a fictional 1,000 AMR transfer, the scenario requires a successful-by-deadline probability of at least 0.85 and a tail time of at most 72 hours. Compare the declared routes below.</p>
       <label hidden id="order-label">Order routes by <select id="order"><option value="0">Route name</option><option value="1">Highest expected recipient</option><option value="2">Lowest expected sender cost</option><option value="3">Shortest tail time</option></select></label>
       <div class="table-wrap" tabindex="0" role="region" aria-label="Fictional route comparison"><table id="routes"><thead><tr><th>Route</th><th>Expected BRC</th><th>Expected cost (AMR)</th><th>Tail (h)</th><th>Guardrails</th></tr></thead><tbody>
-      <tr><th>Correspondent style</th><td>1610.63</td><td>12.69</td><td>84</td><td>Misses deadline and tail thresholds</td></tr>
-      <tr><th>Fiat token bridge</th><td>1679.72</td><td>6.21</td><td>4</td><td>Passes both</td></tr>
-      <tr><th>Linked instant</th><td>1691.92</td><td>6.42</td><td>8</td><td>Passes both</td></tr>
-      <tr><th>Tokenized deposit</th><td>1709.13</td><td>4.38</td><td>0.5</td><td>Passes both</td></tr>
-      </tbody></table></div><a href="../../packages/corridor-lab/examples/fictional-corridor/expected/compare.md">Read the full comparison</a></article>
+      <tr data-route-id="fictional-correspondent-style"><th>Correspondent style</th><td>1610.63</td><td>12.69</td><td>84</td><td>Misses deadline and tail thresholds</td></tr>
+      <tr data-route-id="fictional-fiat-token-bridge"><th>Fiat token bridge</th><td>1679.72</td><td>6.21</td><td>4</td><td>Passes both</td></tr>
+      <tr data-route-id="fictional-linked-instant"><th>Linked instant</th><td>1691.92</td><td>6.42</td><td>8</td><td>Passes both</td></tr>
+      <tr data-route-id="fictional-tokenized-deposit"><th>Tokenized deposit</th><td>1709.13</td><td>4.38</td><td>0.5</td><td>Passes both</td></tr>
+      </tbody></table></div>
+      <div id="pair" hidden><h4>Compare two routes</h4>
+        <div class="picks"><label>Baseline <select id="route-a"></select></label>
+        <label>Candidate <select id="route-b"></select></label></div>
+        <p aria-live="polite" id="delta"></p>
+        <p><code id="pair-flags"></code></p>
+      </div><a href="../../packages/corridor-lab/examples/fictional-corridor/expected/compare.md">Read the full comparison</a></article>
     <article><p class="eyebrow mint">TraceCanary</p><h3>Where did the event go?</h3>
       <p>Follow one fictional collector change through two checks. The candidate retains the resource and span fields. Its event population falls from one to zero.</p>
       <details open><summary>Field counts · regression (exit 1)</summary><p>TC004 flags the missing event field <code>telemetry.event.class</code>. TC005 records that fewer events carry the required field than in the baseline.</p></details>

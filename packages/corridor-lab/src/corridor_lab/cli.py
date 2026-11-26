@@ -270,6 +270,8 @@ def build_parser() -> argparse.ArgumentParser:
     compare = commands.add_parser("compare", help="compare route files against a scenario transaction")
     _add_scenario_argument(compare)
     compare.add_argument("--routes", required=True, help="a route JSON file or directory of route JSON files")
+    compare.add_argument("--route-id", action="append", metavar="ID",
+                         help="include this declared route ID (repeat to compare a subset)")
     _add_output_options(compare)
 
     sensitivity = commands.add_parser("sensitivity", help="vary one declared route parameter")
@@ -884,7 +886,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.command == "evaluate":
             report = evaluate_scenario(scenario)
         elif args.command == "compare":
-            report = compare_routes(scenario.transaction, _load_routes_argument(args.routes), scenario.objective, scenario.scenario_id)
+            report = compare_routes(scenario.transaction, _load_routes_argument(args.routes),
+                                    scenario.objective, scenario.scenario_id, selected_ids=args.route_id)
         elif args.command == "sensitivity":
             report = run_sensitivity(
                 scenario,

@@ -144,6 +144,36 @@ get('order').onchange = () => {
   body.replaceChildren(...rows);
 };
 
+// Read the published, rounded case metrics directly from the evidence table.
+const routes = [...get('routes').tBodies[0].rows].map(row => ({
+  id: row.dataset.routeId, label: row.cells[0].textContent,
+  metrics: [...row.cells].slice(1,4).map(cell => Number(cell.textContent))
+}));
+for (const id of ['route-a','route-b']) {
+  routes.forEach((route,index) => get(id).add(new Option(route.label, index)));
+  get(id).onchange = comparePair;
+}
+get('route-a').value = '2';
+get('route-b').value = '3';
+get('pair').hidden = false;
+function comparePair() {
+  const a = routes[get('route-a').value], b = routes[get('route-b').value];
+  if (a === b) {
+    get('delta').textContent = 'Choose two different routes to compare.';
+    get('pair-flags').textContent = '';
+    return;
+  }
+  const change = b.metrics.map((value,i) => {
+    const delta = value - a.metrics[i];
+    return (delta > 0 ? '+' : '') + delta.toFixed(2);
+  });
+  get('delta').textContent = 'Candidate minus baseline, using displayed figures: ' +
+    change[0] + ' BRC expected recipient, ' + change[1] + ' AMR expected sender cost, ' + change[2] + ' hours tail time.';
+  const flags = [a,b].map(route => '--route-id ' + route.id);
+  get('pair-flags').textContent = 'Append these flags to the Corridor Lab compare command.\n' + flags.join(' ');
+}
+comparePair();
+
 const traceArgs = ' --contract examples/collector-regression/contract.json --baseline examples/collector-regression/baseline.json --candidate examples/collector-regression/candidate.json';
 const cases = [
   {dir:'corridor-lab',status:0,command:'corridor_lab compare examples/fictional-corridor/scenario.json --routes examples/fictional-corridor/routes --format markdown'},
