@@ -139,7 +139,8 @@ def _ranking(evaluations: list[RouteEvaluation], objective: Objective) -> dict[s
 
 
 def compare_routes(
-    transaction: Transaction, routes: Iterable[Route], objective: Objective | None = None, scenario_id: str = "ad-hoc"
+    transaction: Transaction, routes: Iterable[Route], objective: Objective | None = None, scenario_id: str = "ad-hoc",
+    *, selected_ids: list[str] | None = None,
 ) -> dict[str, object]:
     ordered_routes = sorted(routes, key=lambda route: route.route_id)
     if not ordered_routes:
@@ -147,6 +148,14 @@ def compare_routes(
     identifiers = [route.route_id for route in ordered_routes]
     if len(identifiers) != len(set(identifiers)):
         raise InputError("route identifiers must be unique")
+    if selected_ids is not None:
+        selected = set(selected_ids)
+        if not selected or len(selected) != len(selected_ids):
+            raise InputError("select one or more distinct route IDs")
+        missing = selected.difference(identifiers)
+        if missing:
+            raise InputError("unknown route ID: " + ", ".join(sorted(missing)))
+        ordered_routes = [route for route in ordered_routes if route.route_id in selected]
     if len(ordered_routes) * (len(ordered_routes) - 1) // 2 > MAX_ROUTE_PAIRS:
         raise InputError(f"route pair comparison exceeds the {MAX_ROUTE_PAIRS}-pair budget")
     evaluations = [evaluate_route(route, transaction) for route in ordered_routes]

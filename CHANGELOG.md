@@ -16,6 +16,9 @@ are now deprecated; see the deprecation note at the top of each.
 
 #### Corridor Lab
 
+- `compare --route-id ID` accepts repeatable route selections from the same
+  validated input folder. Rankings and break-even pairs use the chosen subset.
+
 - One-axis transaction sweeps report each candidate's objective guardrail
   result and failed guardrail names in JSON, CSV, and Markdown. Without an
   objective the state is unknown, not a pass; this is not a route ranking.

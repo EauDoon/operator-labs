@@ -9,6 +9,21 @@ from corridor_lab.cli import main
 
 
 class CliWorkflowTests(unittest.TestCase):
+    def test_compare_named_routes(self):
+        case = Path(__file__).resolve().parents[1] / "examples/fictional-corridor"
+        args = ["compare", str(case / "scenario.json"), "--routes", str(case / "routes"), "--format", "json"]
+        first = "fictional-linked-instant"
+        second = "fictional-tokenized-deposit"
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.assertEqual(main(args + ["--route-id", second, "--route-id", first]), 0)
+        result = json.loads(output.getvalue())
+        self.assertEqual([row["route_id"] for row in result["routes"]], [first, second])
+        self.assertEqual(len(result["break_even_volumes"]), 1)
+        for bad in (["--route-id", "absent"], ["--route-id", first, "--route-id", first]):
+            with self.subTest(bad=bad), contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(main(args + bad), 2)
+
     def test_declared_inspection_commands_export_all_formats(self):
         with tempfile.TemporaryDirectory() as directory, contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             root = Path(directory)

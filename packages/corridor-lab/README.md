@@ -32,6 +32,13 @@ On Windows, use `py -3.11 -m pip install --user .` when `python` is not on
 `PATH`. If the installed GUI launcher is not on `PATH`, use
 `py -3.11 -m corridor_lab.gui` instead.
 
+To compare a subset without copying input files, repeat `--route-id` with
+exact identifiers. For example, append
+`--route-id fictional-linked-instant --route-id fictional-tokenized-deposit`
+to the quick-start `compare` command. The tool validates the route folder,
+then computes the ranking and break-even pairs for the selection. Unknown
+and repeated identifiers return exit 2.
+
 Each result is deterministic. JSON reports are canonical, UTF-8, sorted-key
 documents with an LF terminator. Compare, evaluate, sensitivity, and
 stress-grid also accept `--format csv` or `--format markdown`. Pareto and batch
