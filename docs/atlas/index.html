@@ -12,9 +12,22 @@
   <section class="observatory" aria-label="3D import map" hidden id="map">
     <div class="toolbar"><label>Package <select id="group"><option value="">Both packages</option><option value="corridor-lab">Corridor Lab</option><option value="tracecanary">TraceCanary</option></select></label>
       <div><button id="left" aria-label="Rotate left">↶</button> <button id="right" aria-label="Rotate right">↷</button> <button id="reset">Reset view</button></div></div>
-    <div class="field" id="field"><svg id="wires" aria-hidden="true"></svg></div>
-    <div class="inspector" aria-live="polite" id="detail"></div>
-    <p class="hint">Drag or use the rotation buttons. Select a module to inspect its imports. Lines connect an importer to a module it uses.</p>
+    <a class="selection" href="#detail">Inspect <strong id="selection-name"></strong><span aria-hidden="true">↓</span></a>
+    <div class="field" id="field">
+      <div class="lanes" aria-hidden="true">
+        <div class="lane" data-package="corridor-lab"><span>Corridor Lab</span></div>
+        <div class="lane" data-package="tracecanary"><span>TraceCanary</span></div>
+      </div>
+      <svg id="wires" aria-hidden="true">
+        <defs>
+          <marker id="tip" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0L8 4L0 8Z" fill="#91a8b5"/></marker>
+          <marker id="active-tip" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="10" markerHeight="10" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0L8 4L0 8Z" fill="#ffd08a"/></marker>
+        </defs>
+        <g id="edges"></g>
+      </svg>
+    </div>
+    <div class="inspector" aria-live="polite" id="detail" tabindex="-1"></div>
+    <p class="hint">Drag or use the rotation buttons. Select a module to inspect its imports. Arrows point from a module to the modules it imports.</p>
   </section>
   <details id="modules" open><summary>Module directory and selected imports</summary>
     <ol class="directory">
@@ -29,7 +42,7 @@
     </ol></details>
   <details id="query" hidden><summary>Inspect the current graph as JSON</summary>
     <p>The selected package supplies the nodes and import edges in this local, read-only response.</p>
-    <pre id="projection"></pre><a id="save" download="operator-labs-graph.json">Save JSON</a>
+    <pre id="projection" tabindex="0" role="region" aria-label="Graph JSON"></pre><a id="save" download="operator-labs-graph.json">Save JSON</a>
   </details>
   <section id="cases"><h2>Worked evidence</h2>
     <article><p class="eyebrow">Corridor Lab</p><h3>Amber to Birch</h3>

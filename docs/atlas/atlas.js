@@ -19,35 +19,85 @@ function visibleNodes() {
   return nodes.filter(node => !get('group').value || node.pkg === get('group').value);
 }
 
-function project(node) {
+function project(node, lane) {
   const [x, y, z] = node.position;
-  const width = field.clientWidth, height = field.clientHeight;
-  // On narrow screens the two package lanes stack vertically.
-  const narrow = width < 740;
-  const single = Boolean(get('group').value);
-  const left = node.pkg === 'corridor-lab';
-  const localX = x + (left ? 1.3 : -1.3);
+  const localX = x + (node.pkg === 'corridor-lab' ? 1.3 : -1.3);
   const u = localX * Math.cos(angle) + z * Math.sin(angle);
   const depth = z * Math.cos(angle) - localX * Math.sin(angle);
   const perspective = 1 / (1.6 - depth * .23);
-  const cx = single || narrow ? .5 : left ? .25 : .75;
-  const cy = narrow && !single ? left ? .25 : .75 : .5;
   return {
-    x: width * (cx + u * perspective * (single || narrow ? .66 : .32)),
-    y: height * (cy - y * perspective * (narrow && !single ? .45 : .86)),
+    x: lane.x + lane.width * (.5 + u * perspective * .78),
+    y: lane.y + lane.height * (.5 - y * perspective * .88),
     depth
   };
 }
 
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+// Project each module into its package. Preserve the projected location where
+// possible; labels near a sightline collision need space for both touch targets.
+function placeNodes(visible) {
+  const points = new Map();
+  const origin = field.getBoundingClientRect();
+  for (const panel of field.querySelectorAll('.lane')) {
+    const members = visible.filter(node => node.pkg === panel.dataset.package);
+    panel.hidden = members.length === 0;
+  }
+  for (const panel of field.querySelectorAll('.lane:not([hidden])')) {
+    const bounds = panel.getBoundingClientRect();
+    const lane = {x: bounds.left-origin.left, y: bounds.top-origin.top + 32,
+      width: bounds.width, height: bounds.height - 32};
+    const placed = [];
+    for (const node of visible.filter(node => node.pkg === panel.dataset.package)) {
+      const button = buttons.get(node.id);
+      const w = button.offsetWidth, h = button.offsetHeight;
+      const anchor = project(node, lane);
+      const minX = lane.x + w/2 + 9, maxX = lane.x + lane.width - w/2 - 9;
+      const minY = lane.y + h/2 + 8, maxY = lane.y + lane.height - h/2 - 8;
+      const x = clamp(anchor.x, minX, maxX), y = clamp(anchor.y, minY, maxY);
+      // Boundaries of the existing labels are the closest legal alternatives.
+      const xs = [x, minX, maxX], ys = [y, minY, maxY];
+      for (const other of placed) {
+        const dx = (w + other.w)/2 + 13, dy = (h + other.h)/2 + 13;
+        xs.push(other.x - dx, other.x + dx);
+        ys.push(other.y - dy, other.y + dy);
+      }
+      let best = {x, y}, score = Infinity;
+      for (const cy of ys) for (const cx of xs) {
+        if (cx < minX || cx > maxX || cy < minY || cy > maxY) continue;
+        let cost = (cx - x)**2 + (cy - y)**2;
+        for (const other of placed) {
+          const ox = (w + other.w)/2 + 12 - Math.abs(cx - other.x);
+          const oy = (h + other.h)/2 + 12 - Math.abs(cy - other.y);
+          if (ox > 0 && oy > 0) cost += 1e6 + ox * oy * 100;
+        }
+        if (cost < score) { best = {x: cx, y: cy}; score = cost; }
+      }
+      const point = {...best, depth: anchor.depth, w, h};
+      points.set(node.id, point);
+      placed.push(point);
+    }
+  }
+  return points;
+}
+
+function edgePoint(from, to, padding) {
+  const dx = to.x - from.x, dy = to.y - from.y;
+  const fraction = Math.min(from.w / (2 * Math.abs(dx)), from.h / (2 * Math.abs(dy)));
+  const gap = padding / Math.hypot(dx, dy);
+  return {x: from.x + dx * (fraction + gap), y: from.y + dy * (fraction + gap)};
+}
+
 function renderMap() {
   const visible = visibleNodes();
-  const points = new Map(visible.map(node => [node.id, project(node)]));
+  for (const node of nodes) buttons.get(node.id).hidden = !visible.includes(node);
+  const points = placeNodes(visible);
   const lines = [];
-  for (const node of nodes) {
+  for (const node of visible) {
     const button = buttons.get(node.id);
     const point = points.get(node.id);
-    button.hidden = !point;
-    if (!point) continue;
     button.style.left = point.x + 'px';
     button.style.top = point.y + 'px';
     button.style.zIndex = String(Math.round(10 + point.depth * 5));
@@ -55,13 +105,17 @@ function renderMap() {
     for (const dest of node.imports) {
       const target = points.get(dest);
       if (!target) continue;
+      const start = edgePoint(point, target, 3);
+      const end = edgePoint(target, point, 5);
       const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      for (const [attr, value] of Object.entries({x1:point.x,y1:point.y,x2:target.x,y2:target.y})) line.setAttribute(attr,value);
-      if (node.id === selected || dest === selected) line.classList.add('active');
+      for (const [attr, value] of Object.entries({x1:start.x,y1:start.y,x2:end.x,y2:end.y})) line.setAttribute(attr,value);
+      const active = node.id === selected || dest === selected;
+      if (active) line.classList.add('active');
+      line.setAttribute('marker-end', active ? 'url(#active-tip)' : 'url(#tip)');
       lines.push(line);
     }
   }
-  get('wires').replaceChildren(...lines);
+  get('edges').replaceChildren(...lines);
 }
 
 function choose(id) {
@@ -78,6 +132,7 @@ function choose(id) {
       buttons.get(selected).focus();
     };
   }
+  get('selection-name').textContent = title.textContent;
   get('detail').replaceChildren(title, info, source, imports);
   renderMap();
 }
