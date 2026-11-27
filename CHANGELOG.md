@@ -90,6 +90,11 @@ are now deprecated; see the deprecation note at the top of each.
   surrounding whitespace and non-ASCII digits. `--minimum 0_1` ran as a gate
   of 1; it now exits 2 as a usage error.
 
+- The TraceCanary GUI reads a population minimum as the CLI does. An entry
+  such as `0_1` or one written in non-ASCII digits ran as a gate; it now gets
+  the `GUI007` guidance. A superscript digit in the batch gate entry no longer
+  raises an error. Surrounding space is still accepted in an entry.
+
 - The TraceCanary README listed required fields at resource, span and event
   scope only. The contract and checker also accept `scope` and `link`.
 

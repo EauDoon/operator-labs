@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import json
+import re
 
 from tracecanary.authoring import draft_canary_values, empty_template, render_review_human, review_contract, validate_draft
 from tracecanary.batching import run_batch
@@ -296,9 +297,8 @@ class TraceCanaryController:
         )
         if guidance is not None:
             return guidance
-        try:
-            minimum = int(str(minimum_text).strip())
-        except ValueError:
+        minimum = whole_number(minimum_text)
+        if minimum is None:
             return self._guidance("population-gate", GUI007, "The population minimum must be a whole number.")
         return self._run(
             "population-gate",
@@ -630,10 +630,10 @@ class TraceCanaryController:
         text = str(minimum_text).strip()
         if not text:
             return None, None
-        try:
-            return int(text), None
-        except ValueError:
+        minimum = whole_number(text)
+        if minimum is None:
             return None, self._guidance("campaign", GUI007, "The population minimum must be a whole number.")
+        return minimum, None
 
     def save_campaign_evidence(self, evidence_path: str | Path, result: GuiResult) -> GuiResult:
         """Explicitly save a value-free evidence document for a finished campaign.
@@ -816,6 +816,18 @@ class TraceCanaryController:
     def _guidance(mode: str, code: str, message: str) -> GuiResult:
         report = build_report("tracecanary/v1", "unresolved", [Violation(code, "", message)], mode=mode)
         return GuiResult("unresolved", EXIT_UNRESOLVED, render_human(report), render_json(report))
+
+
+def whole_number(text: object, *, signed: bool = True) -> int | None:
+    """Read entry text as a whole number the way the CLI reads a count.
+
+    int() also accepts digit separators ("0_1" is 1) and non-ASCII digits, and
+    str.isdigit() accepts characters that int() then refuses. Only ASCII digits
+    count here. Surrounding space is allowed, since a typed entry often has it.
+    """
+    stripped = str(text).strip()
+    pattern = r"[+-]?[0-9]+" if signed else r"[0-9]+"
+    return int(stripped) if re.fullmatch(pattern, stripped) else None
 
 
 def _exit_code(status: Status) -> int:

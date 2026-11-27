@@ -19,6 +19,7 @@ from tracecanary.gui_controller import (
     EXIT_UNRESOLVED,
     GuiResult,
     TraceCanaryController,
+    whole_number,
 )
 from tracecanary.output import protect_inputs, write_report
 
@@ -469,8 +470,7 @@ class TraceCanaryWindow:
         if not self._batch_population.get():
             return None, None
         scope = self._population_scope.get()
-        text = self._population_minimum.get().strip()
-        minimum = int(text) if text.isdigit() else None
+        minimum = whole_number(self._population_minimum.get(), signed=False)
         if minimum is None:
             self._status.set("Status: the population gate needs a whole-number minimum; ignoring it for this run.")
             return None, None
@@ -630,7 +630,7 @@ class TraceCanaryWindow:
             batch_minimum_ratio=self._batch_ratio.get() or None,
             minimum_ratio=self._minimum_ratio.get() or None,
             population_scope=self._population_scope.get() if self._population_minimum.get().strip() else None,
-            population_minimum=int(self._population_minimum.get()) if self._population_minimum.get().strip().isdigit() else None,
+            population_minimum=whole_number(self._population_minimum.get(), signed=False),
         )
         self._apply(result)
         if result.status == "pass":
