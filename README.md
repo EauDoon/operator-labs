@@ -1,3 +1,5 @@
+<p align="center"><img src=".github/assets/banner.svg" alt="Operator Labs. Two independent, offline Python tools. Corridor Lab compares declared, fictional cross-border payment routes. TraceCanary detects privacy regressions in synthetic OTLP trace exports. Shown as two routes between the same two endpoints, beside a trace waterfall where a sweep turns one leaking span red." width="100%"></p>
+
 # Operator Labs
 
 [![Corridor Lab CI](https://img.shields.io/github/actions/workflow/status/EauDoon/operator-labs/corridor-lab.yml?branch=main&label=Corridor%20Lab%20CI)](https://github.com/EauDoon/operator-labs/actions/workflows/corridor-lab.yml)
