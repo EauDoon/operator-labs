@@ -827,7 +827,13 @@ def whole_number(text: object, *, signed: bool = True) -> int | None:
     """
     stripped = str(text).strip()
     pattern = r"[+-]?[0-9]+" if signed else r"[0-9]+"
-    return int(stripped) if re.fullmatch(pattern, stripped) else None
+    if re.fullmatch(pattern, stripped) is None:
+        return None
+    try:
+        return int(stripped)
+    except ValueError:
+        # int() refuses a digit string past the interpreter's conversion limit.
+        return None
 
 
 def _exit_code(status: Status) -> int:

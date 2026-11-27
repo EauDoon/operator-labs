@@ -442,6 +442,9 @@ class CampaignPopulationGateTests(unittest.TestCase):
         self.assertEqual(whole_number("-1"), -1)
         self.assertIsNone(whole_number("-1", signed=False))
         self.assertEqual(whole_number("007", signed=False), 7)
+        # A digit string past int()'s conversion limit is guidance, not a crash.
+        self.assertIsNone(whole_number("9" * 5000))
+        self.assertIsNone(controller.campaign_population_minimum("9" * 5000)[0])
 
 
 if __name__ == "__main__":
