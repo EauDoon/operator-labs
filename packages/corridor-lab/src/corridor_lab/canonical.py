@@ -35,6 +35,11 @@ FIXED_DECIMAL_CONTEXT = Context(
 )
 
 
+# Decimal() also accepts digit separators ("1_000"), surrounding whitespace
+# and non-ASCII digits. A declared amount must not be read from those.
+_DECIMAL_TEXT = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
+
+
 class InputError(ValueError):
     """Raised for malformed or hostile external inputs."""
 
@@ -209,6 +214,8 @@ def require_decimal(
         raise InputError(f"{path} is not a valid decimal") from exc
     if not parsed.is_finite():
         raise InputError(f"{path} must be finite")
+    if isinstance(value, str) and _DECIMAL_TEXT.fullmatch(value) is None:
+        raise InputError(f"{path} is not a valid decimal")
     tuple_value = parsed.as_tuple()
     if len(tuple_value.digits) > MAX_DECIMAL_SIGNIFICANT_DIGITS:
         raise InputError(f"{path} exceeds {MAX_DECIMAL_SIGNIFICANT_DIGITS} significant digits")
