@@ -82,6 +82,24 @@ class BreakEvenTests(unittest.TestCase):
         self.assertEqual(Decimal(row["lower_cost_delta_send"]), Decimal(1))
         self.assertLess(Decimal(row["upper_cost_delta_send"]), Decimal(0))
 
+    def test_crossover_beyond_the_input_magnitude_still_reports_whole_volumes(self):
+        left, right = route("left"), route("right")
+        for raw in (left, right):
+            raw["percent_fee_bps"] = "0"
+            raw["outcomes"] = [dict(raw["outcomes"][0], probability="1")]
+        left["liquidity"] = {"prefunding_amount_send": "1000000000", "annual_cost_of_capital_bps": "10000",
+                             "holding_days": "365"}
+        right["liquidity"] = {"prefunding_amount_send": "0", "annual_cost_of_capital_bps": "0", "holding_days": "0"}
+        right["fixed_fee_send"] = "1.000000000001"
+        # Costs are 1 + 1e9/V and 1.000000000001, so the intersection is 1e21:
+        # a valid declared scenario whose crossover has more than 18 digits.
+        row = break_even_check(parse_scenario(scenario([left, right])))["rows"][0]
+        self.assertEqual(row["status"], "computed")
+        self.assertEqual(row["volume_transactions_per_period"], "1" + "0" * 21)
+        self.assertEqual((row["lower_volume"], row["upper_volume"]), ("1" + "0" * 21, "1" + "0" * 21))
+        self.assertEqual(Decimal(row["lower_cost_delta_send"]), Decimal(0))
+        self.assertEqual(Decimal(row["upper_cost_delta_send"]), Decimal(0))
+
     def test_parallel_cost_curves_do_not_claim_a_crossover(self):
         row = break_even_check(parse_scenario(scenario([route("left"), route("right")])))["rows"][0]
         self.assertEqual(row["status"], "no_finite_break_even")

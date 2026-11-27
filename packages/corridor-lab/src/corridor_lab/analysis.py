@@ -1,4 +1,5 @@
 """Transparent inspection of declared fictional scenarios, with no recommendations."""
+from dataclasses import replace
 from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
 from itertools import combinations
 
@@ -11,9 +12,9 @@ from .canonical import (
     require_decimal,
     require_decimal_values,
 )
-from .comparison import _break_even, _declared_transaction
+from .comparison import _break_even
 from .model import _quantile_time, evaluate_route
-from .scenario import Scenario, _parse_transaction
+from .scenario import Scenario
 
 
 def _evaluations(scenario: Scenario):
@@ -222,9 +223,9 @@ def break_even_check(scenario: Scenario) -> dict:
                 volume = Decimal(row["volume_transactions_per_period"])
                 for name, rounding in (("lower", ROUND_FLOOR), ("upper", ROUND_CEILING)):
                     whole = max(Decimal(1), volume.to_integral_value(rounding=rounding))
-                    raw = _declared_transaction(scenario.transaction)
-                    raw["volume_per_period"] = decimal_text(whole)
-                    transaction = _parse_transaction(raw)
+                    # A derived crossover can exceed the 18-digit input bound
+                    # on a valid scenario, so it is not parsed as an input.
+                    transaction = replace(scenario.transaction, volume_per_period=whole)
                     delta = (evaluate_route(left.route, transaction).expected_sender_cost
                              - evaluate_route(right.route, transaction).expected_sender_cost)
                     row[f"{name}_volume"] = decimal_text(whole)

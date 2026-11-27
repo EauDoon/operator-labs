@@ -60,6 +60,12 @@ $env:PYTHONPATH = "src"
 python -m corridor_lab compare examples/fictional-corridor/scenario.json --routes examples/fictional-corridor/routes --format markdown
 ```
 
+In a POSIX shell (Linux or macOS):
+
+```text
+PYTHONPATH=src python -m corridor_lab compare examples/fictional-corridor/scenario.json --routes examples/fictional-corridor/routes --format markdown
+```
+
 See the [Corridor Lab worked case](packages/corridor-lab/docs/WORKED_EXAMPLE.md)
 for the observed output excerpt and metric definitions.
 
@@ -80,6 +86,12 @@ Run it from `packages/tracecanary`:
 ```powershell
 $env:PYTHONPATH = "src"
 python -m tracecanary diff --contract examples/collector-regression/contract.json --baseline examples/collector-regression/baseline.json --candidate examples/collector-regression/candidate.json
+```
+
+In a POSIX shell (Linux or macOS):
+
+```text
+PYTHONPATH=src python -m tracecanary diff --contract examples/collector-regression/contract.json --baseline examples/collector-regression/baseline.json --candidate examples/collector-regression/candidate.json
 ```
 
 See the [TraceCanary collector regression case](packages/tracecanary/examples/collector-regression/README.md)
