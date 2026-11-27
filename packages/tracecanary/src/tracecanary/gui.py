@@ -19,7 +19,6 @@ from tracecanary.gui_controller import (
     EXIT_UNRESOLVED,
     GuiResult,
     TraceCanaryController,
-    whole_number,
 )
 from tracecanary.output import protect_inputs, write_report
 
@@ -465,16 +464,19 @@ class TraceCanaryWindow:
             wraplength=760,
         ).grid(row=3, column=0, sticky="w", pady=(8, 0))
 
-    def _batch_population_config(self) -> tuple[str | None, int | None]:
-        """Capture the batch population gate from the survival-tab entries."""
+    def _batch_population_config(self, mode: str) -> tuple[str | None, int | None, GuiResult | None]:
+        """Capture the batch population gate from the survival-tab entries.
+
+        A ticked gate whose minimum is empty or not a whole number returns
+        guidance. The caller shows it and does not start the run, so a batch
+        never passes without the gate the user asked for.
+        """
         if not self._batch_population.get():
-            return None, None
-        scope = self._population_scope.get()
-        minimum = whole_number(self._population_minimum.get(), signed=False)
-        if minimum is None:
-            self._status.set("Status: the population gate needs a whole-number minimum; ignoring it for this run.")
-            return None, None
-        return scope, minimum
+            return None, None, None
+        minimum, guidance = self._controller.batch_population_minimum(self._population_minimum.get(), mode=mode)
+        if guidance is not None:
+            return None, None, guidance
+        return self._population_scope.get(), minimum, None
 
     def _campaign(self) -> None:
         contract = self._contract.get().strip()
@@ -609,6 +611,10 @@ class TraceCanaryWindow:
         if not contract:
             self._messagebox.showerror("TraceCanary", "Select a contract JSON file before saving a project.")
             return
+        population_minimum, guidance = self._controller.campaign_population_minimum(self._population_minimum.get(), mode="project-save")
+        if guidance is not None:
+            self._apply(guidance)
+            return
         destination = self._filedialog.askdirectory(title="Choose an existing project directory", mustexist=True)
         if not destination:
             return
@@ -630,7 +636,7 @@ class TraceCanaryWindow:
             batch_minimum_ratio=self._batch_ratio.get() or None,
             minimum_ratio=self._minimum_ratio.get() or None,
             population_scope=self._population_scope.get() if self._population_minimum.get().strip() else None,
-            population_minimum=whole_number(self._population_minimum.get(), signed=False),
+            population_minimum=population_minimum,
         )
         self._apply(result)
         if result.status == "pass":
@@ -767,7 +773,10 @@ class TraceCanaryWindow:
         recursive = bool(self._recursive.get())
         include_paths = bool(self._include_paths.get())
         baseline = self._baseline.get() if self._use_baseline.get() else None
-        population_scope, population_minimum = self._batch_population_config()
+        population_scope, population_minimum, guidance = self._batch_population_config("batch")
+        if guidance is not None:
+            self._apply(guidance)
+            return
         self._run_background(
             lambda: self._controller.batch(
                 contract,
@@ -788,7 +797,10 @@ class TraceCanaryWindow:
         recursive = bool(self._recursive.get())
         include_paths = bool(self._include_paths.get())
         minimum_ratio = self._batch_ratio.get() or None
-        population_scope, population_minimum = self._batch_population_config()
+        population_scope, population_minimum, guidance = self._batch_population_config("coverage-batch")
+        if guidance is not None:
+            self._apply(guidance)
+            return
         self._run_background(
             lambda: self._controller.coverage_batch(
                 contract,

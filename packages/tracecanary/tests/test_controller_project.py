@@ -92,6 +92,37 @@ class ControllerProjectTests(unittest.TestCase):
             self.assertEqual(reopened.project_paths.coverage, ("0.95", "span", 1))
             self.assertIsNotNone(reopened.project_paths.batch_dir)
 
+    def test_save_project_reads_a_blank_optional_selector_as_not_selected(self):
+        # The window passes an empty entry as "". Path("") is the working
+        # directory, so a blank selector was copied as a directory and refused.
+        with tempfile.TemporaryDirectory() as temporary:
+            source_root = Path(temporary) / "source"
+            build_project(source_root)
+            for blank in ("", "   "):
+                with self.subTest(blank=blank):
+                    destination = Path(temporary) / f"saved-{len(blank)}"
+                    destination.mkdir()
+                    saved = TraceCanaryController().save_project(
+                        destination,
+                        project_id="fictional-blank-selectors",
+                        description="",
+                        contract_path=str(source_root / "inputs" / "contract.json"),
+                        input_path=blank,
+                        baseline_path=blank,
+                        candidate_path=blank,
+                        batch_dir=blank,
+                        batch_recursive=False,
+                        batch_include_paths=False,
+                        batch_minimum_ratio=None,
+                        minimum_ratio=None,
+                        population_scope=None,
+                        population_minimum=None,
+                    )
+                    self.assertEqual(saved.status, "pass", saved.human)
+                    reopened = TraceCanaryController().open_project(destination / PROJECT_MANIFEST_NAME)
+                    self.assertEqual(reopened.status, "pass", reopened.human)
+                    self.assertIsNone(reopened.project_paths.batch_dir)
+
     def test_save_project_refuses_existing_manifest_and_reports_clearly(self):
         with tempfile.TemporaryDirectory() as temporary:
             source_root = Path(temporary) / "source"
