@@ -33,6 +33,21 @@ class CliUsageTests(unittest.TestCase):
                     self.assertTrue(output)
                     self.assertEqual(error, "")
 
+    def test_population_minimum_rejects_python_only_integer_spellings(self):
+        for flag_command in ("population-gate", "batch"):
+            for text in ("0_1", "1_0", " 1", "\uff11"):
+                with self.subTest(command=flag_command, text=text):
+                    if flag_command == "population-gate":
+                        command = ["population-gate", "--contract", str(FIXTURES / "contract.json"),
+                                   "--input", str(FIXTURES / "safe-export.json"), "--scope", "span", "--minimum", text]
+                    else:
+                        command = ["batch", "--contract", str(FIXTURES / "contract.json"), "--input-dir", str(FIXTURES),
+                                   "--population-scope", "span", "--population-minimum", text]
+                    status, output, error = self._run(command)
+                    self.assertEqual(status, EXIT_UNRESOLVED)
+                    self.assertEqual(output, "")
+                    self.assertIn("must be a whole number written in ASCII digits", error)
+
     def _run(self, command: list[str]) -> tuple[int, str, str]:
         output = io.StringIO()
         error = io.StringIO()

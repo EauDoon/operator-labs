@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -84,6 +85,13 @@ def _cli_path(value: str) -> Path:
     return Path(value)
 
 
+def _cli_integer(value: str) -> int:
+    """Parse a CLI count without int()'s digit separators, whitespace or non-ASCII digits."""
+    if re.fullmatch(r"[+-]?[0-9]+", value) is None:
+        raise argparse.ArgumentTypeError("must be a whole number written in ASCII digits")
+    return int(value)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = _ArgumentParser(
         prog="tracecanary",
@@ -111,7 +119,7 @@ def build_parser() -> argparse.ArgumentParser:
     population.add_argument("--contract", required=True, type=_cli_path)
     population.add_argument("--input", required=True, type=_cli_path)
     population.add_argument("--scope", required=True, choices=("resource", "scope", "span", "event", "link"))
-    population.add_argument("--minimum", required=True, type=int)
+    population.add_argument("--minimum", required=True, type=_cli_integer)
     population.add_argument("--format", choices=("human", "json"), default="human")
     dropped = commands.add_parser("dropped-telemetry", help="inspect declared dropped counters and optionally require zero")
     dropped.add_argument("--contract", required=True, type=_cli_path)
@@ -153,7 +161,7 @@ def build_parser() -> argparse.ArgumentParser:
     batch.add_argument("--recursive", action="store_true", help="include *.json files in subdirectories")
     batch.add_argument("--include-paths", action="store_true", help="include input-relative POSIX paths in reports")
     batch.add_argument("--population-scope", choices=("resource", "scope", "span", "event", "link"), help="apply an explicit population gate to every valid file")
-    batch.add_argument("--population-minimum", type=int)
+    batch.add_argument("--population-minimum", type=_cli_integer)
     batch.add_argument("--format", choices=("human", "json", "sarif", "junit"), default="json", help="report format (default: json)")
     batch_coverage = commands.add_parser("coverage-batch", help="aggregate coverage counts across a bounded directory")
     batch_coverage.add_argument("--contract", required=True, type=_cli_path)
@@ -162,7 +170,7 @@ def build_parser() -> argparse.ArgumentParser:
     batch_coverage.add_argument("--include-paths", action="store_true")
     batch_coverage.add_argument("--minimum-ratio", help="require this exact retained-field ratio in every file")
     batch_coverage.add_argument("--population-scope", choices=("resource", "scope", "span", "event", "link"))
-    batch_coverage.add_argument("--population-minimum", type=int)
+    batch_coverage.add_argument("--population-minimum", type=_cli_integer)
     batch_coverage.add_argument("--format", choices=("human", "json"), default="json")
     for command in (validate, check, diff, batch, coverage, inspect, gate, rate_diff, matrix, batch_coverage, control, population, dropped):
         command.add_argument("--output", type=_cli_path, help="write a UTF-8 report atomically; cannot replace inputs")
@@ -187,7 +195,7 @@ def build_parser() -> argparse.ArgumentParser:
     project_create.add_argument("--batch-minimum-ratio", help="per-file coverage gate for the saved batch configuration")
     project_create.add_argument("--minimum-ratio", help="saved coverage threshold")
     project_create.add_argument("--population-scope", choices=("resource", "scope", "span", "event", "link"))
-    project_create.add_argument("--population-minimum", type=int)
+    project_create.add_argument("--population-minimum", type=_cli_integer)
     project_validate = project_commands.add_parser("validate", help="validate a project manifest and inputs")
     project_validate.add_argument("project", type=_cli_path)
     project_open = project_commands.add_parser("open", help="resolve a project and report missing or changed inputs")
@@ -255,7 +263,7 @@ def campaign_run_options(parser: argparse.ArgumentParser) -> argparse.ArgumentPa
     parser.add_argument("--include-paths", action="store_true")
     parser.add_argument("--minimum-ratio", help="override saved coverage thresholds for named candidates and batch files")
     parser.add_argument("--population-scope", choices=("resource", "scope", "span", "event", "link"))
-    parser.add_argument("--population-minimum", type=int)
+    parser.add_argument("--population-minimum", type=_cli_integer)
     return parser
 
 

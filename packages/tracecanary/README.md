@@ -2,7 +2,7 @@
 
 TraceCanary detects privacy regressions in OTLP/HTTP JSON trace exports using synthetic canaries and explicit, version-pinned contracts.
 
-It is a deterministic offline checker for OTLP trace attributes. It searches for exact synthetic canary values and forbidden telemetry keys across resource, instrumentation-scope, span, span-event, and span-link attributes, blocks forbidden JSON path prefixes, and verifies operational fields at resource, span, and event scope.
+It is a deterministic offline checker for OTLP trace attributes. It searches for exact synthetic canary values and forbidden telemetry keys across resource, instrumentation-scope, span, span-event, and span-link attributes, blocks forbidden JSON path prefixes, and verifies operational fields at resource, instrumentation-scope, span, span-event, and span-link scope.
 
 TraceCanary uses only the Python standard library at runtime. It has no network client, credentials, telemetry, account requirement, or production-data fixture.
 
@@ -15,7 +15,7 @@ Supported in this release:
 - OTLP/HTTP JSON traces with `resourceSpans`.
 - Exact synthetic-canary detection anywhere in a supported payload.
 - Forbidden attribute keys, key prefixes, and wildcard JSON-pointer path prefixes.
-- Required fields at resource, span, and event scope.
+- Required fields at resource, instrumentation-scope, span, span-event, and span-link scope (contract scopes `resource`, `scope`, `span`, `event`, `link`).
 - Baseline-to-candidate retained-field count comparison.
 - Stable JSON and human-readable reports.
 - Bounded directory checks with deterministic JSON, SARIF, and JUnit output.
