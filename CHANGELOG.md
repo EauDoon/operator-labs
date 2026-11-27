@@ -104,8 +104,10 @@ are now deprecated; see the deprecation note at the top of each.
 
 - Project save in the TraceCanary GUI works when an optional selector (input,
   baseline, candidate or batch folder) is blank. A blank entry was read as the
-  working directory, and the save was refused with `project input must be a
-  file, not a directory: .`.
+  working directory. For an input, baseline or candidate the save was refused
+  with `project input must be a file, not a directory: .`. For a batch folder
+  the save copied the JSON files of the working directory into the project,
+  or failed when it held none.
 
 - The TraceCanary README listed required fields at resource, span and event
   scope only. The contract and checker also accept `scope` and `link`.

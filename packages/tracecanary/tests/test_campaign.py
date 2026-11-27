@@ -428,7 +428,7 @@ class CampaignPopulationGateTests(unittest.TestCase):
         # int() accepts digit separators and non-ASCII digits, and str.isdigit()
         # accepts characters int() then refuses. The CLI rejects all of them.
         controller = TraceCanaryController()
-        for text in ("0_1", "9_9", "\uff11", "\u00b2", "1 0", "1.0"):
+        for text in ("0_1", "9_9", chr(0xFF11), chr(0x00B2), "1 0", "1.0"):
             with self.subTest(text=text):
                 self.assertIsNone(whole_number(text))
                 self.assertIsNone(whole_number(text, signed=False))
@@ -443,8 +443,9 @@ class CampaignPopulationGateTests(unittest.TestCase):
         self.assertIsNone(whole_number("-1", signed=False))
         self.assertEqual(whole_number("007", signed=False), 7)
         # A digit string past int()'s conversion limit is guidance, not a crash.
-        self.assertIsNone(whole_number("9" * 5000))
-        self.assertIsNone(controller.campaign_population_minimum("9" * 5000)[0])
+        if 0 < sys.get_int_max_str_digits() < 5000:
+            self.assertIsNone(whole_number("9" * 5000))
+            self.assertIsNone(controller.campaign_population_minimum("9" * 5000)[0])
 
 
 if __name__ == "__main__":

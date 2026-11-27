@@ -54,6 +54,7 @@ def _window(entry, *, ticked=True):
     window._population_scope = _Var("span")
     window._population_minimum = _Var(entry)
     window._status = _Var("")
+    window._root = None
     window._messagebox = window._filedialog = window._simpledialog = _Dialogs()
     window.applied = []
     window.started = []
@@ -63,7 +64,29 @@ def _window(entry, *, ticked=True):
     return window
 
 
-REJECTED = ("0_1", "９９９", "٩٩٩", "²", "two", "1.0", "9" * 5000)
+# Fullwidth nines, Arabic-Indic nines and a superscript two, by code point.
+REJECTED = ("0_1", chr(0xFF19) * 3, chr(0x0669) * 3, chr(0x00B2), "two", "1.0")
+# int() refuses a digit string past the interpreter's conversion limit. The
+# entry must then be guidance, not a crash. With the limit off or raised the
+# same entry is a number, and the range check refuses it later.
+if 0 < sys.get_int_max_str_digits() < 5000:
+    REJECTED += ("9" * 5000,)
+
+
+class _Recorder:
+    """Stand in for the controller's run methods and keep what they were given."""
+
+    def __init__(self, controller):
+        self._controller = controller
+        self.calls = []
+
+    def __getattr__(self, name):
+        if name in ("batch", "coverage_batch", "save_project"):
+            def record(*args, **kwargs):
+                self.calls.append((name, kwargs))
+                return TraceCanaryController._guidance("batch", "GUI005", "recorded")
+            return record
+        return getattr(self._controller, name)
 
 
 class PopulationEntryTests(unittest.TestCase):
@@ -85,13 +108,33 @@ class PopulationEntryTests(unittest.TestCase):
                     self.assert_gui007(window, mode)
 
     def test_a_batch_gate_with_an_ascii_minimum_starts_with_that_gate(self):
-        for entry, expected in (("999", 999), (" 7 ", 7)):
+        for action, method in (("_batch", "batch"), ("_coverage_batch", "coverage_batch")):
+            for entry, expected in (("999", 999), (" 7 ", 7)):
+                with self.subTest(action=action, entry=entry):
+                    window = _window(entry)
+                    window._controller = _Recorder(window._controller)
+                    self.assertEqual(window._batch_population_config("batch"), ("span", expected, None))
+                    getattr(window, action)()
+                    self.assertEqual(window.applied, [])
+                    self.assertEqual(len(window.started), 1)
+                    window.started[0]()
+                    (name, given), = window._controller.calls
+                    self.assertEqual(name, method)
+                    self.assertEqual((given["population_scope"], given["population_minimum"]), ("span", expected))
+
+    def test_project_save_passes_the_parsed_minimum_and_scope(self):
+        for entry, expected in ((" 12 ", ("span", 12)), ("", (None, None))):
             with self.subTest(entry=entry):
                 window = _window(entry)
-                self.assertEqual(window._batch_population_config("batch"), ("span", expected, None))
-                window._batch()
-                self.assertEqual(window.applied, [])
-                self.assertEqual(len(window.started), 1)
+                window._controller = _Recorder(window._controller)
+                window._candidate = _Var("")
+                window._minimum_ratio = _Var("")
+                window._filedialog = type("Chooser", (), {"askdirectory": staticmethod(lambda **kwargs: "projects")})()
+                window._simpledialog = type("Prompt", (), {"askstring": staticmethod(lambda *args, **kwargs: "fictional-project")})()
+                window._save_project()
+                (name, given), = window._controller.calls
+                self.assertEqual(name, "save_project")
+                self.assertEqual((given["population_scope"], given["population_minimum"]), expected)
 
     def test_an_unticked_batch_gate_ignores_the_entry(self):
         window = _window("two", ticked=False)
