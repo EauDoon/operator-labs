@@ -90,6 +90,25 @@ are now deprecated; see the deprecation note at the top of each.
   surrounding whitespace and non-ASCII digits. `--minimum 0_1` ran as a gate
   of 1; it now exits 2 as a usage error.
 
+- The TraceCanary GUI reads a population minimum as the CLI does: ASCII
+  digits only. An entry such as `0_1`, or one written in non-ASCII digits, ran
+  as a gate. Population Gate, Run Campaign, Run Batch Check, Run Coverage
+  Batch and project save now answer it with the `GUI007` guidance. A
+  superscript digit in the entry no longer raises an error. Surrounding space
+  is still accepted in an entry.
+
+- A ticked batch population gate in the TraceCanary GUI never runs without
+  its minimum. With an empty or invalid minimum the batch used to run with no
+  gate and could report a pass; the status line that said so was replaced as
+  the run started. The batch now stops with the `GUI007` guidance.
+
+- Project save in the TraceCanary GUI works when an optional selector (input,
+  baseline, candidate or batch folder) is blank. A blank entry was read as the
+  working directory. For an input, baseline or candidate the save was refused
+  with `project input must be a file, not a directory: .`. For a batch folder
+  the save copied the JSON files of the working directory into the project,
+  or failed when it held none.
+
 - The TraceCanary README listed required fields at resource, span and event
   scope only. The contract and checker also accept `scope` and `link`.
 

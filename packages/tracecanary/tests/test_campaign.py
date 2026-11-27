@@ -15,7 +15,7 @@ from tracecanary.campaign import (
     run_campaign,
 )
 from tracecanary.fixture import bundle
-from tracecanary.gui_controller import TraceCanaryController
+from tracecanary.gui_controller import TraceCanaryController, whole_number
 
 
 class CampaignEngineTests(unittest.TestCase):
@@ -423,6 +423,29 @@ class CampaignPopulationGateTests(unittest.TestCase):
         self.assertIsNone(minimum)
         self.assertEqual(guidance.status, "unresolved")
         self.assertEqual(json.loads(guidance.json)["violations"][0]["code"], "GUI007")
+
+    def test_controller_reads_a_population_minimum_as_the_cli_does(self):
+        # int() accepts digit separators and non-ASCII digits, and str.isdigit()
+        # accepts characters int() then refuses. The CLI rejects all of them.
+        controller = TraceCanaryController()
+        for text in ("0_1", "9_9", chr(0xFF11), chr(0x00B2), "1 0", "1.0"):
+            with self.subTest(text=text):
+                self.assertIsNone(whole_number(text))
+                self.assertIsNone(whole_number(text, signed=False))
+                minimum, guidance = controller.campaign_population_minimum(text)
+                self.assertIsNone(minimum)
+                self.assertEqual(json.loads(guidance.json)["violations"][0]["code"], "GUI007")
+                gate = controller.population_gate("contract.json", "trace.json", "span", text)
+                self.assertEqual(gate.status, "unresolved")
+                self.assertEqual(json.loads(gate.json)["violations"][0]["code"], "GUI007")
+        self.assertEqual(whole_number(" 12 "), 12)
+        self.assertEqual(whole_number("-1"), -1)
+        self.assertIsNone(whole_number("-1", signed=False))
+        self.assertEqual(whole_number("007", signed=False), 7)
+        # A digit string past int()'s conversion limit is guidance, not a crash.
+        if 0 < sys.get_int_max_str_digits() < 5000:
+            self.assertIsNone(whole_number("9" * 5000))
+            self.assertIsNone(controller.campaign_population_minimum("9" * 5000)[0])
 
 
 if __name__ == "__main__":

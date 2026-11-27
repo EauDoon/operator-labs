@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import json
+import re
 
 from tracecanary.authoring import draft_canary_values, empty_template, render_review_human, review_contract, validate_draft
 from tracecanary.batching import run_batch
@@ -296,9 +297,8 @@ class TraceCanaryController:
         )
         if guidance is not None:
             return guidance
-        try:
-            minimum = int(str(minimum_text).strip())
-        except ValueError:
+        minimum = whole_number(minimum_text)
+        if minimum is None:
             return self._guidance("population-gate", GUI007, "The population minimum must be a whole number.")
         return self._run(
             "population-gate",
@@ -507,12 +507,17 @@ class TraceCanaryController:
                 copied_sources[resolved_source] = target
                 return target
 
+            def selected(value: str | Path | None) -> Path | None:
+                # A blank selector means "not selected". Path("") is the
+                # working directory, so the blank test must come first.
+                return Path(value) if value is not None and str(value).strip() else None
+
             placed["contract"] = place(Path(contract_path))
             for label, source in (("input", input_path), ("baseline", baseline_path), ("candidate", candidate_path)):
-                target = place(Path(source) if source is not None else None)
+                target = place(selected(source))
                 if target is not None:
                     placed[label] = target
-            batch_target = place(Path(batch_dir) if batch_dir is not None else None, folder=True, recursive=bool(batch_recursive))
+            batch_target = place(selected(batch_dir), folder=True, recursive=bool(batch_recursive))
             if batch_target is not None:
                 placed["batch directory"] = batch_target
             manifest = build_manifest(
@@ -620,20 +625,32 @@ class TraceCanaryController:
         return GuiResult(status, _exit_code(status), human, json_text,
                          None, tuple(inputs), input_dir, "campaign")
 
-    def campaign_population_minimum(self, minimum_text: str) -> tuple[int | None, GuiResult | None]:
+    def campaign_population_minimum(self, minimum_text: str, *, mode: str = "campaign") -> tuple[int | None, GuiResult | None]:
         """Parse the campaign's population minimum from the survival-tab entry.
 
         An empty entry runs the campaign without a population gate. Text that
         is not a whole number returns the same GUI007 guidance as the
-        Population Gate action instead of being dropped silently.
+        Population Gate action instead of being dropped silently. Project
+        save reads the same entry and passes its own mode.
         """
         text = str(minimum_text).strip()
         if not text:
             return None, None
-        try:
-            return int(text), None
-        except ValueError:
-            return None, self._guidance("campaign", GUI007, "The population minimum must be a whole number.")
+        minimum = whole_number(text)
+        if minimum is None:
+            return None, self._guidance(mode, GUI007, "The population minimum must be a whole number.")
+        return minimum, None
+
+    def batch_population_minimum(self, minimum_text: str, *, mode: str) -> tuple[int | None, GuiResult | None]:
+        """Parse the minimum for a ticked batch population gate.
+
+        The gate was asked for, so an empty entry or text that is not a whole
+        number returns GUI007 guidance. The caller must not start the batch
+        without the gate.
+        """
+        if not str(minimum_text).strip():
+            return None, self._guidance(mode, GUI007, "Enter an explicit minimum population before gating.")
+        return self.campaign_population_minimum(minimum_text, mode=mode)
 
     def save_campaign_evidence(self, evidence_path: str | Path, result: GuiResult) -> GuiResult:
         """Explicitly save a value-free evidence document for a finished campaign.
@@ -816,6 +833,24 @@ class TraceCanaryController:
     def _guidance(mode: str, code: str, message: str) -> GuiResult:
         report = build_report("tracecanary/v1", "unresolved", [Violation(code, "", message)], mode=mode)
         return GuiResult("unresolved", EXIT_UNRESOLVED, render_human(report), render_json(report))
+
+
+def whole_number(text: object, *, signed: bool = True) -> int | None:
+    """Read entry text as a whole number the way the CLI reads a count.
+
+    int() also accepts digit separators ("0_1" is 1) and non-ASCII digits, and
+    str.isdigit() accepts characters that int() then refuses. Only ASCII digits
+    count here. Surrounding space is allowed, since a typed entry often has it.
+    """
+    stripped = str(text).strip()
+    pattern = r"[+-]?[0-9]+" if signed else r"[0-9]+"
+    if re.fullmatch(pattern, stripped) is None:
+        return None
+    try:
+        return int(stripped)
+    except ValueError:
+        # int() refuses a digit string past the interpreter's conversion limit.
+        return None
 
 
 def _exit_code(status: Status) -> int:
