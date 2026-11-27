@@ -74,6 +74,25 @@ are now deprecated; see the deprecation note at the top of each.
 
 ### Fixed
 
+- Corridor Lab decimal strings now use a plain ASCII grammar. A declared
+  value such as `"1_000"`, `" 5"` or one written in non-ASCII digits was read
+  as a number (`"1_000"` as 1000) in scenario and route files and in CLI
+  `--values`. These spellings now fail with `is not a valid decimal` and exit
+  2. Signs, a trailing or leading decimal point and exponents still parse.
+
+- Corridor Lab `break-even-check` no longer fails on a valid scenario whose
+  break-even volume has more than 18 significant digits. It exited 2 with
+  `scenario.transaction.volume_per_period exceeds 18 significant digits`,
+  an error about an input the scenario never declared, while `evaluate`
+  reported the same crossover.
+
+- TraceCanary `--minimum` and `--population-minimum` reject digit separators,
+  surrounding whitespace and non-ASCII digits. `--minimum 0_1` ran as a gate
+  of 1; it now exits 2 as a usage error.
+
+- The TraceCanary README listed required fields at resource, span and event
+  scope only. The contract and checker also accept `scope` and `link`.
+
 - Corridor Lab project creation now claims each new manifest and copied input
   name atomically. This requires hard-link support on POSIX. A failed save
   retains all published inputs, lists the paths it created, and gives a
